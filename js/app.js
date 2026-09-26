@@ -752,6 +752,13 @@ function taskStateChip(task, s) {
   return '<span class="status-chip status-pending">Upcoming</span>';
 }
 
+// Work done vs planned by today, in words (within 5% counts as on track).
+function planStatus(gap) {
+  if (gap < -5) return 'Behind plan';
+  if (gap > 5) return 'Ahead of plan';
+  return 'On track';
+}
+
 function renderSchedule() {
   const today = todayISO();
   const p = scheduleProgress(state.tasks, today);
@@ -762,7 +769,7 @@ function renderSchedule() {
   $('#schedule-summary').innerHTML = [
     statTile('Progress', `${p.actualPct}%`, `${p.doneCount} of ${p.count} items done`),
     statTile('Planned by today', `${p.plannedPct}%`,
-      !p.count ? '—' : gap >= 0 ? `Ahead by ${gap} pts` : `Behind by ${-gap} pts`, gap < -5 ? 'negative' : ''),
+      !p.count ? '—' : planStatus(gap), gap < -5 ? 'negative' : ''),
     statTile('Overdue', String(p.overdue.length),
       p.overdue.length ? `Longest: ${p.overdue[0].daysLate} days late` : 'Nothing overdue', p.overdue.length ? 'negative' : ''),
     statTile('Remaining', `${100 - p.actualPct}%`, `${p.count - p.doneCount} items left`),
@@ -1122,8 +1129,8 @@ function renderTimeline() {
     bars.push(timelineBar('Work complete', p.actualPct, 'bg-emerald-500'));
     const gap = p.actualPct - p.plannedPct;
     chips.push(gap >= -5
-      ? { cls: 'status-done', text: gap > 5 ? `✓ Ahead by ${gap} pts` : '✓ On track' }
-      : { cls: gap >= -15 ? 'status-in_progress' : 'status-blocked', text: `! Behind by ${-gap} pts` });
+      ? { cls: 'status-done', text: `✓ ${planStatus(gap)}` }
+      : { cls: gap >= -15 ? 'status-in_progress' : 'status-blocked', text: `! ${planStatus(gap)}` });
     if (p.overdue.length) chips.push({ cls: 'status-blocked', text: `! ${p.overdue.length} overdue` });
   }
 
