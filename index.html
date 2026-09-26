@@ -125,11 +125,9 @@
           <svg viewBox="0 0 24 24" class="w-6 h-6 fill-current"><path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/></svg>
         </button>
 
-        <div class="flex items-center gap-2 min-w-0">
-          <label for="project-select" class="hidden sm:block text-xs uppercase tracking-wide text-slate-500">Project</label>
-          <select id="project-select" class="select-dark w-44 sm:w-64">
-            <option value="">Loading projects…</option>
-          </select>
+        <div class="min-w-0 leading-tight">
+          <p id="topbar-project-name" class="font-semibold text-white truncate"></p>
+          <p id="topbar-project-location" class="text-xs text-slate-500 truncate"></p>
         </div>
 
         <div class="ml-auto flex items-center gap-2">
@@ -215,6 +213,10 @@
               <h1 class="text-xl font-semibold text-white">Flat Matrix</h1>
               <p class="text-sm text-slate-500">Stage status for every flat by block and floor.</p>
             </div>
+            <button id="btn-add-flats" class="btn btn-primary">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
+              Add Flats
+            </button>
           </div>
           <div id="flat-matrix-container" class="panel empty-state">Flat matrix will appear here.</div>
         </section>
@@ -361,55 +363,66 @@
   </dialog>
 
   <!-- New project -->
-  <dialog id="modal-project" class="modal" aria-labelledby="project-title">
+  <dialog id="modal-project" class="modal modal-sm" aria-labelledby="project-title">
     <form id="form-project">
       <div class="modal-header">
         <h2 id="project-title">New Project</h2>
         <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
       </div>
       <div class="modal-body space-y-4">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label class="block">
-            <span class="form-label">Project name</span>
-            <input name="name" required maxlength="120" class="input-dark w-full" placeholder="e.g. Riverside Flats">
-          </label>
-          <label class="block">
-            <span class="form-label">Location</span>
-            <input name="location" maxlength="120" class="input-dark w-full" placeholder="e.g. Vake, Tbilisi">
-          </label>
-        </div>
-
-        <fieldset class="space-y-3">
-          <legend class="form-label">Flats — generated automatically, set floors to 0 to skip</legend>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <label class="block">
-              <span class="form-label">Blocks</span>
-              <input name="blocks" value="A" class="input-dark w-full" placeholder="A, B">
-            </label>
-            <label class="block">
-              <span class="form-label">Floors</span>
-              <input name="floors" type="number" min="0" max="60" step="1" value="5" class="input-dark w-full">
-            </label>
-            <label class="block">
-              <span class="form-label">Flats / floor</span>
-              <input name="flats_per_floor" type="number" min="0" max="30" step="1" value="4" class="input-dark w-full">
-            </label>
-            <label class="block">
-              <span class="form-label">First floor</span>
-              <select name="start_floor" class="select-dark w-full">
-                <option value="1">Floor 1</option>
-                <option value="0">Ground</option>
-              </select>
-            </label>
-          </div>
-          <p id="project-flat-preview" class="text-xs text-slate-400"></p>
-        </fieldset>
-
+        <label class="block">
+          <span class="form-label">Project name</span>
+          <input name="name" required maxlength="120" class="input-dark w-full" placeholder="e.g. Riverside Flats">
+        </label>
+        <label class="block">
+          <span class="form-label">Location</span>
+          <input name="location" maxlength="120" class="input-dark w-full" placeholder="e.g. Vake, Tbilisi">
+        </label>
         <p class="form-error hidden" data-error></p>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-close>Cancel</button>
         <button type="submit" class="btn btn-primary">Create Project</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Add flats (one block at a time) -->
+  <dialog id="modal-flats" class="modal" aria-labelledby="flats-title">
+    <form id="form-flats">
+      <div class="modal-header">
+        <h2 id="flats-title">Add Flats</h2>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body space-y-4">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <label class="block">
+            <span class="form-label">Block</span>
+            <input name="block" required maxlength="20" value="A" class="input-dark w-full" placeholder="A">
+          </label>
+          <label class="block">
+            <span class="form-label">From floor</span>
+            <input name="floor_from" type="number" min="0" max="80" step="1" value="1" required class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">To floor</span>
+            <input name="floor_to" type="number" min="0" max="80" step="1" value="5" required class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Flats / floor</span>
+            <input name="flats_per_floor" type="number" min="1" max="30" step="1" value="4" required class="input-dark w-full">
+          </label>
+        </div>
+        <p id="flats-preview" class="text-xs text-slate-400"></p>
+        <p class="text-xs text-slate-500">
+          Numbers are floor + position (101, 102 … ground floor G01). Flats that already exist in this block are skipped,
+          so you can run this again to extend a block.
+        </p>
+        <p class="form-error hidden" data-error></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Add Flats</button>
       </div>
     </form>
   </dialog>

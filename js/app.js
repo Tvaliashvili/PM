@@ -75,7 +75,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily'].forEach((sel) => { $(sel).disabled = !enabled; });
+  ['#btn-new-log', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-add-flats'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
 // =============================================================
@@ -174,9 +174,6 @@ async function signOut() {
 }
 
 function showSetupNotice() {
-  const select = $('#project-select');
-  select.innerHTML = '<option value="">Supabase not configured</option>';
-  select.disabled = true;
   $('#btn-new-project').disabled = true;
   $('#projects-container').textContent = 'Add your Supabase URL and anon key in js/config.js to get started.';
 }
@@ -185,28 +182,18 @@ function showSetupNotice() {
 // Projects
 // =============================================================
 async function loadProjects() {
-  const select = $('#project-select');
-  select.disabled = true;
-  select.innerHTML = '<option value="">Loading projects…</option>';
-
   const { data, error } = await db
     .from('projects')
     .select('id, name, location, total_flats, created_at')
     .order('created_at', { ascending: false });
 
   if (error) {
-    select.innerHTML = '<option value="">Failed to load</option>';
     $('#projects-container').textContent = `Could not load projects: ${error.message}`;
     toast(`Could not load projects: ${error.message}`, 'error');
     return;
   }
 
   state.projects = data;
-  select.innerHTML = `<option value="">${data.length ? 'Select a project…' : 'No projects yet'}</option>`
-    + data.map((p) => `
-      <option value="${esc(p.id)}">${esc(p.name)}${p.location ? ` — ${esc(p.location)}` : ''}</option>
-    `).join('');
-  select.disabled = !data.length;
 
   // Reopen the last project after a refresh; otherwise start on the list.
   const saved = storage.get('cpm.projectId');
@@ -219,12 +206,13 @@ async function selectProject(projectId) {
   state.projectId = projectId || null;
   state.flats = [];
   setProjectActionsEnabled(Boolean(state.projectId));
-  $('#project-select').value = state.projectId ?? '';
 
   const project = state.projects.find((p) => p.id === state.projectId);
   const navLabel = $('#nav-project-name');
   navLabel.textContent = project?.name ?? '';
   navLabel.classList.toggle('hidden', !project);
+  $('#topbar-project-name').textContent = project?.name ?? '';
+  $('#topbar-project-location').textContent = project?.location ?? '';
 
   if (!project) {
     storage.set('cpm.projectId', '');
@@ -335,49 +323,9 @@ async function deleteProject(projectId) {
 }
 
 // ---------- New project ----------
-const MAX_FLATS = 2000;
-const clampInt = (value, min, max) => Math.min(max, Math.max(min, parseInt(value, 10) || 0));
-
-// Flat numbers: floor + 2-digit position, e.g. 101, 102 … ground floor G01, G02.
-function planFlats(form) {
-  const blocks = [...new Set(form.elements.blocks.value.split(',').map((b) => b.trim()).filter(Boolean))];
-  const floors = clampInt(form.elements.floors.value, 0, 60);
-  const perFloor = clampInt(form.elements.flats_per_floor.value, 0, 30);
-  const start = form.elements.start_floor.value === '0' ? 0 : 1;
-
-  const flats = [];
-  for (const block of blocks) {
-    for (let floor = start; floor < start + floors; floor++) {
-      for (let i = 1; i <= perFloor; i++) {
-        flats.push({
-          block,
-          floor,
-          flat_number: `${floor === 0 ? 'G' : floor}${String(i).padStart(2, '0')}`,
-          stage_status: {},
-        });
-      }
-    }
-  }
-  return { blocks, flats };
-}
-
-function updateFlatPreview() {
-  const { blocks, flats } = planFlats($('#form-project'));
-  const preview = $('#project-flat-preview');
-  if (!flats.length) {
-    preview.textContent = 'No flats will be created — you can add them later.';
-  } else if (flats.length > MAX_FLATS) {
-    preview.textContent = `${flats.length} flats is more than the ${MAX_FLATS} limit — reduce blocks, floors or flats per floor.`;
-  } else {
-    preview.textContent = `Creates ${flats.length} flats (${flats[0].flat_number} to ${flats[flats.length - 1].flat_number})`
-      + ` in ${blocks.length > 1 ? 'blocks' : 'block'} ${blocks.join(', ')}.`;
-  }
-}
-
 function openProjectModal() {
   const form = $('#form-project');
   form.reset();
-  updateFlatPreview();
   showFormError(form, '');
   openModal('modal-project');
 }
@@ -387,52 +335,28 @@ async function saveProject(e) {
   const form = e.currentTarget;
   const btn  = $('[type=submit]', form);
   const fd   = new FormData(form);
-  const { flats } = planFlats(form);
-
-  if (flats.length > MAX_FLATS) {
-    showFormError(form, `A project can have at most ${MAX_FLATS} flats.`);
-    return;
-  }
 
   showFormError(form, '');
   setBusy(btn, true, 'Creating…');
-
   const { data: project, error } = await db
     .from('projects')
-    .insert({
-      name: fd.get('name').trim(),
-      location: fd.get('location').trim() || null,
-      total_flats: flats.length,
-    })
+    .insert({ name: fd.get('name').trim(), location: fd.get('location').trim() || null })
     .select('id')
     .single();
+  setBusy(btn, false);
 
   if (error) {
-    setBusy(btn, false);
     showFormError(form, error.message);
     return;
   }
 
-  if (flats.length) {
-    const { error: flatsError } = await db
-      .from('flats')
-      .insert(flats.map((f) => ({ ...f, project_id: project.id })));
-
-    if (flatsError) {
-      await db.from('projects').delete().eq('id', project.id); // don't leave a half-created project
-      setBusy(btn, false);
-      showFormError(form, `Could not create flats: ${flatsError.message}`);
-      return;
-    }
-  }
-
-  setBusy(btn, false);
   closeModal('modal-project');
-  toast(`Project created with ${flats.length} flats.`, 'success');
+  toast('Project created. Add its flats from the Flat Matrix.', 'success');
 
+  // Open the new project straight on the Flat Matrix so flats can be added.
   storage.set('cpm.projectId', project.id);
   await loadProjects();
-  goTo('dashboard');
+  goTo('flat-matrix');
 }
 
 // =============================================================
@@ -466,7 +390,7 @@ async function renderFlatMatrix(projectId) {
   updateProgressKpi();
 
   if (!data.length) {
-    container.textContent = 'No flats in this project yet.';
+    container.textContent = 'No flats yet — click Add Flats to create your first block.';
     return;
   }
 
@@ -482,7 +406,11 @@ async function renderFlatMatrix(projectId) {
   container.className = 'panel space-y-6';
   container.innerHTML = matrixLegend() + [...blocks].map(([block, floors]) => `
     <div class="matrix-block">
-      <h3 class="matrix-block-title">Block ${esc(block)}</h3>
+      <div class="matrix-block-header">
+        <h3 class="matrix-block-title">Block ${esc(block)}</h3>
+        <button type="button" class="matrix-block-delete" data-delete-block="${esc(block)}"
+                title="Delete block ${esc(block)}">Delete block</button>
+      </div>
       ${[...floors].map(([floor, flats]) => `
         <div class="matrix-floor">
           <div class="matrix-floor-label">${esc(floorLabel(floor))}</div>
@@ -539,7 +467,125 @@ function redrawFlat(flat, focusStage) {
   if (focusStage) $(`[data-flat-id="${flat.id}"] [data-stage="${focusStage}"]`)?.focus();
 }
 
+// ---------- Add / delete flats ----------
+const clampInt = (value, min, max) => Math.min(max, Math.max(min, parseInt(value, 10) || 0));
+
+// Flat numbers: floor + 2-digit position, e.g. 101, 102 … ground floor G01, G02.
+function planFlats(form) {
+  const block = form.elements.block.value.trim();
+  const a = clampInt(form.elements.floor_from.value, 0, 80);
+  const b = clampInt(form.elements.floor_to.value, 0, 80);
+  const perFloor = clampInt(form.elements.flats_per_floor.value, 1, 30);
+  const [from, to] = a <= b ? [a, b] : [b, a];
+
+  const flats = [];
+  if (!block) return { block, flats };
+  for (let floor = from; floor <= to; floor++) {
+    for (let i = 1; i <= perFloor; i++) {
+      flats.push({
+        block,
+        floor,
+        flat_number: `${floor === 0 ? 'G' : floor}${String(i).padStart(2, '0')}`,
+        stage_status: {},
+      });
+    }
+  }
+  return { block, flats };
+}
+
+function updateFlatsPreview() {
+  const { block, flats } = planFlats($('#form-flats'));
+  $('#flats-preview').textContent = flats.length
+    ? `Adds up to ${flats.length} flats to block ${block}: ${flats[0].flat_number} to ${flats[flats.length - 1].flat_number}.`
+    : 'Enter a block name.';
+}
+
+function openFlatsModal() {
+  if (!requireProject()) return;
+  const form = $('#form-flats');
+  form.reset();
+  // Suggest the next block letter after the existing ones (A → B → C …).
+  const blocks = new Set(state.flats.map((f) => f.block));
+  const next = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].find((l) => !blocks.has(l));
+  if (next) form.elements.block.value = next;
+  updateFlatsPreview();
+  showFormError(form, '');
+  openModal('modal-flats');
+}
+
+// Keeps projects.total_flats in step with the flats table (used by reports).
+async function syncFlatCount(projectId) {
+  const { count, error } = await db
+    .from('flats')
+    .select('id', { count: 'exact', head: true })
+    .eq('project_id', projectId);
+  if (error) return;
+  await db.from('projects').update({ total_flats: count }).eq('id', projectId);
+  const project = state.projects.find((p) => p.id === projectId);
+  if (project) project.total_flats = count;
+}
+
+async function saveFlats(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn  = $('[type=submit]', form);
+  const projectId = state.projectId;
+  const { block, flats } = planFlats(form);
+
+  if (!flats.length) {
+    showFormError(form, 'Enter a block name.');
+    return;
+  }
+
+  showFormError(form, '');
+  setBusy(btn, true, 'Adding…');
+  // Existing flats (same block + number) are skipped, so a block can be extended.
+  const { data, error } = await db
+    .from('flats')
+    .upsert(flats.map((f) => ({ ...f, project_id: projectId })), {
+      onConflict: 'project_id,block,flat_number',
+      ignoreDuplicates: true,
+    })
+    .select('id');
+  setBusy(btn, false);
+
+  if (error) {
+    showFormError(form, error.message);
+    return;
+  }
+
+  const added = data.length;
+  const skipped = flats.length - added;
+  closeModal('modal-flats');
+  toast(`Added ${added} flats to block ${block}${skipped ? ` (${skipped} already existed)` : ''}.`, 'success');
+
+  await syncFlatCount(projectId);
+  if (projectId === state.projectId) renderFlatMatrix(projectId);
+}
+
+async function deleteBlock(block) {
+  const projectId = state.projectId;
+  const count = state.flats.filter((f) => f.block === block).length;
+  if (!confirm(`Delete block ${block} and its ${count} flats?\n\nTheir stage progress is lost. Delays linked to these flats are kept as site-wide.`)) return;
+
+  const { error } = await db.from('flats').delete().eq('project_id', projectId).eq('block', block);
+  if (error) {
+    toast(`Could not delete block: ${error.message}`, 'error');
+    return;
+  }
+
+  toast(`Deleted block ${block}.`, 'success');
+  await syncFlatCount(projectId);
+  if (projectId === state.projectId) renderFlatMatrix(projectId);
+}
+
 async function onMatrixClick(e) {
+  const blockBtn = e.target.closest('[data-delete-block]');
+  if (blockBtn) {
+    deleteBlock(blockBtn.dataset.deleteBlock);
+    return;
+  }
+
   const chip = e.target.closest('[data-stage]');
   if (!chip) return;
 
@@ -862,17 +908,15 @@ $('#flat-matrix-container').addEventListener('click', onMatrixClick);
 $('#projects-container').addEventListener('click', onProjectsClick);
 $('#btn-new-project').addEventListener('click', openProjectModal);
 $('#form-project').addEventListener('submit', saveProject);
-$('#form-project').addEventListener('input', updateFlatPreview);
+$('#btn-add-flats').addEventListener('click', openFlatsModal);
+$('#form-flats').addEventListener('submit', saveFlats);
+$('#form-flats').addEventListener('input', updateFlatsPreview);
 $('#btn-export-pdf').addEventListener('click', exportDailyReport);
 $('#btn-report-daily').addEventListener('click', exportDailyReport);
 
 if (db) {
   $('#form-login').addEventListener('submit', signIn);
   $$('[data-sign-out]').forEach((el) => el.addEventListener('click', signOut));
-  $('#project-select').addEventListener('change', (e) => {
-    if (e.target.value) openProject(e.target.value);
-    else { selectProject(null); goTo('projects'); }
-  });
   initAuth();
 } else {
   showSetupNotice();
