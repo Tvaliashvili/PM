@@ -642,29 +642,39 @@
         <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
       </div>
       <div class="modal-body space-y-4">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label class="block">
-            <span class="form-label">Company / name</span>
-            <input name="name" required maxlength="120" class="input-dark w-full">
-          </label>
-          <label class="block">
-            <span class="form-label">Trade</span>
-            <input name="trade" list="contractor-trades" maxlength="60" class="input-dark w-full" placeholder="e.g. Concrete">
-            <datalist id="contractor-trades"></datalist>
-          </label>
-          <label class="block">
-            <span class="form-label">Contact person</span>
-            <input name="contact_person" maxlength="120" class="input-dark w-full">
-          </label>
-          <label class="block">
-            <span class="form-label">Phone</span>
-            <input name="phone" type="tel" maxlength="40" class="input-dark w-full">
-          </label>
-        </div>
-        <label class="block">
-          <span class="form-label">Notes</span>
-          <textarea name="notes" rows="2" class="input-dark w-full"></textarea>
+        <label id="contractor-existing-wrap" class="block">
+          <span class="form-label">From your company list</span>
+          <select id="contractor-existing" name="existing_id" class="select-dark w-full"></select>
         </label>
+        <fieldset id="contractor-details" class="space-y-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label class="block">
+              <span class="form-label">Company / name</span>
+              <input name="name" required maxlength="120" class="input-dark w-full">
+            </label>
+            <label class="block">
+              <span class="form-label">Trade</span>
+              <input name="trade" list="contractor-trades" maxlength="60" class="input-dark w-full" placeholder="e.g. Concrete">
+              <datalist id="contractor-trades"></datalist>
+            </label>
+            <label class="block sm:col-span-2">
+              <span class="form-label">Contact person</span>
+              <input name="contact_person" maxlength="120" class="input-dark w-full">
+            </label>
+            <label class="block">
+              <span class="form-label">Phone</span>
+              <input name="phone" type="tel" maxlength="40" class="input-dark w-full">
+            </label>
+            <label class="block">
+              <span class="form-label">Email</span>
+              <input name="email" type="email" maxlength="120" class="input-dark w-full">
+            </label>
+          </div>
+          <label class="block">
+            <span class="form-label">Notes</span>
+            <textarea name="notes" rows="2" class="input-dark w-full"></textarea>
+          </label>
+        </fieldset>
         <p class="form-error hidden" data-error></p>
       </div>
       <div class="modal-footer">

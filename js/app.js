@@ -29,6 +29,7 @@ const state = {
   tasks: [],            // timetable items (also the BOQ)
   payments: [],         // task_payments
   contractorDelays: [], // delays with contractor_id + hours
+  roster: new Set(),    // contractor ids on this project
   progress: null,       // scheduleProgress() result
 };
 
@@ -102,7 +103,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-add-unit', '#btn-add-units-bulk', '#btn-add-task',
+  ['#btn-new-log', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-add-unit', '#btn-add-units-bulk', '#btn-add-task', '#btn-add-contractor',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -237,6 +238,7 @@ async function selectProject(projectId) {
   state.tasks = [];
   state.payments = [];
   state.contractorDelays = [];
+  state.roster = new Set();
   setProjectActionsEnabled(Boolean(state.projectId));
 
   const project = currentProject();
@@ -695,7 +697,7 @@ const paidOn = (taskId) => sumOf(state.payments.filter((p) => p.task_id === task
 
 // Items, payments and contractor-linked delays for one project, then every view built on them.
 async function loadSchedule(projectId) {
-  const [tasks, payments, delays] = await Promise.all([
+  const [tasks, payments, delays, roster] = await Promise.all([
     db.from('schedule_tasks')
       .select('id, name, planned_start, planned_finish, done, done_at, contractor_id, quantity, unit, rate, budget')
       .eq('project_id', projectId)
@@ -708,10 +710,13 @@ async function loadSchedule(projectId) {
     db.from('delays')
       .select('contractor_id, duration_hours')
       .eq('project_id', projectId),
+    db.from('project_contractors')
+      .select('contractor_id')
+      .eq('project_id', projectId),
   ]);
 
   if (projectId !== state.projectId) return;
-  const failed = [tasks, payments, delays].find((r) => r.error);
+  const failed = [tasks, payments, delays, roster].find((r) => r.error);
   if (failed) {
     $('#schedule-table').innerHTML = `<div class="empty-state">Could not load timetable: ${esc(failed.error.message)}</div>`;
     return;
@@ -719,6 +724,7 @@ async function loadSchedule(projectId) {
   state.tasks = tasks.data;
   state.payments = payments.data;
   state.contractorDelays = delays.data;
+  state.roster = new Set(roster.data.map((r) => r.contractor_id));
   renderScheduleViews();
 }
 
@@ -820,9 +826,11 @@ async function toggleTask(taskId, done) {
   }
 }
 
+// Dropdown options: this project's contractors (plus the current pick, if it's no longer on the roster).
 function contractorOptions(selectedId) {
+  const list = state.contractors.filter((c) => state.roster.has(c.id) || c.id === selectedId);
   return '<option value="">— None —</option>'
-    + state.contractors.map((c) => `
+    + list.map((c) => `
       <option value="${esc(c.id)}"${c.id === selectedId ? ' selected' : ''}>
         ${esc(c.name)}${c.trade ? ` · ${esc(c.trade)}` : ''}
       </option>`).join('');
@@ -1442,12 +1450,15 @@ async function onPaymentsClick(e) {
 }
 
 // =============================================================
-// Contractors (company-wide list; performance shown per project)
+// Contractors: one company list; each project has its own roster
+// (project_contractors) chosen from it. Performance is per project.
 // =============================================================
+const CONTRACTOR_FIELDS = ['name', 'trade', 'contact_person', 'phone', 'email', 'notes'];
+
 async function loadContractors() {
   const { data, error } = await db
     .from('contractors')
-    .select('id, name, trade, contact_person, phone, notes')
+    .select(`id, ${CONTRACTOR_FIELDS.join(', ')}`)
     .order('name');
   if (error) {
     toast(`Could not load contractors: ${error.message}`, 'error');
@@ -1457,8 +1468,11 @@ async function loadContractors() {
   if (state.projectId) renderScheduleViews();
 }
 
+// Contractors on the open project's roster.
+const projectContractors = () => state.contractors.filter((c) => state.roster.has(c.id));
+
 function contractorRating(s) {
-  if (!s || !s.items) return '<span class="text-slate-500">No items here</span>';
+  if (!s || !s.items) return '<span class="text-slate-500">No jobs yet</span>';
   if (s.overdue) return `<span class="status-chip status-blocked">! ${s.overdue} overdue</span>`;
   if (s.late) return `<span class="status-chip status-in_progress">Late on ${s.late} · avg ${s.avgDaysLate} d</span>`;
   if (s.onTime) return '<span class="status-chip status-done">✓ On time</span>';
@@ -1468,62 +1482,86 @@ function contractorRating(s) {
 function renderContractors() {
   const perf = contractorPerformance(state.tasks, state.contractorDelays, state.payments, todayISO());
   const el = $('#contractors-table');
+  const list = projectContractors().sort((a, b) =>
+    (perf.get(b.id)?.items ?? 0) - (perf.get(a.id)?.items ?? 0) || a.name.localeCompare(b.name));
 
-  if (!state.contractors.length) {
-    el.innerHTML = '<div class="empty-state">No contractors yet — click Add Contractor, then pick them on timetable items.</div>';
+  if (!list.length) {
+    el.innerHTML = '<div class="empty-state">No contractors on this project yet — click Add Contractor to pick one from your company list or create a new one.</div>';
     return;
   }
 
-  // Contractors with work on this project first, then the rest of the list.
-  const list = [...state.contractors].sort((a, b) =>
-    (perf.get(b.id)?.items ?? 0) - (perf.get(a.id)?.items ?? 0) || a.name.localeCompare(b.name));
-
-  const row = (c, s) => `
-    <tr>
-      <td>
-        <p class="text-white font-medium">${esc(c.name)}</p>
-        <p class="text-xs text-slate-500">${esc([c.trade, c.contact_person, c.phone].filter(Boolean).join(' · '))}</p>
-      </td>
-      <td class="num">${s?.items ?? 0}</td>
-      <td class="num">${s?.onTime ?? 0}</td>
-      <td class="num">${s?.late ? `${s.late} <span class="text-slate-500">(avg ${s.avgDaysLate} d)</span>` : 0}</td>
-      <td class="num">${s?.overdue ? `<span class="variance-over">${s.overdue}</span>` : 0}</td>
-      <td class="num">${s?.open ?? 0}</td>
-      <td class="num">${s?.delayHours ? `${s.delayHours} h` : '—'}</td>
-      <td class="num">${s?.budget ? money.format(s.budget) : '—'}</td>
-      <td class="num">${s?.paid ? money.format(s.paid) : '—'}</td>
-      <td class="whitespace-nowrap">${contractorRating(s)}</td>
-      <td class="text-right whitespace-nowrap">
-        ${c.id ? `
+  const contact = (c) => [c.trade, c.contact_person, c.phone, c.email].filter(Boolean).map(esc).join(' · ');
+  const rows = list.map((c) => {
+    const s = perf.get(c.id);
+    return `
+      <tr>
+        <td>
+          <p class="text-white font-medium">${esc(c.name)}</p>
+          <p class="text-xs text-slate-500">${contact(c)}</p>
+        </td>
+        <td class="num">${s?.items ?? 0}</td>
+        <td class="num">${s?.onTime ?? 0}</td>
+        <td class="num">${s?.late ? `${s.late} <span class="text-slate-500">(avg ${s.avgDaysLate} d)</span>` : 0}</td>
+        <td class="num">${s?.overdue ? `<span class="variance-over">${s.overdue}</span>` : 0}</td>
+        <td class="num">${s?.open ?? 0}</td>
+        <td class="num">${s?.delayHours ? `${s.delayHours} h` : '—'}</td>
+        <td class="num">${s?.budget ? money.format(s.budget) : '—'}</td>
+        <td class="num">${s?.paid ? money.format(s.paid) : '—'}</td>
+        <td class="whitespace-nowrap">${contractorRating(s)}</td>
+        <td class="text-right whitespace-nowrap">
           <button type="button" class="table-action" data-contractor-edit="${esc(c.id)}">Edit</button>
-          <button type="button" class="table-action is-danger" data-contractor-delete="${esc(c.id)}">Delete</button>` : ''}
-      </td>
-    </tr>`;
+          <button type="button" class="table-action is-danger" data-contractor-remove="${esc(c.id)}">Remove</button>
+        </td>
+      </tr>`;
+  }).join('');
 
   const unassigned = perf.get('')?.items ?? 0;
   el.innerHTML = `
     <table class="data-table">
       <thead>
         <tr>
-          <th>Contractor</th><th class="num">Jobs here</th><th class="num">On time</th><th class="num">Late</th>
+          <th>Contractor</th><th class="num">Jobs</th><th class="num">On time</th><th class="num">Late</th>
           <th class="num">Overdue now</th><th class="num">Open</th><th class="num">Delays</th>
           <th class="num">Budget</th><th class="num">Paid</th><th>Performance</th><th></th>
         </tr>
       </thead>
-      <tbody>${list.map((c) => row(c, perf.get(c.id))).join('')}</tbody>
+      <tbody>${rows}</tbody>
     </table>
     ${unassigned ? `<p class="mt-3 text-xs text-slate-500">${unassigned} timetable item(s) have no contractor yet — pick one in the Contractor column on the Timetable.</p>` : ''}`;
 }
 
+// Picking a company contractor hides the "new contractor" fields.
+function onContractorExistingChange() {
+  const existing = $('#contractor-existing').value;
+  const details = $('#contractor-details');
+  details.disabled = Boolean(existing); // disabled fields are skipped by validation
+  details.classList.toggle('hidden', Boolean(existing));
+}
+
 function openContractorModal(contractor) {
+  if (!requireProject()) return;
   const form = $('#form-contractor');
   const f = form.elements;
   form.reset();
   showFormError(form, '');
   $('#contractor-title').textContent = contractor ? 'Edit Contractor' : 'Add Contractor';
   f.id.value = contractor?.id ?? '';
-  for (const key of ['name', 'trade', 'contact_person', 'phone', 'notes']) f[key].value = contractor?.[key] ?? '';
+  for (const key of CONTRACTOR_FIELDS) f[key].value = contractor?.[key] ?? '';
+
+  // Adding: offer company contractors not yet on this project.
+  const available = state.contractors.filter((c) => !state.roster.has(c.id));
+  $('#contractor-existing').innerHTML = '<option value="">— Create a new contractor —</option>'
+    + available.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}${c.trade ? ` · ${esc(c.trade)}` : ''}</option>`).join('');
+  $('#contractor-existing-wrap').classList.toggle('hidden', Boolean(contractor) || !available.length);
+  onContractorExistingChange();
   openModal('modal-contractor');
+}
+
+async function addToRoster(contractorId) {
+  return db.from('project_contractors').upsert(
+    { project_id: state.projectId, contractor_id: contractorId },
+    { onConflict: 'project_id,contractor_id', ignoreDuplicates: true },
+  );
 }
 
 async function saveContractor(e) {
@@ -1531,49 +1569,71 @@ async function saveContractor(e) {
   const form = e.currentTarget;
   const btn  = $('[type=submit]', form);
   const fd   = new FormData(form);
-
   const id = fd.get('id');
-  const row = {
-    name:           fd.get('name').trim(),
-    trade:          fd.get('trade').trim() || null,
-    contact_person: fd.get('contact_person').trim() || null,
-    phone:          fd.get('phone').trim() || null,
-    notes:          fd.get('notes').trim() || null,
-  };
+  const existing = $('#contractor-existing').value;
 
   showFormError(form, '');
   setBusy(btn, true);
-  const { error } = id
-    ? await db.from('contractors').update(row).eq('id', id)
-    : await db.from('contractors').insert(row);
+  let error;
+  let message;
+
+  if (!id && existing) {
+    // Add a company contractor to this project.
+    ({ error } = await addToRoster(existing));
+    message = `${contractorName(existing)} added to this project.`;
+  } else {
+    const row = Object.fromEntries(CONTRACTOR_FIELDS.map((k) => [k, fd.get(k).trim() || null]));
+    if (id) {
+      ({ error } = await db.from('contractors').update(row).eq('id', id));
+      message = 'Contractor updated.';
+    } else {
+      // New company contractor, straight onto this project's roster.
+      const created = await db.from('contractors').insert(row).select('id').single();
+      error = created.error ?? (await addToRoster(created.data.id)).error;
+      message = `${row.name} added.`;
+    }
+  }
   setBusy(btn, false);
+
   if (error) {
     showFormError(form, error.message);
     return;
   }
-
   closeModal('modal-contractor');
-  toast(id ? 'Contractor updated.' : 'Contractor added.', 'success');
-  loadContractors();
+  toast(message, 'success');
+  await loadContractors();
+  if (state.projectId) loadSchedule(state.projectId);
 }
 
-async function onContractorsClick(e) {
+// Remove from this project only; the contractor stays in the company list.
+async function removeFromProject(contractorId) {
+  const projectId = state.projectId;
+  const name = contractorName(contractorId);
+  const jobs = state.tasks.filter((t) => t.contractor_id === contractorId).length;
+  const extra = jobs ? `\n\nTheir ${jobs} timetable item(s) on this project will be left without a contractor.` : '';
+  if (!confirm(`Remove ${name} from this project?${extra}\n\nThey stay in your company list for other projects.`)) return;
+
+  const unassign = jobs
+    ? await db.from('schedule_tasks').update({ contractor_id: null }).eq('project_id', projectId).eq('contractor_id', contractorId)
+    : { error: null };
+  const { error } = unassign.error
+    ? unassign
+    : await db.from('project_contractors').delete().eq('project_id', projectId).eq('contractor_id', contractorId);
+
+  if (error) {
+    toast(`Could not remove contractor: ${error.message}`, 'error');
+    return;
+  }
+  toast(`${name} removed from this project.`, 'success');
+  if (projectId === state.projectId) loadSchedule(projectId);
+}
+
+function onContractorsClick(e) {
   const edit = e.target.closest('[data-contractor-edit]');
   if (edit) return openContractorModal(state.contractors.find((c) => c.id === edit.dataset.contractorEdit));
 
-  const del = e.target.closest('[data-contractor-delete]');
-  if (!del) return;
-  const contractor = state.contractors.find((c) => c.id === del.dataset.contractorDelete);
-  if (!contractor || !confirm(`Delete contractor "${contractor.name}"?\n\nTheir items and delays on every project stay, marked as no contractor.`)) return;
-
-  const { error } = await db.from('contractors').delete().eq('id', contractor.id);
-  if (error) {
-    toast(`Could not delete contractor: ${error.message}`, 'error');
-    return;
-  }
-  toast(`Deleted ${contractor.name}.`, 'success');
-  await loadContractors();
-  if (state.projectId) loadSchedule(state.projectId);
+  const remove = e.target.closest('[data-contractor-remove]');
+  if (remove) removeFromProject(remove.dataset.contractorRemove);
 }
 
 // =============================================================
@@ -1850,6 +1910,7 @@ $('#payments-list').addEventListener('click', onPaymentsClick);
 $('#btn-add-contractor').addEventListener('click', () => openContractorModal(null));
 $('#form-contractor').addEventListener('submit', saveContractor);
 $('#contractors-table').addEventListener('click', onContractorsClick);
+$('#contractor-existing').addEventListener('change', onContractorExistingChange);
 $('#projects-container').addEventListener('click', onProjectsClick);
 $('#btn-new-project').addEventListener('click', openProjectModal);
 $('#form-project').addEventListener('submit', saveProject);

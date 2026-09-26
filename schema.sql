@@ -234,6 +234,7 @@ create table if not exists public.contractors (
   trade           text,
   contact_person  text,
   phone           text,
+  email           text,
   notes           text,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
@@ -252,6 +253,30 @@ alter table public.schedule_tasks
   add column if not exists contractor_id uuid references public.contractors(id) on delete set null;
 alter table public.delays
   add column if not exists contractor_id uuid references public.contractors(id) on delete set null;
+
+alter table public.contractors add column if not exists email text;
+
+-- Each project's roster: which company contractors work on it. A new project
+-- starts empty; deleting a project removes its roster, not the contractors.
+create table if not exists public.project_contractors (
+  id             uuid primary key default gen_random_uuid(),
+  project_id     uuid not null references public.projects(id) on delete cascade,
+  contractor_id  uuid not null references public.contractors(id) on delete cascade,
+  created_at     timestamptz not null default now(),
+  unique (project_id, contractor_id)
+);
+
+alter table public.project_contractors enable row level security;
+drop policy if exists "authenticated_full_access" on public.project_contractors;
+create policy "authenticated_full_access" on public.project_contractors
+  for all to authenticated using (true) with check (true);
+
+-- Backfill rosters from contractors already used on a project.
+insert into public.project_contractors (project_id, contractor_id)
+  select project_id, contractor_id from public.schedule_tasks where contractor_id is not null
+  union
+  select project_id, contractor_id from public.delays where contractor_id is not null
+on conflict (project_id, contractor_id) do nothing;
 
 create index if not exists schedule_tasks_contractor_idx on public.schedule_tasks (contractor_id);
 create index if not exists delays_contractor_idx on public.delays (contractor_id);
