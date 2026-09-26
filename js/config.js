@@ -10,26 +10,18 @@ export const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdX
 // ISO 4217 code used for all money values.
 export const CURRENCY_CODE = 'USD';
 
-// Trade stages tracked per flat (keys stored in flats.stage_status).
-export const STAGES = [
-  { key: 'structure',  label: 'Structure',  short: 'STR' },
-  { key: 'masonry',    label: 'Masonry',    short: 'MAS' },
-  { key: 'plumbing',   label: 'Plumbing',   short: 'PLB' },
-  { key: 'electrical', label: 'Electrical', short: 'ELE' },
-  { key: 'plastering', label: 'Plastering', short: 'PLS' },
-  { key: 'tiling',     label: 'Tiling',     short: 'TIL' },
-  { key: 'carpentry',  label: 'Carpentry',  short: 'CRP' },
-  { key: 'painting',   label: 'Painting',   short: 'PNT' },
+// Unit types offered in the Units register (stored as text in flats.unit_type).
+export const UNIT_TYPES = [
+  'Studio', '1-bedroom', '2-bedroom', '3-bedroom', '4-bedroom', 'Penthouse',
+  'Duplex', 'Commercial', 'Office', 'Parking', 'Storage',
 ];
 
-// Click order when cycling a stage badge.
-export const STATUSES = ['pending', 'in_progress', 'done', 'blocked'];
-
-export const STATUS_LABELS = {
-  pending:     'Pending',
+// Must match the flats.status check constraint in schema.sql.
+export const UNIT_STATUSES = {
+  not_started: 'Not started',
   in_progress: 'In progress',
-  done:        'Done',
-  blocked:     'Blocked',
+  finished:    'Finished',
+  handed_over: 'Handed over',
 };
 
 // Trades counted in daily_logs.manpower.

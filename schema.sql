@@ -147,6 +147,47 @@ alter table public.cash_flow
 create index if not exists cash_flow_project_due_idx on public.cash_flow (project_id, due_date);
 
 -- -------------------------------------------------------------
+-- Migration 2026-09-26 (2): units register + project timetable
+-- -------------------------------------------------------------
+-- flats rows are the project's units (apartments, commercial, parking…).
+-- stage_status is kept for old data but no longer used by the app.
+alter table public.flats
+  add column if not exists unit_type text,
+  add column if not exists area_m2   numeric(10,2) check (area_m2 is null or area_m2 >= 0),
+  add column if not exists rooms     smallint check (rooms is null or rooms >= 0),
+  add column if not exists status    text not null default 'not_started',
+  add column if not exists notes     text;
+
+alter table public.flats drop constraint if exists flats_status_check;
+alter table public.flats add constraint flats_status_check
+  check (status in ('not_started', 'in_progress', 'finished', 'handed_over'));
+
+-- Timetable: overall progress = done activities weighted by planned duration.
+create table if not exists public.schedule_tasks (
+  id              uuid primary key default gen_random_uuid(),
+  project_id      uuid not null references public.projects(id) on delete cascade,
+  name            text not null,
+  planned_start   date not null,
+  planned_finish  date not null,
+  done            boolean not null default false,
+  done_at         date,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  check (planned_finish >= planned_start)
+);
+
+create index if not exists schedule_tasks_project_idx on public.schedule_tasks (project_id, planned_start);
+
+drop trigger if exists set_updated_at on public.schedule_tasks;
+create trigger set_updated_at before update on public.schedule_tasks
+  for each row execute function public.set_updated_at();
+
+alter table public.schedule_tasks enable row level security;
+drop policy if exists "authenticated_full_access" on public.schedule_tasks;
+create policy "authenticated_full_access" on public.schedule_tasks
+  for all to authenticated using (true) with check (true);
+
+-- -------------------------------------------------------------
 -- 6. Row Level Security
 -- Full access for any authenticated user; anon gets nothing.
 -- -------------------------------------------------------------

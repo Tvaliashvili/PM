@@ -24,9 +24,9 @@ function todayRange() {
 const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key.replace(/_/g, ' ');
 
 // English label (sent to Gemini) and bilingual label (printed).
-const flatLabel = (flat) => (flat ? `Block ${flat.block} · Flat ${flat.flat_number}` : 'Site-wide');
+const flatLabel = (flat) => (flat ? `Block ${flat.block} · Unit ${flat.flat_number}` : 'Site-wide');
 const flatLabelBi = (flat) => (flat
-  ? `${ka('Block')}/Block ${flat.block} · ${ka('Flat')}/Flat ${flat.flat_number}`
+  ? `${ka('Block')}/Block ${flat.block} · ${ka('Unit')}/Unit ${flat.flat_number}`
   : bi('Site-wide'));
 
 function mergeManpower(logs) {
@@ -108,7 +108,7 @@ function fillList(list, items) {
   }
 }
 
-function buildReport({ project, day, logs, delays, manpower, summary, userEmail }) {
+function buildReport({ project, day, logs, delays, manpower, summary, progress, userEmail }) {
   const page = document.getElementById('daily-report-template').content.firstElementChild.cloneNode(true);
   const set = (field, value) => { page.querySelector(`[data-field="${field}"]`).textContent = value; };
 
@@ -126,6 +126,9 @@ function buildReport({ project, day, logs, delays, manpower, summary, userEmail 
   set('delay-count', delays.length);
   set('delay-hours', hoursLost.toLocaleString('en-GB'));
   set('total-flats', project.total_flats ?? '—');
+  set('progress', progress?.count
+    ? `${progress.actualPct}% (${ka('plan')}/plan ${progress.plannedPct}%)`
+    : bi('No timetable'));
 
   // Executive summary — Georgian and English columns
   fillList(page.querySelector('[data-list="summary-ka"]'), summary.ka);
@@ -171,14 +174,20 @@ function buildReport({ project, day, logs, delays, manpower, summary, userEmail 
  * Builds today's bilingual report for `project` and downloads Daily_Report_[YYYY-MM-DD].pdf.
  * Returns { aiNote } — set when the PDF was saved without an AI summary.
  */
-export async function generateDailyReport({ db, project, userEmail }) {
+export async function generateDailyReport({ db, project, progress, userEmail }) {
   const day = todayRange();
   const { logs, delays } = await fetchTodayData(db, project.id, day);
   const manpower = mergeManpower(logs);
 
   const summary = await fetchSummary(db, {
     date: day.date,
-    project: { name: project.name, location: project.location, total_flats: project.total_flats },
+    project: { name: project.name, location: project.location, total_units: project.total_flats },
+    // Timetable position (progress is weighted by planned duration).
+    schedule: progress?.count ? {
+      progress_pct: progress.actualPct,
+      planned_by_today_pct: progress.plannedPct,
+      overdue_activities: progress.overdue.map((t) => ({ activity: t.name, days_late: t.daysLate })),
+    } : null,
     daily_logs: logs.map((l) => ({ weather: l.weather, notes: l.notes })),
     manpower: Object.fromEntries(manpower.map(([trade, n]) => [tradeLabel(trade), n])),
     delays: delays.map((d) => ({
@@ -189,7 +198,7 @@ export async function generateDailyReport({ db, project, userEmail }) {
     })),
   });
 
-  const page = buildReport({ project, day, logs, delays, manpower, summary, userEmail });
+  const page = buildReport({ project, day, logs, delays, manpower, summary, progress, userEmail });
   const root = document.getElementById('pdf-export-root');
   root.replaceChildren(page);
 

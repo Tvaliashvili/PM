@@ -49,7 +49,9 @@ export const KA = {
     'შეჯამება შექმნილია Gemini-ს მიერ ამ ანგარიშის ჩანაწერებისა და შეფერხებების საფუძველზე.',
   'Generated': 'შექმნილია',
   'Block': 'ბლოკი',
-  'Flat': 'ბინა',
+  'Unit': 'ერთეული',
+  'No timetable': 'გრაფიკი არ არის',
+  'plan': 'გეგმა',
 };
 
 /** Georgian for an English term, or the English itself when there's no entry. */

@@ -3,11 +3,12 @@
 // =============================================================
 import {
   SUPABASE_URL, SUPABASE_KEY, CURRENCY_CODE,
-  STAGES, STATUSES, STATUS_LABELS,
+  UNIT_TYPES, UNIT_STATUSES,
   MANPOWER_TRADES, WEATHER_OPTIONS, DELAY_CAUSES,
   BOQ_UNITS, BOQ_CATEGORIES, BOQ_STATUSES,
 } from './config.js';
 import { generateDailyReport } from './pdfReport.js';
+import { scheduleProgress, taskState, durationDays } from './schedule.js';
 
 // ---------- Supabase ----------
 const isConfigured = !SUPABASE_URL.includes('YOUR-') && !SUPABASE_KEY.includes('YOUR-');
@@ -18,9 +19,10 @@ const state = {
   projects: [],
   projectsLoaded: false,
   projectId: null,
-  flats: [],
+  flats: [],    // units of the open project
+  tasks: [],    // timetable activities of the open project
+  progress: null, // scheduleProgress() of the open project
   boq: [],
-  workPct: 0,
 };
 
 // ---------- Helpers ----------
@@ -78,7 +80,8 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-add-flats', '#btn-add-boq', '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
+  ['#btn-new-log', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-add-unit', '#btn-add-units-bulk', '#btn-add-task', '#btn-add-boq',
+    '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
 // =============================================================
@@ -90,7 +93,7 @@ function setSidebar(open) {
 }
 
 // Two views: the full-page project list (#projects, default) and the project workspace,
-// whose sections (#dashboard, #flat-matrix, …) all need a selected project.
+// whose sections (#dashboard, #timetable, #units, …) all need a selected project.
 function route() {
   const sections = $$('[data-section]');
   const requested = location.hash.slice(1);
@@ -220,7 +223,9 @@ async function selectProject(projectId) {
   }
 
   storage.set('cpm.projectId', project.id);
-  await Promise.all([renderFlatMatrix(project.id), refreshDashboard(project.id), loadBoq(project.id)]);
+  await Promise.all([
+    loadUnits(project.id), loadSchedule(project.id), refreshDashboard(project.id), loadBoq(project.id),
+  ]);
 }
 
 const currentProject = () => state.projects.find((p) => p.id === state.projectId);
@@ -253,37 +258,30 @@ async function renderProjectList() {
     el.innerHTML = `
       <div class="space-y-2 py-6">
         <p class="text-base font-medium text-white">No projects yet</p>
-        <p>Click <span class="text-brand-400">New Project</span> above to create your first one — its flats are generated for you.</p>
+        <p>Click <span class="text-brand-400">New Project</span> above to create your first one.</p>
       </div>`;
     return;
   }
 
   const request = ++projectListRequest;
-  const [flats, delays] = await Promise.all([
-    db.from('flats').select('project_id, stage_status'),
+  const [tasks, delays] = await Promise.all([
+    db.from('schedule_tasks').select('project_id, planned_start, planned_finish, done'),
     db.from('delays').select('project_id'),
   ]);
   if (request !== projectListRequest) return; // a newer render started
-  if (flats.error || delays.error) toast('Could not load project stats.', 'error');
+  if (tasks.error || delays.error) toast('Could not load project stats.', 'error');
 
-  const stats = new Map(state.projects.map((p) => [p.id, { flats: 0, done: 0, complete: 0, delays: 0 }]));
-  for (const flat of flats.data ?? []) {
-    const s = stats.get(flat.project_id);
-    if (!s) continue;
-    const done = STAGES.filter((st) => statusOf(flat, st.key) === 'done').length;
-    s.flats += 1;
-    s.done += done;
-    if (done === STAGES.length) s.complete += 1;
-  }
-  for (const delay of delays.data ?? []) {
-    const s = stats.get(delay.project_id);
-    if (s) s.delays += 1;
-  }
+  const tasksByProject = new Map(state.projects.map((p) => [p.id, []]));
+  for (const t of tasks.data ?? []) tasksByProject.get(t.project_id)?.push(t);
+  const delayCount = new Map();
+  for (const d of delays.data ?? []) delayCount.set(d.project_id, (delayCount.get(d.project_id) ?? 0) + 1);
 
+  const today = todayISO();
   el.className = 'projects-grid';
   el.innerHTML = state.projects.map((p) => {
-    const s = stats.get(p.id);
-    const pct = s.flats ? Math.round((s.done / (s.flats * STAGES.length)) * 100) : 0;
+    const prog = scheduleProgress(tasksByProject.get(p.id) ?? [], today);
+    const s = { units: p.total_flats ?? 0, overdue: prog.overdue.length, delays: delayCount.get(p.id) ?? 0 };
+    const pct = prog.actualPct;
     return `
       <article class="project-card${p.id === state.projectId ? ' is-active' : ''}">
         <button type="button" class="project-card-open" data-open-project="${esc(p.id)}">
@@ -299,8 +297,8 @@ async function renderProjectList() {
             <span class="text-xs text-slate-400 tabular-nums">${pct}%</span>
           </div>
           <dl class="project-stats">
-            <div><dt>Flats</dt><dd>${s.flats}</dd></div>
-            <div><dt>Complete</dt><dd>${s.complete}</dd></div>
+            <div><dt>Units</dt><dd>${s.units}</dd></div>
+            <div><dt>Overdue</dt><dd class="${s.overdue ? 'is-alert' : ''}">${s.overdue}</dd></div>
             <div><dt>Delays</dt><dd class="${s.delays ? 'is-alert' : ''}">${s.delays}</dd></div>
           </dl>
         </button>
@@ -365,132 +363,205 @@ async function saveProject(e) {
   }
 
   closeModal('modal-project');
-  toast('Project created. Add its flats from the Flat Matrix.', 'success');
+  toast('Project created. Add its timetable, units and dates next.', 'success');
 
-  // Open the new project straight on the Flat Matrix so flats can be added.
+  // Open the new project on its Timetable, which drives progress.
   storage.set('cpm.projectId', project.id);
   await loadProjects();
-  goTo('flat-matrix');
+  goTo('timetable');
 }
 
 // =============================================================
-// Flat Matrix
+// Units register (stored in the flats table)
 // =============================================================
-const statusOf = (flat, stageKey) => {
-  const value = flat.stage_status?.[stageKey];
-  return STATUSES.includes(value) ? value : 'pending';
+const UNIT_STATUS_CHIP = {
+  not_started: 'status-pending',
+  in_progress: 'status-in_progress',
+  finished:    'status-done',
+  handed_over: 'status-handed',
 };
+const areaFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+const numOrNull = (v) => (v === '' || v == null ? null : Number(v));
 
-async function renderFlatMatrix(projectId) {
-  const container = $('#flat-matrix-container');
-  container.className = 'panel empty-state';
-  container.textContent = 'Loading flats…';
-
+async function loadUnits(projectId) {
   const { data, error } = await db
     .from('flats')
-    .select('id, block, floor, flat_number, stage_status')
+    .select('id, block, floor, flat_number, unit_type, area_m2, rooms, status, notes')
     .eq('project_id', projectId)
     .order('block')
-    .order('floor', { ascending: false })
+    .order('floor')
     .order('flat_number');
 
   if (projectId !== state.projectId) return; // project switched mid-request
   if (error) {
-    container.textContent = `Could not load flats: ${error.message}`;
+    $('#units-table').innerHTML = `<div class="empty-state">Could not load units: ${esc(error.message)}</div>`;
     return;
   }
-
   state.flats = data;
-  updateProgressKpi();
+  renderUnits();
+}
 
-  if (!data.length) {
-    container.textContent = 'No flats yet — click Add Flats to create your first block.';
+function renderUnits() {
+  const units = state.flats;
+  const count = (status) => units.filter((u) => (u.status ?? 'not_started') === status).length;
+  const withArea = units.filter((u) => u.area_m2 != null);
+  const area = sumOf(withArea, 'area_m2');
+
+  const types = new Map();
+  for (const u of units) if (u.unit_type) types.set(u.unit_type, (types.get(u.unit_type) ?? 0) + 1);
+  const typeSummary = [...types].sort((a, b) => b[1] - a[1]).slice(0, 3)
+    .map(([type, n]) => `${n} × ${type}`).join(' · ') || 'No types set';
+
+  $('#units-summary').innerHTML = [
+    statTile('Units', String(units.length), typeSummary),
+    statTile('Total area', `${areaFormat.format(area)} m²`,
+      withArea.length ? `Average ${areaFormat.format(area / withArea.length)} m²` : 'No areas entered'),
+    statTile('Finished', String(count('finished') + count('handed_over')), `${count('in_progress')} in progress`),
+    statTile('Handed over', String(count('handed_over')), `${count('not_started')} not started`),
+  ].join('');
+
+  if (!units.length) {
+    $('#units-table').innerHTML = '<div class="empty-state">No units yet — use Add Unit, or Add in Bulk to create a whole block at once.</div>';
     return;
   }
 
-  // block -> floor -> flats (Map keeps the query's sort order)
-  const blocks = new Map();
-  for (const flat of data) {
-    if (!blocks.has(flat.block)) blocks.set(flat.block, new Map());
-    const floors = blocks.get(flat.block);
-    if (!floors.has(flat.floor)) floors.set(flat.floor, []);
-    floors.get(flat.floor).push(flat);
+  const rows = units.map((u) => `
+    <tr>
+      <td class="font-medium text-white whitespace-nowrap">${esc(u.flat_number)}</td>
+      <td>${esc(u.block)}</td>
+      <td class="whitespace-nowrap">${esc(floorLabel(u.floor))}</td>
+      <td>${u.unit_type ? esc(u.unit_type) : '<span class="text-slate-500">—</span>'}</td>
+      <td class="num">${u.area_m2 != null ? areaFormat.format(u.area_m2) : '—'}</td>
+      <td class="num">${u.rooms ?? '—'}</td>
+      <td><span class="status-chip ${UNIT_STATUS_CHIP[u.status] ?? 'status-pending'}">${esc(UNIT_STATUSES[u.status] ?? u.status)}</span></td>
+      <td class="max-w-[16rem] truncate text-slate-400" title="${esc(u.notes ?? '')}">${esc(u.notes ?? '')}</td>
+      <td class="text-right whitespace-nowrap">
+        <button type="button" class="table-action" data-unit-edit="${esc(u.id)}">Edit</button>
+        <button type="button" class="table-action is-danger" data-unit-delete="${esc(u.id)}">Delete</button>
+      </td>
+    </tr>`).join('');
+
+  $('#units-table').innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Unit</th><th>Block</th><th>Floor</th><th>Type</th><th class="num">Area m²</th>
+          <th class="num">Rooms</th><th>Status</th><th>Notes</th><th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr>
+          <td colspan="4">${units.length} units</td>
+          <td class="num">${areaFormat.format(area)}</td>
+          <td class="num">${sumOf(units, 'rooms') || '—'}</td>
+          <td colspan="3"></td>
+        </tr>
+      </tfoot>
+    </table>`;
+}
+
+function openUnitModal(unit) {
+  if (!requireProject()) return;
+  const form = $('#form-unit');
+  const f = form.elements;
+  form.reset();
+  showFormError(form, '');
+  $('#unit-title').textContent = unit ? `Edit Unit ${unit.flat_number}` : 'Add Unit';
+
+  f.id.value = unit?.id ?? '';
+  if (unit) {
+    f.block.value = unit.block;
+    f.floor.value = unit.floor;
+    f.flat_number.value = unit.flat_number;
+    f.unit_type.value = unit.unit_type ?? '';
+    f.area_m2.value = unit.area_m2 ?? '';
+    f.rooms.value = unit.rooms ?? '';
+    f.status.value = unit.status ?? 'not_started';
+    f.notes.value = unit.notes ?? '';
+  } else {
+    const last = state.flats.at(-1); // continue where the list ends
+    f.block.value = last?.block ?? 'A';
+    f.floor.value = last?.floor ?? 1;
+    f.status.value = 'not_started';
+  }
+  openModal('modal-unit');
+}
+
+async function saveUnit(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn  = $('[type=submit]', form);
+  const fd   = new FormData(form);
+  const projectId = state.projectId;
+
+  const id = fd.get('id');
+  const row = {
+    block:       fd.get('block').trim(),
+    floor:       parseInt(fd.get('floor'), 10),
+    flat_number: fd.get('flat_number').trim(),
+    unit_type:   fd.get('unit_type') || null,
+    area_m2:     numOrNull(fd.get('area_m2')),
+    rooms:       numOrNull(fd.get('rooms')),
+    status:      fd.get('status'),
+    notes:       fd.get('notes').trim() || null,
+  };
+
+  showFormError(form, '');
+  setBusy(btn, true);
+  const { error } = id
+    ? await db.from('flats').update(row).eq('id', id)
+    : await db.from('flats').insert({ ...row, project_id: projectId, stage_status: {} });
+  setBusy(btn, false);
+
+  if (error) {
+    showFormError(form, error.code === '23505'
+      ? `Unit ${row.flat_number} already exists in block ${row.block}.`
+      : error.message);
+    return;
   }
 
-  container.className = 'panel space-y-6';
-  container.innerHTML = matrixLegend() + [...blocks].map(([block, floors]) => `
-    <div class="matrix-block">
-      <div class="matrix-block-header">
-        <h3 class="matrix-block-title">Block ${esc(block)}</h3>
-        <button type="button" class="matrix-block-delete" data-delete-block="${esc(block)}"
-                title="Delete block ${esc(block)}">Delete block</button>
-      </div>
-      ${[...floors].map(([floor, flats]) => `
-        <div class="matrix-floor">
-          <div class="matrix-floor-label">${esc(floorLabel(floor))}</div>
-          <div class="matrix-floor-flats">${flats.map(flatCard).join('')}</div>
-        </div>
-      `).join('')}
-    </div>
-  `).join('');
+  closeModal('modal-unit');
+  toast(id ? 'Unit updated.' : 'Unit added.', 'success');
+  await syncFlatCount(projectId);
+  if (projectId === state.projectId) loadUnits(projectId);
 }
 
-function matrixLegend() {
-  const statuses = STATUSES.map((s) => `<span class="status-chip status-${s}">${STATUS_LABELS[s]}</span>`).join('');
-  const stages = STAGES.map((s) => `<span><b class="text-slate-300">${s.short}</b> ${esc(s.label)}</span>`).join('');
-  return `
-    <div class="matrix-legend">
-      <div class="flex flex-wrap items-center gap-2">
-        ${statuses}
-        <span class="text-xs text-slate-500 ml-1">Click a badge to advance its status.</span>
-      </div>
-      <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">${stages}</div>
-    </div>`;
+async function onUnitsTableClick(e) {
+  const edit = e.target.closest('[data-unit-edit]');
+  if (edit) {
+    openUnitModal(state.flats.find((u) => u.id === edit.dataset.unitEdit));
+    return;
+  }
+
+  const del = e.target.closest('[data-unit-delete]');
+  if (!del) return;
+  const unit = state.flats.find((u) => u.id === del.dataset.unitDelete);
+  if (!unit || !confirm(`Delete unit ${unit.flat_number} (block ${unit.block})?\n\nDelays linked to it are kept as site-wide.`)) return;
+
+  const projectId = state.projectId;
+  const { error } = await db.from('flats').delete().eq('id', unit.id);
+  if (error) {
+    toast(`Could not delete unit: ${error.message}`, 'error');
+    return;
+  }
+  toast(`Deleted unit ${unit.flat_number}.`, 'success');
+  await syncFlatCount(projectId);
+  if (projectId === state.projectId) loadUnits(projectId);
 }
 
-function flatCard(flat) {
-  const done = STAGES.filter((st) => statusOf(flat, st.key) === 'done').length;
-  const pct = Math.round((done / STAGES.length) * 100);
-  const blocked = STAGES.some((st) => statusOf(flat, st.key) === 'blocked');
-
-  const badges = STAGES.map((st) => {
-    const status = statusOf(flat, st.key);
-    return `
-      <button type="button" class="status-chip status-${status}" data-stage="${st.key}"
-              title="${esc(st.label)}: ${STATUS_LABELS[status]} — click to change"
-              aria-label="${esc(st.label)}: ${STATUS_LABELS[status]}">${st.short}</button>`;
-  }).join('');
-
-  return `
-    <div class="flat-card${blocked ? ' is-blocked' : ''}" data-flat-id="${esc(flat.id)}">
-      <div class="flex items-center justify-between mb-2">
-        <span class="font-semibold text-white text-sm">${esc(flat.flat_number)}</span>
-        <span class="text-xs text-slate-400 tabular-nums">${pct}%</span>
-      </div>
-      <div class="h-1 rounded-full bg-ink-700 overflow-hidden mb-3">
-        <div class="h-full bg-emerald-500" style="width:${pct}%"></div>
-      </div>
-      <div class="flex flex-wrap gap-1">${badges}</div>
-    </div>`;
-}
-
-function redrawFlat(flat, focusStage) {
-  const card = $(`[data-flat-id="${flat.id}"]`);
-  if (!card) return;
-  card.outerHTML = flatCard(flat);
-  if (focusStage) $(`[data-flat-id="${flat.id}"] [data-stage="${focusStage}"]`)?.focus();
-}
-
-// ---------- Add / delete flats ----------
+// ---------- Add units in bulk ----------
 const clampInt = (value, min, max) => Math.min(max, Math.max(min, parseInt(value, 10) || 0));
 
-// Flat numbers: floor + 2-digit position, e.g. 101, 102 … ground floor G01, G02.
+// Unit numbers: floor + 2-digit position, e.g. 101, 102 … ground floor G01, G02.
 function planFlats(form) {
   const block = form.elements.block.value.trim();
   const a = clampInt(form.elements.floor_from.value, 0, 80);
   const b = clampInt(form.elements.floor_to.value, 0, 80);
   const perFloor = clampInt(form.elements.flats_per_floor.value, 1, 30);
   const [from, to] = a <= b ? [a, b] : [b, a];
+  const unitType = form.elements.unit_type?.value || null;
+  const area = numOrNull(form.elements.area_m2?.value);
 
   const flats = [];
   if (!block) return { block, flats };
@@ -500,6 +571,9 @@ function planFlats(form) {
         block,
         floor,
         flat_number: `${floor === 0 ? 'G' : floor}${String(i).padStart(2, '0')}`,
+        unit_type: unitType,
+        area_m2: area,
+        status: 'not_started',
         stage_status: {},
       });
     }
@@ -510,11 +584,11 @@ function planFlats(form) {
 function updateFlatsPreview() {
   const { block, flats } = planFlats($('#form-flats'));
   $('#flats-preview').textContent = flats.length
-    ? `Adds up to ${flats.length} flats to block ${block}: ${flats[0].flat_number} to ${flats[flats.length - 1].flat_number}.`
+    ? `Adds up to ${flats.length} units to block ${block}: ${flats[0].flat_number} to ${flats[flats.length - 1].flat_number}.`
     : 'Enter a block name.';
 }
 
-function openFlatsModal() {
+function openBulkUnitsModal() {
   if (!requireProject()) return;
   const form = $('#form-flats');
   form.reset();
@@ -553,7 +627,7 @@ async function saveFlats(e) {
 
   showFormError(form, '');
   setBusy(btn, true, 'Adding…');
-  // Existing flats (same block + number) are skipped, so a block can be extended.
+  // Existing units (same block + number) are skipped, so a block can be extended.
   const { data, error } = await db
     .from('flats')
     .upsert(flats.map((f) => ({ ...f, project_id: projectId })), {
@@ -571,76 +645,228 @@ async function saveFlats(e) {
   const added = data.length;
   const skipped = flats.length - added;
   closeModal('modal-flats');
-  toast(`Added ${added} flats to block ${block}${skipped ? ` (${skipped} already existed)` : ''}.`, 'success');
+  toast(`Added ${added} units to block ${block}${skipped ? ` (${skipped} already existed)` : ''}.`, 'success');
 
   await syncFlatCount(projectId);
-  if (projectId === state.projectId) renderFlatMatrix(projectId);
+  if (projectId === state.projectId) loadUnits(projectId);
 }
 
-async function deleteBlock(block) {
-  const projectId = state.projectId;
-  const count = state.flats.filter((f) => f.block === block).length;
-  if (!confirm(`Delete block ${block} and its ${count} flats?\n\nTheir stage progress is lost. Delays linked to these flats are kept as site-wide.`)) return;
+// =============================================================
+// Timetable (schedule_tasks) — drives overall progress
+// =============================================================
+const addDays = (iso, n) => {
+  const d = new Date(`${iso}T00:00`);
+  d.setDate(d.getDate() + n);
+  return d.toLocaleDateString('en-CA');
+};
 
-  const { error } = await db.from('flats').delete().eq('project_id', projectId).eq('block', block);
+async function loadSchedule(projectId) {
+  const { data, error } = await db
+    .from('schedule_tasks')
+    .select('id, name, planned_start, planned_finish, done, done_at')
+    .eq('project_id', projectId)
+    .order('planned_start')
+    .order('planned_finish');
+
+  if (projectId !== state.projectId) return;
   if (error) {
-    toast(`Could not delete block: ${error.message}`, 'error');
+    $('#schedule-table').innerHTML = `<div class="empty-state">Could not load timetable: ${esc(error.message)}</div>`;
     return;
   }
-
-  toast(`Deleted block ${block}.`, 'success');
-  await syncFlatCount(projectId);
-  if (projectId === state.projectId) renderFlatMatrix(projectId);
+  state.tasks = data;
+  renderSchedule();
 }
 
-async function onMatrixClick(e) {
-  const blockBtn = e.target.closest('[data-delete-block]');
-  if (blockBtn) {
-    deleteBlock(blockBtn.dataset.deleteBlock);
-    return;
+function taskStateChip(task, s) {
+  if (s.key === 'done') {
+    const when = task.done_at ? ` ${formatDate(task.done_at)}` : '';
+    const late = s.daysLate ? ` · ${s.daysLate} d late` : '';
+    return `<span class="status-chip status-done">✓ Done${esc(when)}${late}</span>`;
   }
+  if (s.key === 'overdue') return `<span class="status-chip status-blocked">! Overdue · ${s.daysLate} d</span>`;
+  if (s.key === 'active') return '<span class="status-chip status-in_progress">In progress</span>';
+  return '<span class="status-chip status-pending">Upcoming</span>';
+}
 
-  const chip = e.target.closest('[data-stage]');
-  if (!chip) return;
-
-  const flat = state.flats.find((f) => f.id === chip.closest('[data-flat-id]').dataset.flatId);
-  if (!flat) return;
-
-  const key = chip.dataset.stage;
-  const prev = flat.stage_status;
-  const next = STATUSES[(STATUSES.indexOf(statusOf(flat, key)) + 1) % STATUSES.length];
-
-  // Optimistic update, rolled back on failure.
-  flat.stage_status = { ...prev, [key]: next };
-  redrawFlat(flat, key);
+function renderSchedule() {
+  const today = todayISO();
+  const p = scheduleProgress(state.tasks, today);
+  state.progress = p;
   updateProgressKpi();
 
-  const { error } = await db.from('flats').update({ stage_status: flat.stage_status }).eq('id', flat.id);
-  if (error) {
-    flat.stage_status = prev;
-    redrawFlat(flat, key);
-    updateProgressKpi();
-    toast(`Could not update flat ${flat.flat_number}: ${error.message}`, 'error');
+  const gap = p.actualPct - p.plannedPct;
+  $('#schedule-summary').innerHTML = [
+    statTile('Progress', `${p.actualPct}%`, `${p.doneCount} of ${p.count} activities done`),
+    statTile('Planned by today', `${p.plannedPct}%`,
+      !p.count ? '—' : gap >= 0 ? `Ahead by ${gap} pts` : `Behind by ${-gap} pts`, gap < -5 ? 'negative' : ''),
+    statTile('Overdue', String(p.overdue.length),
+      p.overdue.length ? `Longest: ${p.overdue[0].daysLate} days late` : 'Nothing overdue', p.overdue.length ? 'negative' : ''),
+    statTile('Remaining', `${100 - p.actualPct}%`, `${p.count - p.doneCount} activities left`),
+  ].join('');
+
+  if (!state.tasks.length) {
+    $('#schedule-table').innerHTML = '<div class="empty-state">No activities yet — click Add Activity to build the timetable. Overall progress is calculated from it.</div>';
+    return;
   }
+
+  const rows = state.tasks.map((t) => {
+    const s = taskState(t, today);
+    return `
+      <tr class="${s.key === 'overdue' ? 'is-overdue' : ''}${t.done ? ' is-done' : ''}">
+        <td class="w-8">
+          <input type="checkbox" class="task-check" data-task-toggle="${esc(t.id)}" ${t.done ? 'checked' : ''}
+                 aria-label="Mark ${esc(t.name)} as done">
+        </td>
+        <td class="task-name">${esc(t.name)}</td>
+        <td class="whitespace-nowrap">${esc(formatDate(t.planned_start))}</td>
+        <td class="whitespace-nowrap">${esc(formatDate(t.planned_finish))}</td>
+        <td class="num">${durationDays(t)} d</td>
+        <td class="num">${p.weightPct(t).toFixed(1)}%</td>
+        <td class="whitespace-nowrap">${taskStateChip(t, s)}</td>
+        <td class="text-right whitespace-nowrap">
+          <button type="button" class="table-action" data-task-edit="${esc(t.id)}">Edit</button>
+          <button type="button" class="table-action is-danger" data-task-delete="${esc(t.id)}">Delete</button>
+        </td>
+      </tr>`;
+  }).join('');
+
+  $('#schedule-table').innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th><span class="sr-only">Done</span></th><th>Activity</th><th>Start</th><th>Finish</th>
+          <th class="num">Days</th><th class="num">Weight</th><th>Status</th><th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+async function toggleTask(taskId, done) {
+  const task = state.tasks.find((t) => t.id === taskId);
+  if (!task) return;
+  const prev = { done: task.done, done_at: task.done_at };
+
+  // Optimistic update, rolled back on failure.
+  task.done = done;
+  task.done_at = done ? todayISO() : null;
+  renderSchedule();
+
+  const { error } = await db
+    .from('schedule_tasks')
+    .update({ done: task.done, done_at: task.done_at })
+    .eq('id', task.id);
+  if (error) {
+    Object.assign(task, prev);
+    renderSchedule();
+    toast(`Could not update "${task.name}": ${error.message}`, 'error');
+  }
+}
+
+function updateTaskDuration() {
+  const f = $('#form-task').elements;
+  const start = f.planned_start.value;
+  const finish = f.planned_finish.value;
+  $('#task-duration').textContent = start && finish
+    ? (finish < start ? 'Finish is before start.' : `${durationDays({ planned_start: start, planned_finish: finish })} days`)
+    : '';
+}
+
+function openTaskModal(task) {
+  if (!requireProject()) return;
+  const form = $('#form-task');
+  const f = form.elements;
+  form.reset();
+  showFormError(form, '');
+  $('#task-title').textContent = task ? 'Edit Activity' : 'Add Activity';
+
+  f.id.value = task?.id ?? '';
+  if (task) {
+    f.name.value = task.name;
+    f.planned_start.value = task.planned_start;
+    f.planned_finish.value = task.planned_finish;
+  } else {
+    // Start the day after the last activity, else at the project start, else today.
+    const last = state.tasks.reduce((max, t) => (t.planned_finish > max ? t.planned_finish : max), '');
+    const start = last ? addDays(last, 1) : (currentProject()?.start_date ?? todayISO());
+    f.planned_start.value = start;
+    f.planned_finish.value = addDays(start, 6);
+  }
+  updateTaskDuration();
+  openModal('modal-task');
+}
+
+async function saveTask(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn  = $('[type=submit]', form);
+  const fd   = new FormData(form);
+
+  const id = fd.get('id');
+  const row = {
+    name:           fd.get('name').trim(),
+    planned_start:  fd.get('planned_start'),
+    planned_finish: fd.get('planned_finish'),
+  };
+  if (row.planned_finish < row.planned_start) {
+    showFormError(form, 'Planned finish must be on or after the planned start.');
+    return;
+  }
+
+  showFormError(form, '');
+  setBusy(btn, true);
+  const { error } = id
+    ? await db.from('schedule_tasks').update(row).eq('id', id)
+    : await db.from('schedule_tasks').insert({ ...row, project_id: state.projectId });
+  setBusy(btn, false);
+
+  if (error) {
+    showFormError(form, error.message);
+    return;
+  }
+
+  closeModal('modal-task');
+  toast(id ? 'Activity updated.' : 'Activity added.', 'success');
+  loadSchedule(state.projectId);
+}
+
+function onScheduleChange(e) {
+  const toggle = e.target.closest('[data-task-toggle]');
+  if (toggle) toggleTask(toggle.dataset.taskToggle, toggle.checked);
+}
+
+async function onScheduleClick(e) {
+  const edit = e.target.closest('[data-task-edit]');
+  if (edit) {
+    openTaskModal(state.tasks.find((t) => t.id === edit.dataset.taskEdit));
+    return;
+  }
+
+  const del = e.target.closest('[data-task-delete]');
+  if (!del) return;
+  const task = state.tasks.find((t) => t.id === del.dataset.taskDelete);
+  if (!task || !confirm(`Delete activity "${task.name}"?`)) return;
+
+  const { error } = await db.from('schedule_tasks').delete().eq('id', task.id);
+  if (error) {
+    toast(`Could not delete activity: ${error.message}`, 'error');
+    return;
+  }
+  toast('Activity deleted.', 'success');
+  loadSchedule(state.projectId);
 }
 
 // =============================================================
 // Dashboard KPIs + recent activity
 // =============================================================
 function updateProgressKpi() {
-  const flats = state.flats;
-  const totalStages = flats.length * STAGES.length;
-  const doneStages = flats.reduce(
-    (sum, f) => sum + STAGES.filter((st) => statusOf(f, st.key) === 'done').length, 0,
-  );
-  const complete = flats.filter((f) => STAGES.every((st) => statusOf(f, st.key) === 'done')).length;
-  const pct = totalStages ? Math.round((doneStages / totalStages) * 100) : 0;
-
-  $('#kpi-progress').textContent = `${pct}%`;
-  $('#kpi-progress-bar').style.width = `${pct}%`;
-  $('#kpi-progress-meta').textContent = `${complete} of ${flats.length} flats complete`;
-
-  state.workPct = pct;
+  const p = state.progress;
+  if (!p) return;
+  $('#kpi-progress').textContent = `${p.actualPct}%`;
+  $('#kpi-progress-bar').style.width = `${p.actualPct}%`;
+  $('#kpi-progress-meta').textContent = p.count
+    ? `Planned ${p.plannedPct}% by today · ${p.overdue.length} overdue`
+    : 'Add timetable activities to track progress';
   renderTimeline();
 }
 
@@ -720,7 +946,7 @@ function renderRecentDelays(delays) {
   }
   el.className = 'divide-y divide-ink-700';
   el.innerHTML = delays.map((d) => {
-    const where = d.flats ? `Block ${d.flats.block} · Flat ${d.flats.flat_number}` : 'Site-wide';
+    const where = d.flats ? `Block ${d.flats.block} · Unit ${d.flats.flat_number}` : 'Site-wide';
     return `
       <div class="py-2.5 flex items-start justify-between gap-3 text-sm">
         <div class="min-w-0">
@@ -752,51 +978,63 @@ function timelineBar(label, pct, colorClass) {
     </div>`;
 }
 
-// Compares time elapsed against work complete (from the flat matrix).
+// Project dates plus the timetable: planned-by-today vs actually done, and what's overdue.
 function renderTimeline() {
   const el = $('#timeline-body');
   const project = currentProject();
   if (!project) return;
 
+  const p = state.progress ?? scheduleProgress([], todayISO());
   const start = parseDate(project.start_date);
   const end = parseDate(project.end_date);
-  if (!start || !end) {
-    el.innerHTML = 'No start or completion date yet. Click <span class="text-slate-300">Edit project</span> '
-      + 'to add them and track time against progress.';
-    return;
-  }
-
   const today = parseDate(todayISO());
-  const total = Math.max(1, daysBetween(start, end));
-  const elapsed = Math.min(total, Math.max(0, daysBetween(start, today)));
-  const timePct = Math.round((elapsed / total) * 100);
-  const workPct = state.workPct;
-  const gap = workPct - timePct;
+  const bars = [];
+  let dates = '<p class="text-slate-500">No start or completion date — add them with Edit project.</p>';
+  let when = '';
 
-  let when;
-  if (today < start) when = `Starts in ${daysBetween(today, start)} days`;
-  else if (today > end) when = `${daysBetween(end, today)} days past planned completion`;
-  else when = `Day ${elapsed} of ${total} · ${daysBetween(today, end)} days remaining`;
-
-  let status;
-  if (today < start) status = { cls: 'status-pending', text: '○ Not started' };
-  else if (gap >= -5) status = { cls: 'status-done', text: '✓ On track' };
-  else if (gap >= -15) status = { cls: 'status-in_progress', text: `! Behind by ${-gap} pts` };
-  else status = { cls: 'status-blocked', text: `! Behind by ${-gap} pts` };
-
-  el.innerHTML = `
-    <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+  if (start && end) {
+    const total = Math.max(1, daysBetween(start, end));
+    const elapsed = Math.min(total, Math.max(0, daysBetween(start, today)));
+    dates = `
       <p class="text-slate-300">
         ${esc(formatDate(project.start_date))} → ${esc(formatDate(project.end_date))}
         <span class="text-slate-500">· ${total} days</span>
-      </p>
-      <span class="status-chip ${status.cls}">${esc(status.text)}</span>
+      </p>`;
+    if (today < start) when = `Starts in ${daysBetween(today, start)} days`;
+    else if (today > end) when = `${daysBetween(end, today)} days past planned completion`;
+    else when = `Day ${elapsed} of ${total} · ${daysBetween(today, end)} days remaining`;
+    bars.push(timelineBar('Time elapsed', Math.round((elapsed / total) * 100), 'bg-slate-500'));
+  }
+
+  const chips = [];
+  if (p.count) {
+    bars.push(timelineBar('Planned by today', p.plannedPct, 'bg-sky-500'));
+    bars.push(timelineBar('Work complete', p.actualPct, 'bg-emerald-500'));
+    const gap = p.actualPct - p.plannedPct;
+    chips.push(gap >= -5
+      ? { cls: 'status-done', text: gap > 5 ? `✓ Ahead by ${gap} pts` : '✓ On track' }
+      : { cls: gap >= -15 ? 'status-in_progress' : 'status-blocked', text: `! Behind by ${-gap} pts` });
+    if (p.overdue.length) chips.push({ cls: 'status-blocked', text: `! ${p.overdue.length} overdue` });
+  }
+
+  const overdueList = p.overdue.length ? `
+    <ul class="mt-3 space-y-1 text-xs">
+      ${p.overdue.slice(0, 3).map((t) => `
+        <li class="text-rose-300">! ${esc(t.name)} — ${t.daysLate} days past planned finish</li>`).join('')}
+      ${p.overdue.length > 3 ? `<li class="text-slate-500">and ${p.overdue.length - 3} more on the Timetable page</li>` : ''}
+    </ul>` : '';
+
+  el.innerHTML = `
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+      ${dates}
+      <div class="flex flex-wrap gap-1">
+        ${chips.map((c) => `<span class="status-chip ${c.cls}">${esc(c.text)}</span>`).join('')}
+      </div>
     </div>
-    <div class="space-y-3">
-      ${timelineBar('Time elapsed', timePct, 'bg-slate-400')}
-      ${timelineBar('Work complete', workPct, 'bg-emerald-500')}
-    </div>
-    <p class="mt-3 text-xs text-slate-500">${esc(when)}</p>`;
+    ${bars.length ? `<div class="space-y-3">${bars.join('')}</div>` : ''}
+    ${p.count ? '' : '<p class="mt-3 text-slate-500">No timetable yet — add activities on the Timetable page to track progress.</p>'}
+    ${overdueList}
+    ${when ? `<p class="mt-3 text-xs text-slate-500">${esc(when)}</p>` : ''}`;
 }
 
 function openEditProjectModal() {
@@ -1151,6 +1389,13 @@ function initModals() {
   $('#boq-status').innerHTML = Object.entries(BOQ_STATUSES)
     .map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join('');
   $('#boq-categories').innerHTML = BOQ_CATEGORIES.map((c) => `<option value="${esc(c)}"></option>`).join('');
+
+  const typeOptions = '<option value="">—</option>'
+    + UNIT_TYPES.map((u) => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
+  $('#unit-type').innerHTML = typeOptions;
+  $('#bulk-unit-type').innerHTML = typeOptions;
+  $('#unit-status').innerHTML = Object.entries(UNIT_STATUSES)
+    .map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join('');
 }
 
 function requireProject() {
@@ -1218,9 +1463,9 @@ function openDelayModal() {
   if (!requireProject()) return;
   const form = $('#form-delay');
   form.reset();
-  $('#delay-flat').innerHTML = '<option value="">Site-wide (no specific flat)</option>'
+  $('#delay-flat').innerHTML = '<option value="">Site-wide (no specific unit)</option>'
     + state.flats.map((f) => `
-      <option value="${esc(f.id)}">Block ${esc(f.block)} · Flat ${esc(f.flat_number)} (${esc(floorLabel(f.floor))})</option>
+      <option value="${esc(f.id)}">Block ${esc(f.block)} · Unit ${esc(f.flat_number)} (${esc(floorLabel(f.floor))})</option>
     `).join('');
   showFormError(form, '');
   openModal('modal-delay');
@@ -1279,7 +1524,9 @@ async function exportDailyReport(e) {
   toast('Building today\'s report — the AI summary can take a few seconds.');
 
   try {
-    const { aiNote } = await generateDailyReport({ db, project, userEmail: state.user?.email });
+    const { aiNote } = await generateDailyReport({
+      db, project, progress: state.progress, userEmail: state.user?.email,
+    });
     if (aiNote) toast(`PDF saved. ${aiNote}`, 'error');
     else toast('Daily report downloaded.', 'success');
   } catch (err) {
@@ -1302,11 +1549,18 @@ $('#btn-new-log').addEventListener('click', openDailyLogModal);
 $('#btn-new-delay').addEventListener('click', openDelayModal);
 $('#form-daily-log').addEventListener('submit', saveDailyLog);
 $('#form-delay').addEventListener('submit', saveDelay);
-$('#flat-matrix-container').addEventListener('click', onMatrixClick);
+$('#units-table').addEventListener('click', onUnitsTableClick);
+$('#btn-add-unit').addEventListener('click', () => openUnitModal(null));
+$('#form-unit').addEventListener('submit', saveUnit);
+$('#btn-add-task').addEventListener('click', () => openTaskModal(null));
+$('#form-task').addEventListener('submit', saveTask);
+$('#form-task').addEventListener('input', updateTaskDuration);
+$('#schedule-table').addEventListener('change', onScheduleChange);
+$('#schedule-table').addEventListener('click', onScheduleClick);
 $('#projects-container').addEventListener('click', onProjectsClick);
 $('#btn-new-project').addEventListener('click', openProjectModal);
 $('#form-project').addEventListener('submit', saveProject);
-$('#btn-add-flats').addEventListener('click', openFlatsModal);
+$('#btn-add-units-bulk').addEventListener('click', openBulkUnitsModal);
 $('#btn-edit-project').addEventListener('click', openEditProjectModal);
 $('#form-edit-project').addEventListener('submit', saveEditProject);
 $('#btn-add-boq').addEventListener('click', () => openBoqModal(null));
