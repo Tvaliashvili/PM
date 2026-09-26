@@ -226,10 +226,12 @@ drop policy if exists "authenticated_full_access" on public.task_payments;
 create policy "authenticated_full_access" on public.task_payments
   for all to authenticated using (true) with check (true);
 
--- Contractors are company-wide (shared by all projects). Timetable items and
--- delays can name one, which drives the per-contractor on-time/late summary.
+-- Contractors belong to one project: each project has its own list, and
+-- deleting a project deletes its contractors. Timetable items and delays can
+-- name one, which drives the per-contractor on-time/late summary.
 create table if not exists public.contractors (
   id              uuid primary key default gen_random_uuid(),
+  project_id      uuid not null references public.projects(id) on delete cascade,
   name            text not null,
   trade           text,
   contact_person  text,
@@ -254,29 +256,26 @@ alter table public.schedule_tasks
 alter table public.delays
   add column if not exists contractor_id uuid references public.contractors(id) on delete set null;
 
+-- Upgrade from the earlier shared-list design (company list + project_contractors roster):
+-- move each contractor onto the project that used it, drop unused ones and the roster table.
 alter table public.contractors add column if not exists email text;
-
--- Each project's roster: which company contractors work on it. A new project
--- starts empty; deleting a project removes its roster, not the contractors.
-create table if not exists public.project_contractors (
-  id             uuid primary key default gen_random_uuid(),
-  project_id     uuid not null references public.projects(id) on delete cascade,
-  contractor_id  uuid not null references public.contractors(id) on delete cascade,
-  created_at     timestamptz not null default now(),
-  unique (project_id, contractor_id)
-);
-
-alter table public.project_contractors enable row level security;
-drop policy if exists "authenticated_full_access" on public.project_contractors;
-create policy "authenticated_full_access" on public.project_contractors
-  for all to authenticated using (true) with check (true);
-
--- Backfill rosters from contractors already used on a project.
-insert into public.project_contractors (project_id, contractor_id)
-  select project_id, contractor_id from public.schedule_tasks where contractor_id is not null
-  union
-  select project_id, contractor_id from public.delays where contractor_id is not null
-on conflict (project_id, contractor_id) do nothing;
+alter table public.contractors
+  add column if not exists project_id uuid references public.projects(id) on delete cascade;
+do $$
+begin
+  if to_regclass('public.project_contractors') is not null then
+    update public.contractors c set project_id = pc.project_id
+      from public.project_contractors pc
+     where pc.contractor_id = c.id and c.project_id is null;
+    drop table public.project_contractors;
+  end if;
+end;
+$$;
+update public.contractors c set project_id = t.project_id
+  from public.schedule_tasks t where t.contractor_id = c.id and c.project_id is null;
+delete from public.contractors where project_id is null;
+alter table public.contractors alter column project_id set not null;
+create index if not exists contractors_project_idx on public.contractors (project_id);
 
 create index if not exists schedule_tasks_contractor_idx on public.schedule_tasks (contractor_id);
 create index if not exists delays_contractor_idx on public.delays (contractor_id);

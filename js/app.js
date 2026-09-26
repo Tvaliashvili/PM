@@ -24,13 +24,12 @@ const state = {
   projects: [],
   projectsLoaded: false,
   projectId: null,
-  contractors: [],      // company-wide contractor list
   // Open project:
   flats: [],            // units
   tasks: [],            // timetable items (also the BOQ)
   payments: [],         // task_payments
   contractorDelays: [], // delays with contractor_id + hours
-  roster: new Set(),    // contractor ids on this project
+  contractors: [],      // this project's contractors
   progress: null,       // scheduleProgress() result
 };
 
@@ -212,7 +211,6 @@ function showSetupNotice() {
 // Projects
 // =============================================================
 async function loadProjects() {
-  loadContractors(); // company-wide list, used by timetable items and delays
   const { data, error } = await db
     .from('projects')
     .select('id, name, location, total_flats, created_at, start_date, end_date, currency')
@@ -239,7 +237,7 @@ async function selectProject(projectId) {
   state.tasks = [];
   state.payments = [];
   state.contractorDelays = [];
-  state.roster = new Set();
+  state.contractors = [];
   setProjectActionsEnabled(Boolean(state.projectId));
 
   const project = currentProject();
@@ -698,7 +696,7 @@ const paidOn = (taskId) => sumOf(state.payments.filter((p) => p.task_id === task
 
 // Items, payments and contractor-linked delays for one project, then every view built on them.
 async function loadSchedule(projectId) {
-  const [tasks, payments, delays, roster] = await Promise.all([
+  const [tasks, payments, delays, contractors] = await Promise.all([
     db.from('schedule_tasks')
       .select('id, name, planned_start, planned_finish, done, done_at, contractor_id, quantity, unit, rate, budget')
       .eq('project_id', projectId)
@@ -711,13 +709,14 @@ async function loadSchedule(projectId) {
     db.from('delays')
       .select('contractor_id, duration_hours')
       .eq('project_id', projectId),
-    db.from('project_contractors')
-      .select('contractor_id')
-      .eq('project_id', projectId),
+    db.from('contractors')
+      .select('id, name, trade, contact_person, phone, email, notes')
+      .eq('project_id', projectId)
+      .order('name'),
   ]);
 
   if (projectId !== state.projectId) return;
-  const failed = [tasks, payments, delays, roster].find((r) => r.error);
+  const failed = [tasks, payments, delays, contractors].find((r) => r.error);
   if (failed) {
     $('#schedule-table').innerHTML = `<div class="empty-state">Could not load timetable: ${esc(failed.error.message)}</div>`;
     return;
@@ -725,7 +724,7 @@ async function loadSchedule(projectId) {
   state.tasks = tasks.data;
   state.payments = payments.data;
   state.contractorDelays = delays.data;
-  state.roster = new Set(roster.data.map((r) => r.contractor_id));
+  state.contractors = contractors.data;
   renderScheduleViews();
 }
 
@@ -827,11 +826,10 @@ async function toggleTask(taskId, done) {
   }
 }
 
-// Dropdown options: this project's contractors (plus the current pick, if it's no longer on the roster).
+// Dropdown options: this project's contractors.
 function contractorOptions(selectedId) {
-  const list = state.contractors.filter((c) => state.roster.has(c.id) || c.id === selectedId);
   return '<option value="">— None —</option>'
-    + list.map((c) => `
+    + state.contractors.map((c) => `
       <option value="${esc(c.id)}"${c.id === selectedId ? ' selected' : ''}>
         ${esc(c.name)}${c.trade ? ` · ${esc(c.trade)}` : ''}
       </option>`).join('');
@@ -1451,26 +1449,10 @@ async function onPaymentsClick(e) {
 }
 
 // =============================================================
-// Contractors: one company list; each project has its own roster
-// (project_contractors) chosen from it. Performance is per project.
+// Contractors — each project has its own (contractors.project_id).
+// Loaded with the project in loadSchedule(); performance is per project.
 // =============================================================
 const CONTRACTOR_FIELDS = ['name', 'trade', 'contact_person', 'phone', 'email', 'notes'];
-
-async function loadContractors() {
-  const { data, error } = await db
-    .from('contractors')
-    .select(`id, ${CONTRACTOR_FIELDS.join(', ')}`)
-    .order('name');
-  if (error) {
-    toast(`Could not load contractors: ${error.message}`, 'error');
-    return;
-  }
-  state.contractors = data;
-  if (state.projectId) renderScheduleViews();
-}
-
-// Contractors on the open project's roster.
-const projectContractors = () => state.contractors.filter((c) => state.roster.has(c.id));
 
 function contractorRating(s) {
   if (!s || !s.items) return '<span class="text-slate-500">No jobs yet</span>';
@@ -1483,11 +1465,11 @@ function contractorRating(s) {
 function renderContractors() {
   const perf = contractorPerformance(state.tasks, state.contractorDelays, state.payments, todayISO());
   const el = $('#contractors-table');
-  const list = projectContractors().sort((a, b) =>
+  const list = [...state.contractors].sort((a, b) =>
     (perf.get(b.id)?.items ?? 0) - (perf.get(a.id)?.items ?? 0) || a.name.localeCompare(b.name));
 
   if (!list.length) {
-    el.innerHTML = '<div class="empty-state">No contractors on this project yet — click Add Contractor to pick one from your company list or create a new one.</div>';
+    el.innerHTML = '<div class="empty-state">No contractors on this project yet — click Add Contractor.</div>';
     return;
   }
 
@@ -1511,7 +1493,7 @@ function renderContractors() {
         <td class="whitespace-nowrap">${contractorRating(s)}</td>
         <td class="text-right whitespace-nowrap">
           <button type="button" class="table-action" data-contractor-edit="${esc(c.id)}">Edit</button>
-          <button type="button" class="table-action is-danger" data-contractor-remove="${esc(c.id)}">Remove</button>
+          <button type="button" class="table-action is-danger" data-contractor-delete="${esc(c.id)}">Delete</button>
         </td>
       </tr>`;
   }).join('');
@@ -1531,14 +1513,6 @@ function renderContractors() {
     ${unassigned ? `<p class="mt-3 text-xs text-slate-500">${unassigned} timetable item(s) have no contractor yet — pick one in the Contractor column on the Timetable.</p>` : ''}`;
 }
 
-// Picking a company contractor hides the "new contractor" fields.
-function onContractorExistingChange() {
-  const existing = $('#contractor-existing').value;
-  const details = $('#contractor-details');
-  details.disabled = Boolean(existing); // disabled fields are skipped by validation
-  details.classList.toggle('hidden', Boolean(existing));
-}
-
 function openContractorModal(contractor) {
   if (!requireProject()) return;
   const form = $('#form-contractor');
@@ -1548,21 +1522,8 @@ function openContractorModal(contractor) {
   $('#contractor-title').textContent = contractor ? 'Edit Contractor' : 'Add Contractor';
   f.id.value = contractor?.id ?? '';
   for (const key of CONTRACTOR_FIELDS) f[key].value = contractor?.[key] ?? '';
-
-  // Adding: offer company contractors not yet on this project.
-  const available = state.contractors.filter((c) => !state.roster.has(c.id));
-  $('#contractor-existing').innerHTML = '<option value="">— Create a new contractor —</option>'
-    + available.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}${c.trade ? ` · ${esc(c.trade)}` : ''}</option>`).join('');
-  $('#contractor-existing-wrap').classList.toggle('hidden', Boolean(contractor) || !available.length);
-  onContractorExistingChange();
   openModal('modal-contractor');
-}
-
-async function addToRoster(contractorId) {
-  return db.from('project_contractors').upsert(
-    { project_id: state.projectId, contractor_id: contractorId },
-    { onConflict: 'project_id,contractor_id', ignoreDuplicates: true },
-  );
+  f.name.focus();
 }
 
 async function saveContractor(e) {
@@ -1571,29 +1532,13 @@ async function saveContractor(e) {
   const btn  = $('[type=submit]', form);
   const fd   = new FormData(form);
   const id = fd.get('id');
-  const existing = $('#contractor-existing').value;
+  const row = Object.fromEntries(CONTRACTOR_FIELDS.map((k) => [k, fd.get(k).trim() || null]));
 
   showFormError(form, '');
   setBusy(btn, true);
-  let error;
-  let message;
-
-  if (!id && existing) {
-    // Add a company contractor to this project.
-    ({ error } = await addToRoster(existing));
-    message = `${contractorName(existing)} added to this project.`;
-  } else {
-    const row = Object.fromEntries(CONTRACTOR_FIELDS.map((k) => [k, fd.get(k).trim() || null]));
-    if (id) {
-      ({ error } = await db.from('contractors').update(row).eq('id', id));
-      message = 'Contractor updated.';
-    } else {
-      // New company contractor, straight onto this project's roster.
-      const created = await db.from('contractors').insert(row).select('id').single();
-      error = created.error ?? (await addToRoster(created.data.id)).error;
-      message = `${row.name} added.`;
-    }
-  }
+  const { error } = id
+    ? await db.from('contractors').update(row).eq('id', id)
+    : await db.from('contractors').insert({ ...row, project_id: state.projectId });
   setBusy(btn, false);
 
   if (error) {
@@ -1601,40 +1546,32 @@ async function saveContractor(e) {
     return;
   }
   closeModal('modal-contractor');
-  toast(message, 'success');
-  await loadContractors();
-  if (state.projectId) loadSchedule(state.projectId);
+  toast(id ? 'Contractor updated.' : `${row.name} added.`, 'success');
+  loadSchedule(state.projectId);
 }
 
-// Remove from this project only; the contractor stays in the company list.
-async function removeFromProject(contractorId) {
-  const projectId = state.projectId;
-  const name = contractorName(contractorId);
+async function deleteContractor(contractorId) {
+  const contractor = state.contractors.find((c) => c.id === contractorId);
+  if (!contractor) return;
   const jobs = state.tasks.filter((t) => t.contractor_id === contractorId).length;
-  const extra = jobs ? `\n\nTheir ${jobs} timetable item(s) on this project will be left without a contractor.` : '';
-  if (!confirm(`Remove ${name} from this project?${extra}\n\nThey stay in your company list for other projects.`)) return;
+  const extra = jobs ? `\n\nTheir ${jobs} timetable item(s) will be left without a contractor.` : '';
+  if (!confirm(`Delete contractor "${contractor.name}"?${extra}`)) return;
 
-  const unassign = jobs
-    ? await db.from('schedule_tasks').update({ contractor_id: null }).eq('project_id', projectId).eq('contractor_id', contractorId)
-    : { error: null };
-  const { error } = unassign.error
-    ? unassign
-    : await db.from('project_contractors').delete().eq('project_id', projectId).eq('contractor_id', contractorId);
-
+  const { error } = await db.from('contractors').delete().eq('id', contractorId);
   if (error) {
-    toast(`Could not remove contractor: ${error.message}`, 'error');
+    toast(`Could not delete contractor: ${error.message}`, 'error');
     return;
   }
-  toast(`${name} removed from this project.`, 'success');
-  if (projectId === state.projectId) loadSchedule(projectId);
+  toast(`Deleted ${contractor.name}.`, 'success');
+  loadSchedule(state.projectId);
 }
 
 function onContractorsClick(e) {
   const edit = e.target.closest('[data-contractor-edit]');
   if (edit) return openContractorModal(state.contractors.find((c) => c.id === edit.dataset.contractorEdit));
 
-  const remove = e.target.closest('[data-contractor-remove]');
-  if (remove) removeFromProject(remove.dataset.contractorRemove);
+  const del = e.target.closest('[data-contractor-delete]');
+  if (del) deleteContractor(del.dataset.contractorDelete);
 }
 
 // =============================================================
@@ -1878,7 +1815,6 @@ async function openProjectReport() {
       tasks: state.tasks,
       payments: state.payments,
       contractors: state.contractors,
-      roster: state.roster,
       contractorDelays: state.contractorDelays,
       units: state.flats,
       progress: state.progress ?? scheduleProgress([], todayISO()),
@@ -1962,7 +1898,6 @@ $('#payments-list').addEventListener('click', onPaymentsClick);
 $('#btn-add-contractor').addEventListener('click', () => openContractorModal(null));
 $('#form-contractor').addEventListener('submit', saveContractor);
 $('#contractors-table').addEventListener('click', onContractorsClick);
-$('#contractor-existing').addEventListener('change', onContractorExistingChange);
 $('#projects-container').addEventListener('click', onProjectsClick);
 $('#btn-new-project').addEventListener('click', openProjectModal);
 $('#form-project').addEventListener('submit', saveProject);

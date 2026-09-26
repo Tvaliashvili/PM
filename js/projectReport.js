@@ -79,7 +79,7 @@ async function fetchExtras(db, projectId, today) {
  * `money` formats amounts in the project's currency.
  */
 export async function buildProjectReport({
-  db, project, tasks, payments, contractors, roster, contractorDelays, units, progress, money, userEmail,
+  db, project, tasks, payments, contractors, contractorDelays, units, progress, money, userEmail,
 }) {
   const today = new Date().toLocaleDateString('en-CA');
   const { logs, delays } = await fetchExtras(db, project.id, today);
@@ -187,7 +187,7 @@ export async function buildProjectReport({
     </section>`;
 
   // ---------- Contractors ----------
-  const onProject = contractors.filter((c) => roster.has(c.id));
+  const onProject = contractors; // already this project's contractors
   const rating = (s) => {
     if (!s?.items) return '—';
     if (s.overdue) return chip({ ka: 'ვადაგადაცილება', en: 'Overdue', tone: 'bad' });
