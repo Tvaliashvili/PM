@@ -175,6 +175,14 @@ html, body { background: var(--ink-950); }
 .data-table tr.is-overdue td { background: rgba(244, 63, 94, 0.06); }
 .data-table tr.is-overdue .task-name { color: #fecdd3; }
 .data-table .task-name { color: #fff; }
+.select-inline {
+  min-width: 10rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  font-size: 0.8rem;
+  background-color: transparent;
+}
+.select-inline:hover { background-color: var(--ink-800); }
 
 .btn-sm { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
 .kpi-value-sm { font-size: 1.5rem; overflow-wrap: anywhere; }

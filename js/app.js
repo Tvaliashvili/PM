@@ -102,7 +102,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-add-unit', '#btn-add-units-bulk', '#btn-add-task', '#btn-add-item',
+  ['#btn-new-log', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-add-unit', '#btn-add-units-bulk', '#btn-add-task',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -771,7 +771,10 @@ function renderSchedule() {
                  aria-label="Mark ${esc(t.name)} as done">
         </td>
         <td class="task-name">${esc(t.name)}</td>
-        <td>${t.contractor_id ? esc(contractorName(t.contractor_id)) : '<span class="text-slate-500">—</span>'}</td>
+        <td>
+          <select class="select-dark select-inline" data-task-contractor="${esc(t.id)}"
+                  aria-label="Contractor for ${esc(t.name)}">${contractorOptions(t.contractor_id ?? '')}</select>
+        </td>
         <td class="whitespace-nowrap">${esc(formatDate(t.planned_start))}</td>
         <td class="whitespace-nowrap">${esc(formatDate(t.planned_finish))}</td>
         <td class="num">${durationDays(t)} d</td>
@@ -929,7 +932,27 @@ async function deleteTask(taskId) {
 
 function onScheduleChange(e) {
   const toggle = e.target.closest('[data-task-toggle]');
-  if (toggle) toggleTask(toggle.dataset.taskToggle, toggle.checked);
+  if (toggle) return toggleTask(toggle.dataset.taskToggle, toggle.checked);
+
+  const contractor = e.target.closest('[data-task-contractor]');
+  if (contractor) assignContractor(contractor.dataset.taskContractor, contractor.value || null);
+}
+
+// Contractor dropdown on a timetable row.
+async function assignContractor(taskId, contractorId) {
+  const task = state.tasks.find((t) => t.id === taskId);
+  if (!task) return;
+  const prev = task.contractor_id;
+
+  task.contractor_id = contractorId;
+  renderScheduleViews();
+
+  const { error } = await db.from('schedule_tasks').update({ contractor_id: contractorId }).eq('id', task.id);
+  if (error) {
+    task.contractor_id = prev;
+    renderScheduleViews();
+    toast(`Could not assign contractor: ${error.message}`, 'error');
+  }
 }
 
 // Edit / delete / payments buttons, shared by the Timetable and BOQ tables.
@@ -1477,21 +1500,19 @@ function renderContractors() {
       </td>
     </tr>`;
 
-  const unassigned = perf.get('');
+  const unassigned = perf.get('')?.items ?? 0;
   el.innerHTML = `
     <table class="data-table">
       <thead>
         <tr>
-          <th>Contractor</th><th class="num">Items</th><th class="num">On time</th><th class="num">Late</th>
+          <th>Contractor</th><th class="num">Jobs here</th><th class="num">On time</th><th class="num">Late</th>
           <th class="num">Overdue now</th><th class="num">Open</th><th class="num">Delays</th>
           <th class="num">Budget</th><th class="num">Paid</th><th>Performance</th><th></th>
         </tr>
       </thead>
-      <tbody>
-        ${list.map((c) => row(c, perf.get(c.id))).join('')}
-        ${unassigned?.items ? row({ id: '', name: 'No contractor assigned', trade: '' }, unassigned) : ''}
-      </tbody>
-    </table>`;
+      <tbody>${list.map((c) => row(c, perf.get(c.id))).join('')}</tbody>
+    </table>
+    ${unassigned ? `<p class="mt-3 text-xs text-slate-500">${unassigned} timetable item(s) have no contractor yet — pick one in the Contractor column on the Timetable.</p>` : ''}`;
 }
 
 function openContractorModal(contractor) {
@@ -1823,7 +1844,6 @@ $('#form-task').addEventListener('submit', saveTask);
 $('#form-task').addEventListener('input', onTaskInput);
 $('#schedule-table').addEventListener('change', onScheduleChange);
 $('#schedule-table').addEventListener('click', onTaskTableClick);
-$('#btn-add-item').addEventListener('click', () => openTaskModal(null));
 $('#boq-table').addEventListener('click', onTaskTableClick);
 $('#form-payment').addEventListener('submit', savePayment);
 $('#payments-list').addEventListener('click', onPaymentsClick);
