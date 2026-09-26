@@ -21,6 +21,13 @@ function todayRange() {
   };
 }
 
+// Project name for a file name: keeps letters (Georgian too) and digits, spaces → "_".
+const fileSafe = (name) => (name || 'Project')
+  .replace(/[\\/:*?"<>|]+/g, '')
+  .trim()
+  .replace(/\s+/g, '_')
+  .slice(0, 60) || 'Project';
+
 const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key.replace(/_/g, ' ');
 
 // English label (sent to Gemini) and bilingual label (printed).
@@ -209,7 +216,7 @@ export async function generateDailyReport({ db, project, progress, userEmail }) 
     await window.html2pdf()
       .set({
         margin: [10, 10, 12, 10], // mm: top, right, bottom, left
-        filename: `Daily_Report_${day.date}.pdf`,
+        filename: `Daily_Report_${fileSafe(project.name)}_${day.date}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
