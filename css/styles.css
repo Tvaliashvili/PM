@@ -236,6 +236,48 @@ button.status-chip:active { transform: scale(0.94); }
   .matrix-floor-label { padding-top: 0; }
 }
 
+.btn-sm { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
+.kpi-value-sm { font-size: 1.5rem; overflow-wrap: anywhere; }
+
+/* ---------- Data tables (BOQ, cash flow) ---------- */
+.data-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.data-table th {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  border-bottom: 1px solid var(--ink-700);
+  white-space: nowrap;
+}
+.data-table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--ink-800);
+  vertical-align: top;
+  color: #cbd5e1;
+}
+.data-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.data-table tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
+.data-table tfoot td { font-weight: 600; color: #fff; border-top: 1px solid var(--ink-700); border-bottom: 0; }
+.data-table tr.is-cancelled td { opacity: 0.45; }
+.data-table tr.is-cancelled p:first-child { text-decoration: line-through; }
+.data-table tr.is-current td { background: rgba(245, 158, 11, 0.06); }
+.data-table tr.is-muted td { color: #64748b; font-style: italic; }
+
+.variance-over  { color: #fb7185; font-weight: 600; }
+.variance-under { color: #34d399; }
+
+.table-action {
+  padding: 0.2rem 0.45rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+.table-action:hover { background: var(--ink-800); color: #fff; }
+.table-action.is-danger:hover { background: rgba(244, 63, 94, 0.12); color: #fb7185; }
+
 /* ---------- Projects list ---------- */
 .nav-group-label {
   margin: 0.9rem 0.75rem 0.35rem;

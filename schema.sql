@@ -123,6 +123,30 @@ end;
 $$;
 
 -- -------------------------------------------------------------
+-- Migration 2026-09-26: project timeline + BOQ detail
+-- (additive; safe to re-run on an existing database)
+-- -------------------------------------------------------------
+alter table public.projects
+  add column if not exists start_date date,
+  add column if not exists end_date   date;
+
+alter table public.projects drop constraint if exists projects_dates_check;
+alter table public.projects add constraint projects_dates_check
+  check (start_date is null or end_date is null or end_date >= start_date);
+
+-- cash_flow rows are the project's BOQ: planned_cost = quantity × rate
+-- (or a lump sum), actual_cost = spent so far, due_date = when the
+-- payment falls due / was paid (drives the monthly cash-flow table).
+alter table public.cash_flow
+  add column if not exists category text,
+  add column if not exists unit     text,
+  add column if not exists quantity numeric(14,3) check (quantity is null or quantity >= 0),
+  add column if not exists rate     numeric(14,2) check (rate is null or rate >= 0),
+  add column if not exists due_date date;
+
+create index if not exists cash_flow_project_due_idx on public.cash_flow (project_id, due_date);
+
+-- -------------------------------------------------------------
 -- 6. Row Level Security
 -- Full access for any authenticated user; anon gets nothing.
 -- -------------------------------------------------------------

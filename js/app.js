@@ -5,6 +5,7 @@ import {
   SUPABASE_URL, SUPABASE_KEY, CURRENCY_CODE,
   STAGES, STATUSES, STATUS_LABELS,
   MANPOWER_TRADES, WEATHER_OPTIONS, DELAY_CAUSES,
+  BOQ_UNITS, BOQ_CATEGORIES, BOQ_STATUSES,
 } from './config.js';
 import { generateDailyReport } from './pdfReport.js';
 
@@ -18,6 +19,8 @@ const state = {
   projectsLoaded: false,
   projectId: null,
   flats: [],
+  boq: [],
+  workPct: 0,
 };
 
 // ---------- Helpers ----------
@@ -75,7 +78,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-add-flats'].forEach((sel) => { $(sel).disabled = !enabled; });
+  ['#btn-new-log', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-add-flats', '#btn-add-boq', '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
 // =============================================================
@@ -184,7 +187,7 @@ function showSetupNotice() {
 async function loadProjects() {
   const { data, error } = await db
     .from('projects')
-    .select('id, name, location, total_flats, created_at')
+    .select('id, name, location, total_flats, created_at, start_date, end_date')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -205,25 +208,33 @@ async function loadProjects() {
 async function selectProject(projectId) {
   state.projectId = projectId || null;
   state.flats = [];
+  state.boq = [];
   setProjectActionsEnabled(Boolean(state.projectId));
 
-  const project = state.projects.find((p) => p.id === state.projectId);
+  const project = currentProject();
+  applyProjectHeader(project);
+
+  if (!project) {
+    storage.set('cpm.projectId', '');
+    return;
+  }
+
+  storage.set('cpm.projectId', project.id);
+  await Promise.all([renderFlatMatrix(project.id), refreshDashboard(project.id), loadBoq(project.id)]);
+}
+
+const currentProject = () => state.projects.find((p) => p.id === state.projectId);
+
+// Project name/location wherever it's shown in the workspace.
+function applyProjectHeader(project) {
   const navLabel = $('#nav-project-name');
   navLabel.textContent = project?.name ?? '';
   navLabel.classList.toggle('hidden', !project);
   $('#topbar-project-name').textContent = project?.name ?? '';
   $('#topbar-project-location').textContent = project?.location ?? '';
-
-  if (!project) {
-    storage.set('cpm.projectId', '');
-    $('#dashboard-subtitle').textContent = 'Select a project to view its status.';
-    return;
-  }
-
-  storage.set('cpm.projectId', project.id);
-  $('#dashboard-subtitle').textContent = [project.name, project.location].filter(Boolean).join(' · ');
-
-  await Promise.all([renderFlatMatrix(project.id), refreshDashboard(project.id)]);
+  $('#dashboard-subtitle').textContent = project
+    ? [project.name, project.location].filter(Boolean).join(' · ')
+    : 'Select a project to view its status.';
 }
 
 function openProject(projectId) {
@@ -278,6 +289,9 @@ async function renderProjectList() {
         <button type="button" class="project-card-open" data-open-project="${esc(p.id)}">
           <p class="pr-8 font-semibold text-white truncate">${esc(p.name)}</p>
           <p class="text-sm text-slate-500 truncate">${esc(p.location || 'No location set')}</p>
+          <p class="text-xs text-slate-500 mt-1">${p.start_date && p.end_date
+            ? `${esc(formatDate(p.start_date))} → ${esc(formatDate(p.end_date))}`
+            : 'Dates not set'}</p>
           <div class="mt-4 flex items-center gap-3">
             <div class="flex-1 h-1.5 rounded-full bg-ink-700 overflow-hidden">
               <div class="h-full bg-emerald-500" style="width:${pct}%"></div>
@@ -625,6 +639,9 @@ function updateProgressKpi() {
   $('#kpi-progress').textContent = `${pct}%`;
   $('#kpi-progress-bar').style.width = `${pct}%`;
   $('#kpi-progress-meta').textContent = `${complete} of ${flats.length} flats complete`;
+
+  state.workPct = pct;
+  renderTimeline();
 }
 
 async function refreshDashboard(projectId) {
@@ -716,6 +733,381 @@ function renderRecentDelays(delays) {
 }
 
 // =============================================================
+// Project timeline + edit project
+// =============================================================
+const DAY_MS = 86_400_000;
+const parseDate = (iso) => (iso ? new Date(`${iso}T00:00`) : null);
+const daysBetween = (a, b) => Math.round((b - a) / DAY_MS);
+
+function timelineBar(label, pct, colorClass) {
+  return `
+    <div>
+      <div class="flex justify-between text-xs mb-1">
+        <span class="text-slate-400">${label}</span>
+        <span class="text-slate-300 tabular-nums">${pct}%</span>
+      </div>
+      <div class="h-2 rounded-full bg-ink-700 overflow-hidden">
+        <div class="h-full rounded-full ${colorClass}" style="width:${pct}%"></div>
+      </div>
+    </div>`;
+}
+
+// Compares time elapsed against work complete (from the flat matrix).
+function renderTimeline() {
+  const el = $('#timeline-body');
+  const project = currentProject();
+  if (!project) return;
+
+  const start = parseDate(project.start_date);
+  const end = parseDate(project.end_date);
+  if (!start || !end) {
+    el.innerHTML = 'No start or completion date yet. Click <span class="text-slate-300">Edit project</span> '
+      + 'to add them and track time against progress.';
+    return;
+  }
+
+  const today = parseDate(todayISO());
+  const total = Math.max(1, daysBetween(start, end));
+  const elapsed = Math.min(total, Math.max(0, daysBetween(start, today)));
+  const timePct = Math.round((elapsed / total) * 100);
+  const workPct = state.workPct;
+  const gap = workPct - timePct;
+
+  let when;
+  if (today < start) when = `Starts in ${daysBetween(today, start)} days`;
+  else if (today > end) when = `${daysBetween(end, today)} days past planned completion`;
+  else when = `Day ${elapsed} of ${total} · ${daysBetween(today, end)} days remaining`;
+
+  let status;
+  if (today < start) status = { cls: 'status-pending', text: '○ Not started' };
+  else if (gap >= -5) status = { cls: 'status-done', text: '✓ On track' };
+  else if (gap >= -15) status = { cls: 'status-in_progress', text: `! Behind by ${-gap} pts` };
+  else status = { cls: 'status-blocked', text: `! Behind by ${-gap} pts` };
+
+  el.innerHTML = `
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+      <p class="text-slate-300">
+        ${esc(formatDate(project.start_date))} → ${esc(formatDate(project.end_date))}
+        <span class="text-slate-500">· ${total} days</span>
+      </p>
+      <span class="status-chip ${status.cls}">${esc(status.text)}</span>
+    </div>
+    <div class="space-y-3">
+      ${timelineBar('Time elapsed', timePct, 'bg-slate-400')}
+      ${timelineBar('Work complete', workPct, 'bg-emerald-500')}
+    </div>
+    <p class="mt-3 text-xs text-slate-500">${esc(when)}</p>`;
+}
+
+function openEditProjectModal() {
+  const project = currentProject();
+  if (!project) return;
+  const form = $('#form-edit-project');
+  const f = form.elements;
+  f.name.value = project.name;
+  f.location.value = project.location ?? '';
+  f.start_date.value = project.start_date ?? '';
+  f.end_date.value = project.end_date ?? '';
+  showFormError(form, '');
+  openModal('modal-edit-project');
+}
+
+async function saveEditProject(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn  = $('[type=submit]', form);
+  const fd   = new FormData(form);
+  const project = currentProject();
+
+  const row = {
+    name: fd.get('name').trim(),
+    location: fd.get('location').trim() || null,
+    start_date: fd.get('start_date') || null,
+    end_date: fd.get('end_date') || null,
+  };
+  if (row.start_date && row.end_date && row.end_date < row.start_date) {
+    showFormError(form, 'Planned completion must be on or after the start date.');
+    return;
+  }
+
+  showFormError(form, '');
+  setBusy(btn, true);
+  const { error } = await db.from('projects').update(row).eq('id', project.id);
+  setBusy(btn, false);
+
+  if (error) {
+    showFormError(form, error.message);
+    return;
+  }
+
+  Object.assign(project, row);
+  closeModal('modal-edit-project');
+  toast('Project updated.', 'success');
+  applyProjectHeader(project);
+  renderTimeline();
+}
+
+// =============================================================
+// BOQ & cash flow
+// cash_flow rows are BOQ items: planned = budget, actual = spent,
+// due_date places the payment in the monthly cash-flow table.
+// =============================================================
+const money2 = new Intl.NumberFormat(undefined, {
+  style: 'currency', currency: CURRENCY_CODE, minimumFractionDigits: 2, maximumFractionDigits: 2,
+});
+const qtyFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 });
+const BOQ_STATUS_CHIP = {
+  planned: 'status-pending', committed: 'status-in_progress', paid: 'status-done', cancelled: 'status-pending',
+};
+
+const sumOf = (items, key) => items.reduce((sum, i) => sum + Number(i[key] || 0), 0);
+const monthLabel = (ym) => new Date(`${ym}-01T00:00`).toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+
+async function loadBoq(projectId) {
+  const { data, error } = await db
+    .from('cash_flow')
+    .select('id, boq_item, category, unit, quantity, rate, planned_cost, actual_cost, status, due_date')
+    .eq('project_id', projectId)
+    .order('category', { nullsFirst: false })
+    .order('boq_item');
+
+  if (projectId !== state.projectId) return;
+  if (error) {
+    $('#boq-table').innerHTML = `<div class="empty-state">Could not load BOQ: ${esc(error.message)}</div>`;
+    return;
+  }
+  state.boq = data;
+  renderBoq();
+}
+
+function statTile(label, value, meta, tone = '') {
+  return `
+    <article class="kpi-card">
+      <p class="kpi-label">${esc(label)}</p>
+      <p class="kpi-value kpi-value-sm ${tone}">${esc(value)}</p>
+      <p class="kpi-meta">${esc(meta)}</p>
+    </article>`;
+}
+
+function varianceCell(item) {
+  const planned = Number(item.planned_cost);
+  const actual = Number(item.actual_cost);
+  if (!actual) return '<span class="text-slate-500">—</span>';
+  const diff = actual - planned;
+  if (diff > 0) return `<span class="variance-over">+${money.format(diff)} over</span>`;
+  if (diff < 0) return `<span class="variance-under">${money.format(-diff)} under</span>`;
+  return '<span class="text-slate-400">On budget</span>';
+}
+
+function renderBoq() {
+  const items = state.boq;
+  const live = items.filter((i) => i.status !== 'cancelled');
+  const planned = sumOf(live, 'planned_cost');
+  const actual = sumOf(live, 'actual_cost');
+  const remaining = planned - actual;
+  const over = live.filter((i) => Number(i.actual_cost) > Number(i.planned_cost)).length;
+
+  $('#cash-summary').innerHTML = [
+    statTile('BOQ budget', money.format(planned), `${live.length} active items`),
+    statTile('Spent to date', money.format(actual), planned ? `${Math.round((actual / planned) * 100)}% of budget` : '—'),
+    statTile('Remaining budget', money.format(remaining), remaining < 0 ? 'Over budget' : 'Budget − spent', remaining < 0 ? 'negative' : ''),
+    statTile('Items over budget', String(over), over ? 'Actual above planned' : 'None', over ? 'negative' : ''),
+  ].join('');
+
+  if (!items.length) {
+    $('#boq-table').innerHTML = '<div class="empty-state">No BOQ items yet — click Add BOQ Item to build the budget.</div>';
+    $('#cashflow-months').innerHTML = '<div class="empty-state">The monthly cash flow appears once BOQ items have due dates.</div>';
+    return;
+  }
+
+  // ---- BOQ table ----
+  const rows = items.map((i) => `
+    <tr class="${i.status === 'cancelled' ? 'is-cancelled' : ''}">
+      <td>
+        <p class="text-white">${esc(i.boq_item)}</p>
+        <p class="text-xs text-slate-500">${esc(i.category || 'Uncategorised')}</p>
+      </td>
+      <td class="num">${i.quantity != null ? qtyFormat.format(i.quantity) : '—'} <span class="text-slate-500">${esc(i.unit || '')}</span></td>
+      <td class="num">${i.rate != null ? money2.format(i.rate) : '—'}</td>
+      <td class="num">${money.format(i.planned_cost)}</td>
+      <td class="num">${money.format(i.actual_cost)}</td>
+      <td class="num">${varianceCell(i)}</td>
+      <td><span class="status-chip ${BOQ_STATUS_CHIP[i.status] ?? 'status-pending'}">${esc(BOQ_STATUSES[i.status] ?? i.status)}</span></td>
+      <td class="whitespace-nowrap">${i.due_date ? esc(formatDate(i.due_date)) : '<span class="text-slate-500">—</span>'}</td>
+      <td class="text-right whitespace-nowrap">
+        <button type="button" class="table-action" data-boq-edit="${esc(i.id)}">Edit</button>
+        <button type="button" class="table-action is-danger" data-boq-delete="${esc(i.id)}">Delete</button>
+      </td>
+    </tr>`).join('');
+
+  const totalDiff = actual - planned;
+  $('#boq-table').innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Item</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Planned</th>
+          <th class="num">Actual</th><th class="num">Variance</th><th>Status</th><th>Due</th><th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3">Total <span class="text-slate-500 font-normal">(excl. cancelled)</span></td>
+          <td class="num">${money.format(planned)}</td>
+          <td class="num">${money.format(actual)}</td>
+          <td class="num">${actual ? varianceCell({ planned_cost: planned, actual_cost: actual }) : '—'}</td>
+          <td colspan="3" class="text-slate-500 font-normal">${totalDiff > 0 ? 'Over budget' : ''}</td>
+        </tr>
+      </tfoot>
+    </table>`;
+
+  // ---- Monthly cash flow ----
+  const byMonth = new Map();
+  const unscheduled = { planned: 0, actual: 0 };
+  for (const i of live) {
+    const bucket = i.due_date
+      ? (byMonth.get(i.due_date.slice(0, 7)) ?? byMonth.set(i.due_date.slice(0, 7), { planned: 0, actual: 0 }).get(i.due_date.slice(0, 7)))
+      : unscheduled;
+    bucket.planned += Number(i.planned_cost || 0);
+    bucket.actual += Number(i.actual_cost || 0);
+  }
+
+  const months = [...byMonth.keys()].sort();
+  if (!months.length) {
+    $('#cashflow-months').innerHTML = '<div class="empty-state">Add due dates to BOQ items to see the monthly cash flow.</div>';
+    return;
+  }
+
+  const thisMonth = todayISO().slice(0, 7);
+  let cumPlanned = 0;
+  let cumActual = 0;
+  const monthRows = months.map((ym) => {
+    const m = byMonth.get(ym);
+    cumPlanned += m.planned;
+    cumActual += m.actual;
+    return `
+      <tr class="${ym === thisMonth ? 'is-current' : ''}">
+        <td>${esc(monthLabel(ym))}${ym === thisMonth ? ' <span class="text-xs text-brand-400">· this month</span>' : ''}</td>
+        <td class="num">${money.format(m.planned)}</td>
+        <td class="num">${money.format(m.actual)}</td>
+        <td class="num">${money.format(cumPlanned)}</td>
+        <td class="num">${money.format(cumActual)}</td>
+      </tr>`;
+  }).join('');
+
+  const unscheduledRow = unscheduled.planned || unscheduled.actual ? `
+    <tr class="is-muted">
+      <td>No due date</td>
+      <td class="num">${money.format(unscheduled.planned)}</td>
+      <td class="num">${money.format(unscheduled.actual)}</td>
+      <td></td><td></td>
+    </tr>` : '';
+
+  $('#cashflow-months').innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Month</th><th class="num">Planned</th><th class="num">Actual</th>
+          <th class="num">Cumulative planned</th><th class="num">Cumulative actual</th>
+        </tr>
+      </thead>
+      <tbody>${monthRows}${unscheduledRow}</tbody>
+    </table>`;
+}
+
+function openBoqModal(item) {
+  if (!requireProject()) return;
+  const form = $('#form-boq');
+  const f = form.elements;
+  form.reset();
+  showFormError(form, '');
+  $('#boq-title').textContent = item ? 'Edit BOQ Item' : 'Add BOQ Item';
+
+  f.id.value = item?.id ?? '';
+  if (item) {
+    f.boq_item.value = item.boq_item;
+    f.category.value = item.category ?? '';
+    f.due_date.value = item.due_date ?? '';
+    f.quantity.value = item.quantity ?? '';
+    f.unit.value = item.unit ?? '';
+    f.rate.value = item.rate ?? '';
+    f.planned_cost.value = item.planned_cost;
+    f.actual_cost.value = item.actual_cost;
+    f.status.value = item.status;
+  }
+  openModal('modal-boq');
+}
+
+// Planned cost follows quantity × rate while both are filled in.
+function onBoqInput(e) {
+  if (!['quantity', 'rate'].includes(e.target.name)) return;
+  const f = e.currentTarget.elements;
+  const qty = parseFloat(f.quantity.value);
+  const rate = parseFloat(f.rate.value);
+  if (qty >= 0 && rate >= 0) f.planned_cost.value = (Math.round(qty * rate * 100) / 100).toFixed(2);
+}
+
+async function saveBoq(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn  = $('[type=submit]', form);
+  const fd   = new FormData(form);
+  const numOrNull = (v) => (v === '' || v == null ? null : Number(v));
+
+  const id = fd.get('id');
+  const row = {
+    boq_item:     fd.get('boq_item').trim(),
+    category:     fd.get('category').trim() || null,
+    unit:         fd.get('unit') || null,
+    quantity:     numOrNull(fd.get('quantity')),
+    rate:         numOrNull(fd.get('rate')),
+    planned_cost: Number(fd.get('planned_cost') || 0),
+    actual_cost:  Number(fd.get('actual_cost') || 0),
+    status:       fd.get('status'),
+    due_date:     fd.get('due_date') || null,
+  };
+
+  showFormError(form, '');
+  setBusy(btn, true);
+  const { error } = id
+    ? await db.from('cash_flow').update(row).eq('id', id)
+    : await db.from('cash_flow').insert({ ...row, project_id: state.projectId });
+  setBusy(btn, false);
+
+  if (error) {
+    showFormError(form, error.message);
+    return;
+  }
+
+  closeModal('modal-boq');
+  toast(id ? 'BOQ item updated.' : 'BOQ item added.', 'success');
+  loadBoq(state.projectId);
+  refreshDashboard(state.projectId);
+}
+
+async function onBoqTableClick(e) {
+  const edit = e.target.closest('[data-boq-edit]');
+  if (edit) {
+    openBoqModal(state.boq.find((i) => i.id === edit.dataset.boqEdit));
+    return;
+  }
+
+  const del = e.target.closest('[data-boq-delete]');
+  if (!del) return;
+  const item = state.boq.find((i) => i.id === del.dataset.boqDelete);
+  if (!item || !confirm(`Delete BOQ item "${item.boq_item}"?`)) return;
+
+  const { error } = await db.from('cash_flow').delete().eq('id', item.id);
+  if (error) {
+    toast(`Could not delete item: ${error.message}`, 'error');
+    return;
+  }
+  toast('BOQ item deleted.', 'success');
+  loadBoq(state.projectId);
+  refreshDashboard(state.projectId);
+}
+
+// =============================================================
 // Modals
 // =============================================================
 function openModal(id) {
@@ -753,6 +1145,12 @@ function initModals() {
   $('#delay-cause').innerHTML = DELAY_CAUSES.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
 
   $('#form-daily-log').addEventListener('input', updateManpowerTotal);
+
+  $('#boq-unit').innerHTML = '<option value="">—</option>'
+    + BOQ_UNITS.map((u) => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
+  $('#boq-status').innerHTML = Object.entries(BOQ_STATUSES)
+    .map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join('');
+  $('#boq-categories').innerHTML = BOQ_CATEGORIES.map((c) => `<option value="${esc(c)}"></option>`).join('');
 }
 
 function requireProject() {
@@ -909,6 +1307,12 @@ $('#projects-container').addEventListener('click', onProjectsClick);
 $('#btn-new-project').addEventListener('click', openProjectModal);
 $('#form-project').addEventListener('submit', saveProject);
 $('#btn-add-flats').addEventListener('click', openFlatsModal);
+$('#btn-edit-project').addEventListener('click', openEditProjectModal);
+$('#form-edit-project').addEventListener('submit', saveEditProject);
+$('#btn-add-boq').addEventListener('click', () => openBoqModal(null));
+$('#form-boq').addEventListener('submit', saveBoq);
+$('#form-boq').addEventListener('input', onBoqInput);
+$('#boq-table').addEventListener('click', onBoqTableClick);
 $('#form-flats').addEventListener('submit', saveFlats);
 $('#form-flats').addEventListener('input', updateFlatsPreview);
 $('#btn-export-pdf').addEventListener('click', exportDailyReport);

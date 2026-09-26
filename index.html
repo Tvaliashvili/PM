@@ -94,7 +94,7 @@
         </a>
         <a href="#cash-flow" data-nav="cash-flow" class="nav-link">
           <svg viewBox="0 0 24 24" class="nav-icon"><path d="M3 17l6-6 4 4 8-8v4h2V3h-8v2h4l-6 6-4-4-8 8 2 2z"/></svg>
-          Cash Flow
+          BOQ &amp; Cash Flow
         </a>
         <a href="#delays" data-nav="delays" class="nav-link">
           <svg viewBox="0 0 24 24" class="nav-icon"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 11h-2V7h2v6zm0 4h-2v-2h2v2z"/></svg>
@@ -193,6 +193,15 @@
             </article>
           </div>
 
+          <!-- Timeline -->
+          <div class="panel mt-4">
+            <div class="flex items-center justify-between gap-3 mb-3">
+              <h2 class="panel-title !mb-0">Project Timeline</h2>
+              <button id="btn-edit-project" class="btn btn-secondary btn-sm">Edit project</button>
+            </div>
+            <div id="timeline-body" class="text-sm text-slate-500">No dates set.</div>
+          </div>
+
           <!-- Dashboard panels -->
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-4">
             <div class="panel">
@@ -236,11 +245,29 @@
         <section id="section-cash-flow" data-section="cash-flow" class="module hidden">
           <div class="module-header">
             <div>
-              <h1 class="text-xl font-semibold text-white">Cash Flow</h1>
-              <p class="text-sm text-slate-500">BOQ items — planned vs actual cost.</p>
+              <h1 class="text-xl font-semibold text-white">BOQ &amp; Cash Flow</h1>
+              <p class="text-sm text-slate-500">Bill of quantities — budget, spend and when payments fall due.</p>
+            </div>
+            <button id="btn-add-boq" class="btn btn-primary">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
+              Add BOQ Item
+            </button>
+          </div>
+          <div id="cash-flow-container" class="space-y-4">
+            <div id="cash-summary" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
+            <div class="panel">
+              <h2 class="panel-title">Bill of Quantities</h2>
+              <div id="boq-table" class="overflow-x-auto"></div>
+            </div>
+            <div class="panel">
+              <h2 class="panel-title">Monthly Cash Flow</h2>
+              <p class="text-xs text-slate-500 mb-3">
+                Planned = BOQ budget due that month. Actual = spend recorded against items due that month.
+                Cumulative columns show the running total — the gap between them is your position against budget.
+              </p>
+              <div id="cashflow-months" class="overflow-x-auto"></div>
             </div>
           </div>
-          <div id="cash-flow-container" class="panel empty-state">Cash flow table will appear here.</div>
         </section>
 
         <!-- DELAYS -->
@@ -383,6 +410,103 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-close>Cancel</button>
         <button type="submit" class="btn btn-primary">Create Project</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Edit project (details + timeline) -->
+  <dialog id="modal-edit-project" class="modal" aria-labelledby="edit-project-title">
+    <form id="form-edit-project">
+      <div class="modal-header">
+        <h2 id="edit-project-title">Edit Project</h2>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="form-label">Project name</span>
+            <input name="name" required maxlength="120" class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Location</span>
+            <input name="location" maxlength="120" class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Start date</span>
+            <input name="start_date" type="date" class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Planned completion</span>
+            <input name="end_date" type="date" class="input-dark w-full">
+          </label>
+        </div>
+        <p class="form-error hidden" data-error></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- BOQ item (add / edit) -->
+  <dialog id="modal-boq" class="modal" aria-labelledby="boq-title">
+    <form id="form-boq">
+      <input type="hidden" name="id">
+      <div class="modal-header">
+        <h2 id="boq-title">Add BOQ Item</h2>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block sm:col-span-2">
+            <span class="form-label">Item / description</span>
+            <input name="boq_item" required maxlength="200" class="input-dark w-full" placeholder="e.g. Concrete C25 — floor slabs">
+          </label>
+          <label class="block">
+            <span class="form-label">Category</span>
+            <input name="category" list="boq-categories" maxlength="60" class="input-dark w-full" placeholder="e.g. Frame">
+            <datalist id="boq-categories"></datalist>
+          </label>
+          <label class="block">
+            <span class="form-label">Due date</span>
+            <input name="due_date" type="date" class="input-dark w-full">
+          </label>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <label class="block">
+            <span class="form-label">Quantity</span>
+            <input name="quantity" type="number" min="0" step="any" class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Unit</span>
+            <select id="boq-unit" name="unit" class="select-dark w-full"></select>
+          </label>
+          <label class="block">
+            <span class="form-label">Rate</span>
+            <input name="rate" type="number" min="0" step="0.01" class="input-dark w-full">
+          </label>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <label class="block">
+            <span class="form-label">Planned cost</span>
+            <input name="planned_cost" type="number" min="0" step="0.01" required class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Actual cost to date</span>
+            <input name="actual_cost" type="number" min="0" step="0.01" value="0" class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Status</span>
+            <select id="boq-status" name="status" class="select-dark w-full"></select>
+          </label>
+        </div>
+        <p class="text-xs text-slate-500">Planned cost fills in from quantity × rate; for a lump sum, leave those empty and type the amount.</p>
+        <p class="form-error hidden" data-error></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Item</button>
       </div>
     </form>
   </dialog>

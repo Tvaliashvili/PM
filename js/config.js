@@ -57,3 +57,19 @@ export const DELAY_CAUSES = [
   'Payment / funding',
   'Other',
 ];
+
+// Bill of quantities
+export const BOQ_UNITS = ['m²', 'm³', 'm', 'kg', 't', 'pcs', 'lump sum', 'day', 'hr'];
+
+export const BOQ_CATEGORIES = [
+  'Preliminaries', 'Substructure', 'Frame', 'Masonry', 'Roofing', 'Plumbing',
+  'Electrical', 'Finishes', 'Doors & windows', 'External works',
+];
+
+// Must match the cash_flow.status check constraint in schema.sql.
+export const BOQ_STATUSES = {
+  planned:   'Planned',
+  committed: 'Committed',
+  paid:      'Paid',
+  cancelled: 'Cancelled',
+};
