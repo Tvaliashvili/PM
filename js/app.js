@@ -10,7 +10,7 @@ import {
 import { generateDailyReport } from './pdfReport.js';
 import { buildProjectReport, downloadProjectReport } from './projectReport.js';
 import {
-  scheduleProgress, taskState, durationDays,
+  scheduleProgress, taskState, durationDays, completionOf,
   plannedSpendByMonth, actualSpendByMonth, costPosition, contractorPerformance,
 } from './schedule.js';
 import { ka } from './bilingual.js';
@@ -703,7 +703,7 @@ const paidOn = (taskId) => sumOf(state.payments.filter((p) => p.task_id === task
 async function loadSchedule(projectId) {
   const [tasks, payments, delays, contractors] = await Promise.all([
     db.from('schedule_tasks')
-      .select('id, name, planned_start, planned_finish, done, done_at, contractor_id, quantity, unit, rate, budget')
+      .select('id, name, planned_start, planned_finish, done, done_at, progress_pct, contractor_id, quantity, unit, rate, budget')
       .eq('project_id', projectId)
       .order('planned_start')
       .order('planned_finish'),
@@ -747,7 +747,9 @@ function taskStateChip(task, s) {
     const late = s.daysLate ? ` · ${s.daysLate} d late` : '';
     return `<span class="status-chip status-done">✓ Done${esc(when)}${late}</span>`;
   }
-  if (s.key === 'overdue') return `<span class="status-chip status-blocked">! Overdue · ${s.daysLate} d</span>`;
+  if (s.key === 'overdue') {
+    return `<span class="status-chip status-blocked">! Overdue · ${s.daysLate} d · ${Math.round(completionOf(task) * 100)}%</span>`;
+  }
   if (s.key === 'active') return '<span class="status-chip status-in_progress">In progress</span>';
   return '<span class="status-chip status-pending">Upcoming</span>';
 }
@@ -784,9 +786,13 @@ function renderSchedule() {
     const s = taskState(t, today);
     return `
       <tr class="${s.key === 'overdue' ? 'is-overdue' : ''}${t.done ? ' is-done' : ''}">
-        <td class="w-8">
-          <input type="checkbox" class="task-check" data-task-toggle="${esc(t.id)}" ${t.done ? 'checked' : ''}
-                 aria-label="Mark ${esc(t.name)} as done">
+        <td class="task-pct-cell">
+          <div class="task-pct">
+            <input type="number" min="0" max="100" step="5" inputmode="numeric" class="task-pct-input"
+                   value="${Math.round(completionOf(t) * 100)}" data-task-pct="${esc(t.id)}"
+                   aria-label="Percent complete for ${esc(t.name)}"><span>%</span>
+          </div>
+          <div class="task-pct-bar"><div style="width:${Math.round(completionOf(t) * 100)}%"></div></div>
         </td>
         <td class="task-name">${esc(t.name)}</td>
         <td>
@@ -809,7 +815,7 @@ function renderSchedule() {
     <table class="data-table">
       <thead>
         <tr>
-          <th><span class="sr-only">Done</span></th><th>Work item</th><th>Contractor</th><th>Start</th><th>Finish</th>
+          <th>% done</th><th>Work item</th><th>Contractor</th><th>Start</th><th>Finish</th>
           <th class="num">Days</th><th class="num">Budget</th><th>Status</th><th></th>
         </tr>
       </thead>
@@ -817,19 +823,24 @@ function renderSchedule() {
     </table>`;
 }
 
-async function toggleTask(taskId, done) {
+// Saves an item's % complete. 100% = finished: done is set and the finish
+// date recorded (kept if it was already finished), which drives on-time/late.
+async function setTaskPercent(taskId, rawValue) {
   const task = state.tasks.find((t) => t.id === taskId);
   if (!task) return;
-  const prev = { done: task.done, done_at: task.done_at };
+  const pct = Math.min(100, Math.max(0, Math.round(Number(rawValue) || 0)));
+  const prev = { progress_pct: task.progress_pct, done: task.done, done_at: task.done_at };
+  if (pct === Math.round(completionOf(task) * 100)) return renderSchedule(); // unchanged (re-clamp display)
 
   // Optimistic update, rolled back on failure.
-  task.done = done;
-  task.done_at = done ? todayISO() : null;
+  task.progress_pct = pct;
+  task.done = pct === 100;
+  task.done_at = task.done ? (prev.done ? prev.done_at : todayISO()) : null;
   renderScheduleViews();
 
   const { error } = await db
     .from('schedule_tasks')
-    .update({ done: task.done, done_at: task.done_at })
+    .update({ progress_pct: task.progress_pct, done: task.done, done_at: task.done_at })
     .eq('id', task.id);
   if (error) {
     Object.assign(task, prev);
@@ -950,8 +961,8 @@ async function deleteTask(taskId) {
 }
 
 function onScheduleChange(e) {
-  const toggle = e.target.closest('[data-task-toggle]');
-  if (toggle) return toggleTask(toggle.dataset.taskToggle, toggle.checked);
+  const pct = e.target.closest('[data-task-pct]');
+  if (pct) return setTaskPercent(pct.dataset.taskPct, pct.value);
 
   const contractor = e.target.closest('[data-task-contractor]');
   if (contractor) assignContractor(contractor.dataset.taskContractor, contractor.value || null);
@@ -1241,7 +1252,7 @@ function renderCosts() {
   $('#cash-summary').innerHTML = [
     statTile('Budget', money.format(c.budget), `${state.tasks.filter((t) => Number(t.budget)).length} priced items`),
     statTile('Planned by today', money.format(c.planned), 'Value of work due by now'),
-    statTile('Work done', money.format(c.earned), 'Budget of ticked items',
+    statTile('Work done', money.format(c.earned), 'Budget × % complete',
       c.earned < c.planned - 0.5 ? 'negative' : ''),
     statTile('Spent', money.format(c.spent), c.budget ? `${Math.round((c.spent / c.budget) * 100)}% of budget` : '—',
       c.spent > c.budget && c.budget > 0 ? 'negative' : ''),

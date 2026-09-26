@@ -206,6 +206,12 @@ alter table public.schedule_tasks
   add column if not exists rate     numeric(14,2) check (rate is null or rate >= 0),
   add column if not exists budget   numeric(14,2) not null default 0 check (budget >= 0);
 
+-- % complete per item (100 = finished; done/done_at are kept in step by the app).
+alter table public.schedule_tasks
+  add column if not exists progress_pct smallint not null default 0
+  check (progress_pct between 0 and 100);
+update public.schedule_tasks set progress_pct = 100 where done and progress_pct < 100;
+
 create table if not exists public.task_payments (
   id          uuid primary key default gen_random_uuid(),
   project_id  uuid not null references public.projects(id) on delete cascade,

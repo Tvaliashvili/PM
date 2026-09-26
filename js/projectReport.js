@@ -3,7 +3,7 @@
 // Built from the open project's data; shown in the app and saved as PDF.
 // =============================================================
 import {
-  taskState, costPosition, contractorPerformance, plannedSpendByMonth, actualSpendByMonth,
+  taskState, completionOf, costPosition, contractorPerformance, plannedSpendByMonth, actualSpendByMonth,
 } from './schedule.js';
 import { bi, dateKa, dateEn, signatureHtml } from './bilingual.js';
 import { MANPOWER_TRADES, REPORT_AUTHOR } from './config.js';
@@ -165,7 +165,7 @@ export async function buildProjectReport({
               <th>${L('სამუშაო', 'Work item')}</th><th>${L('კონტრაქტორი', 'Contractor')}</th>
               <th>${L('დაწყება', 'Start')}</th><th>${L('დასრულება', 'Finish')}</th>
               <th class="num">${L('ბიუჯეტი', 'Budget')}</th><th class="num">${L('გადახდილი', 'Paid')}</th>
-              <th>${L('სტატუსი', 'Status')}</th>
+              <th class="num">${L('შესრულება', 'Done')}</th><th>${L('სტატუსი', 'Status')}</th>
             </tr>
           </thead>
           <tbody>
@@ -180,6 +180,7 @@ export async function buildProjectReport({
                   <td>${d(t.planned_finish)}</td>
                   <td class="num">${Number(t.budget) ? m(t.budget) : '—'}</td>
                   <td class="num">${paidOn(t.id) ? m(paidOn(t.id)) : '—'}</td>
+                  <td class="num">${Math.round(completionOf(t) * 100)}%</td>
                   <td>${chip(TASK_STATUS[s.key], late)}</td>
                 </tr>`;
             }).join('')}

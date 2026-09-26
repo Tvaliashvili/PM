@@ -1,10 +1,11 @@
 // =============================================================
 // Timetable progress maths (pure — no DOM, no database)
-// Each activity weighs its planned duration in days.
-//   actual  = share of total weight that is ticked done
+// Each item has a % complete (100% = finished) and weighs its planned
+// duration in days.
+//   actual  = weighted average of the items' % complete
 //   planned = share of total weight that should be done by today
-//             (an activity in progress counts pro rata)
-//   overdue = not done and its planned finish is before today
+//             (an item in progress counts pro rata)
+//   overdue = below 100% and its planned finish is before today
 // =============================================================
 const DAY_MS = 86_400_000;
 
@@ -13,6 +14,10 @@ const dayDiff = (a, b) => Math.round((toDate(b) - toDate(a)) / DAY_MS);
 
 /** Planned duration in days, inclusive of both ends (a one-day task weighs 1). */
 export const durationDays = (task) => dayDiff(task.planned_start, task.planned_finish) + 1;
+
+/** How complete an item is, 0…1. 100% (or the older done flag) means finished. */
+export const completionOf = (task) =>
+  (task.done ? 1 : Math.min(100, Math.max(0, Number(task.progress_pct || 0))) / 100);
 
 /** Share of a task's duration that has passed by `todayIso` (0…1). */
 function plannedFraction(task, todayIso) {
@@ -72,7 +77,7 @@ export function actualSpendByMonth(payments) {
  * Cost position on `todayIso`:
  *   budget  — total of all item budgets
  *   planned — value of work that should be done by today (budget × planned share)
- *   earned  — value of work actually done (budgets of ticked items)
+ *   earned  — value of work actually done (budget × % complete)
  *   spent   — sum of payments made up to today
  */
 export function costPosition(tasks, payments, todayIso) {
@@ -83,7 +88,7 @@ export function costPosition(tasks, payments, todayIso) {
     const b = budgetOf(task);
     budget += b;
     planned += b * plannedFraction(task, todayIso);
-    if (task.done) earned += b;
+    earned += b * completionOf(task);
   }
   const spent = payments
     .filter((p) => p.paid_on <= todayIso)
@@ -148,7 +153,7 @@ export function scheduleProgress(tasks, todayIso) {
   for (const task of tasks) {
     const weight = durationDays(task);
     total += weight;
-    if (task.done) done += weight;
+    done += weight * completionOf(task);
     planned += weight * plannedFraction(task, todayIso);
 
     const state = taskState(task, todayIso);
