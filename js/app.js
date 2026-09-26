@@ -1524,7 +1524,7 @@ async function loadLogs(projectId) {
     return;
   }
   if (!data.length) {
-    el.innerHTML = '<div class="panel empty-state">No daily logs yet — click New Daily Log and paste today's WhatsApp log.</div>';
+    el.innerHTML = "<div class=\"panel empty-state\">No daily logs yet — click New Daily Log and paste today's WhatsApp log.</div>";
     return;
   }
 
