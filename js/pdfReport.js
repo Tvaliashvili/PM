@@ -31,9 +31,9 @@ const fileSafe = (name) => (name || 'Project')
 const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key.replace(/_/g, ' ');
 
 // English label (sent to Gemini) and bilingual label (printed).
-const flatLabel = (flat) => (flat ? `Block ${flat.block} · Unit ${flat.flat_number}` : 'Site-wide');
+const flatLabel = (flat) => (flat ? `Block ${flat.block} · Room ${flat.flat_number}` : 'Site-wide');
 const flatLabelBi = (flat) => (flat
-  ? `${ka('Block')}/Block ${flat.block} · ${ka('Unit')}/Unit ${flat.flat_number}`
+  ? `${ka('Block')}/Block ${flat.block} · ${ka('Room')}/Room ${flat.flat_number}`
   : bi('Site-wide'));
 
 function mergeManpower(logs) {
@@ -196,7 +196,7 @@ export async function generateDailyReport({ db, project, progress, userEmail }) 
       name: project.name,
       location: project.location,
       client: project.client_name, // the company that hired us — the report's main reader
-      total_units: project.total_flats,
+      total_rooms: project.total_flats,
     },
     // Timetable position (progress is weighted by planned duration).
     schedule: progress?.count ? {

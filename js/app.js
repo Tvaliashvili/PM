@@ -103,7 +103,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log', '#btn-new-log-page', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-view-report', '#btn-add-unit', '#btn-add-units-bulk', '#btn-add-task', '#btn-add-contractor',
+  ['#btn-new-log', '#btn-new-log-page', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-view-report', '#btn-add-unit', '#btn-add-task', '#btn-add-contractor',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -325,7 +325,7 @@ async function renderProjectList() {
             <span class="text-xs text-slate-400 tabular-nums">${pct}%</span>
           </div>
           <dl class="project-stats">
-            <div><dt>Units</dt><dd>${s.units}</dd></div>
+            <div><dt>Rooms</dt><dd>${s.units}</dd></div>
             <div><dt>Overdue</dt><dd class="${s.overdue ? 'is-alert' : ''}">${s.overdue}</dd></div>
             <div><dt>Delays</dt><dd class="${s.delays ? 'is-alert' : ''}">${s.delays}</dd></div>
           </dl>
@@ -398,7 +398,7 @@ async function saveProject(e) {
   }
 
   closeModal('modal-project');
-  toast('Project created. Add its timetable, units and dates next.', 'success');
+  toast('Project created. Add its timetable, rooms and dates next.', 'success');
 
   // Open the new project on its Timetable, which drives progress.
   storage.set('cpm.projectId', project.id);
@@ -448,7 +448,7 @@ function renderUnits() {
     .map(([type, n]) => `${n} × ${type}`).join(' · ') || 'No types set';
 
   $('#units-summary').innerHTML = [
-    statTile('Units', String(units.length), typeSummary),
+    statTile('Rooms', String(units.length), typeSummary),
     statTile('Total area', `${areaFormat.format(area)} m²`,
       withArea.length ? `Average ${areaFormat.format(area / withArea.length)} m²` : 'No areas entered'),
     statTile('Finished', String(count('finished') + count('handed_over')), `${count('in_progress')} in progress`),
@@ -456,7 +456,7 @@ function renderUnits() {
   ].join('');
 
   if (!units.length) {
-    $('#units-table').innerHTML = '<div class="empty-state">No units yet — use Add Unit, or Add in Bulk to create a whole block at once.</div>';
+    $('#units-table').innerHTML = '<div class="empty-state">No rooms yet — click Add Room.</div>';
     return;
   }
 
@@ -467,7 +467,6 @@ function renderUnits() {
       <td class="whitespace-nowrap">${esc(floorLabel(u.floor))}</td>
       <td>${u.unit_type ? esc(u.unit_type) : '<span class="text-slate-500">—</span>'}</td>
       <td class="num">${u.area_m2 != null ? areaFormat.format(u.area_m2) : '—'}</td>
-      <td class="num">${u.rooms ?? '—'}</td>
       <td><span class="status-chip ${UNIT_STATUS_CHIP[u.status] ?? 'status-pending'}">${esc(UNIT_STATUSES[u.status] ?? u.status)}</span></td>
       <td class="max-w-[16rem] truncate text-slate-400" title="${esc(u.notes ?? '')}">${esc(u.notes ?? '')}</td>
       <td class="text-right whitespace-nowrap">
@@ -480,16 +479,15 @@ function renderUnits() {
     <table class="data-table">
       <thead>
         <tr>
-          <th>Unit</th><th>Block</th><th>Floor</th><th>Type</th><th class="num">Area m²</th>
-          <th class="num">Rooms</th><th>Status</th><th>Notes</th><th></th>
+          <th>Room</th><th>Block</th><th>Floor</th><th>Type</th><th class="num">Area m²</th>
+          <th>Status</th><th>Notes</th><th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
       <tfoot>
         <tr>
-          <td colspan="4">${units.length} units</td>
+          <td colspan="4">${units.length} rooms</td>
           <td class="num">${areaFormat.format(area)}</td>
-          <td class="num">${sumOf(units, 'rooms') || '—'}</td>
           <td colspan="3"></td>
         </tr>
       </tfoot>
@@ -502,7 +500,7 @@ function openUnitModal(unit) {
   const f = form.elements;
   form.reset();
   showFormError(form, '');
-  $('#unit-title').textContent = unit ? `Edit Unit ${unit.flat_number}` : 'Add Unit';
+  $('#unit-title').textContent = unit ? `Edit Room ${unit.flat_number}` : 'Add Room';
 
   f.id.value = unit?.id ?? '';
   if (unit) {
@@ -511,7 +509,6 @@ function openUnitModal(unit) {
     f.flat_number.value = unit.flat_number;
     f.unit_type.value = unit.unit_type ?? '';
     f.area_m2.value = unit.area_m2 ?? '';
-    f.rooms.value = unit.rooms ?? '';
     f.status.value = unit.status ?? 'not_started';
     f.notes.value = unit.notes ?? '';
   } else {
@@ -537,7 +534,6 @@ async function saveUnit(e) {
     flat_number: fd.get('flat_number').trim(),
     unit_type:   fd.get('unit_type') || null,
     area_m2:     numOrNull(fd.get('area_m2')),
-    rooms:       numOrNull(fd.get('rooms')),
     status:      fd.get('status'),
     notes:       fd.get('notes').trim() || null,
   };
@@ -551,13 +547,13 @@ async function saveUnit(e) {
 
   if (error) {
     showFormError(form, error.code === '23505'
-      ? `Unit ${row.flat_number} already exists in block ${row.block}.`
+      ? `Room ${row.flat_number} already exists in block ${row.block}.`
       : error.message);
     return;
   }
 
   closeModal('modal-unit');
-  toast(id ? 'Unit updated.' : 'Unit added.', 'success');
+  toast(id ? 'Room updated.' : 'Room added.', 'success');
   await syncFlatCount(projectId);
   if (projectId === state.projectId) loadUnits(projectId);
 }
@@ -572,7 +568,7 @@ async function onUnitsTableClick(e) {
   const del = e.target.closest('[data-unit-delete]');
   if (!del) return;
   const unit = state.flats.find((u) => u.id === del.dataset.unitDelete);
-  if (!unit || !confirm(`Delete unit ${unit.flat_number} (block ${unit.block})?\n\nDelays linked to it are kept as site-wide.`)) return;
+  if (!unit || !confirm(`Delete room ${unit.flat_number} (block ${unit.block})?\n\nDelays linked to it are kept as site-wide.`)) return;
 
   const projectId = state.projectId;
   const { error } = await db.from('flats').delete().eq('id', unit.id);
@@ -580,60 +576,9 @@ async function onUnitsTableClick(e) {
     toast(`Could not delete unit: ${error.message}`, 'error');
     return;
   }
-  toast(`Deleted unit ${unit.flat_number}.`, 'success');
+  toast(`Deleted room ${unit.flat_number}.`, 'success');
   await syncFlatCount(projectId);
   if (projectId === state.projectId) loadUnits(projectId);
-}
-
-// ---------- Add units in bulk ----------
-const clampInt = (value, min, max) => Math.min(max, Math.max(min, parseInt(value, 10) || 0));
-
-// Unit numbers: floor + 2-digit position, e.g. 101, 102 … ground floor G01, G02.
-function planFlats(form) {
-  const block = form.elements.block.value.trim();
-  const a = clampInt(form.elements.floor_from.value, 0, 80);
-  const b = clampInt(form.elements.floor_to.value, 0, 80);
-  const perFloor = clampInt(form.elements.flats_per_floor.value, 1, 30);
-  const [from, to] = a <= b ? [a, b] : [b, a];
-  const unitType = form.elements.unit_type?.value || null;
-  const area = numOrNull(form.elements.area_m2?.value);
-
-  const flats = [];
-  if (!block) return { block, flats };
-  for (let floor = from; floor <= to; floor++) {
-    for (let i = 1; i <= perFloor; i++) {
-      flats.push({
-        block,
-        floor,
-        flat_number: `${floor === 0 ? 'G' : floor}${String(i).padStart(2, '0')}`,
-        unit_type: unitType,
-        area_m2: area,
-        status: 'not_started',
-        stage_status: {},
-      });
-    }
-  }
-  return { block, flats };
-}
-
-function updateFlatsPreview() {
-  const { block, flats } = planFlats($('#form-flats'));
-  $('#flats-preview').textContent = flats.length
-    ? `Adds up to ${flats.length} units to block ${block}: ${flats[0].flat_number} to ${flats[flats.length - 1].flat_number}.`
-    : 'Enter a block name.';
-}
-
-function openBulkUnitsModal() {
-  if (!requireProject()) return;
-  const form = $('#form-flats');
-  form.reset();
-  // Suggest the next block letter after the existing ones (A → B → C …).
-  const blocks = new Set(state.flats.map((f) => f.block));
-  const next = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].find((l) => !blocks.has(l));
-  if (next) form.elements.block.value = next;
-  updateFlatsPreview();
-  showFormError(form, '');
-  openModal('modal-flats');
 }
 
 // Keeps projects.total_flats in step with the flats table (used by reports).
@@ -646,44 +591,6 @@ async function syncFlatCount(projectId) {
   await db.from('projects').update({ total_flats: count }).eq('id', projectId);
   const project = state.projects.find((p) => p.id === projectId);
   if (project) project.total_flats = count;
-}
-
-async function saveFlats(e) {
-  e.preventDefault();
-  const form = e.currentTarget;
-  const btn  = $('[type=submit]', form);
-  const projectId = state.projectId;
-  const { block, flats } = planFlats(form);
-
-  if (!flats.length) {
-    showFormError(form, 'Enter a block name.');
-    return;
-  }
-
-  showFormError(form, '');
-  setBusy(btn, true, 'Adding…');
-  // Existing units (same block + number) are skipped, so a block can be extended.
-  const { data, error } = await db
-    .from('flats')
-    .upsert(flats.map((f) => ({ ...f, project_id: projectId })), {
-      onConflict: 'project_id,block,flat_number',
-      ignoreDuplicates: true,
-    })
-    .select('id');
-  setBusy(btn, false);
-
-  if (error) {
-    showFormError(form, error.message);
-    return;
-  }
-
-  const added = data.length;
-  const skipped = flats.length - added;
-  closeModal('modal-flats');
-  toast(`Added ${added} units to block ${block}${skipped ? ` (${skipped} already existed)` : ''}.`, 'success');
-
-  await syncFlatCount(projectId);
-  if (projectId === state.projectId) loadUnits(projectId);
 }
 
 // =============================================================
@@ -1074,7 +981,7 @@ function renderRecentDelays(delays) {
   }
   el.className = 'divide-y divide-ink-700';
   el.innerHTML = delays.map((d) => {
-    const where = d.flats ? `Block ${d.flats.block} · Unit ${d.flats.flat_number}` : 'Site-wide';
+    const where = d.flats ? `Block ${d.flats.block} · Room ${d.flats.flat_number}` : 'Site-wide';
     return `
       <div class="py-2.5 flex items-start justify-between gap-3 text-sm">
         <div class="min-w-0">
@@ -1720,7 +1627,6 @@ function initModals() {
   const typeOptions = '<option value="">—</option>'
     + UNIT_TYPES.map((u) => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
   $('#unit-type').innerHTML = typeOptions;
-  $('#bulk-unit-type').innerHTML = typeOptions;
   $('#unit-status').innerHTML = Object.entries(UNIT_STATUSES)
     .map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join('');
 }
@@ -1842,9 +1748,9 @@ function openDelayModal() {
   if (!requireProject()) return;
   const form = $('#form-delay');
   form.reset();
-  $('#delay-flat').innerHTML = '<option value="">Site-wide (no specific unit)</option>'
+  $('#delay-flat').innerHTML = '<option value="">Site-wide (no specific room)</option>'
     + state.flats.map((f) => `
-      <option value="${esc(f.id)}">Block ${esc(f.block)} · Unit ${esc(f.flat_number)} (${esc(floorLabel(f.floor))})</option>
+      <option value="${esc(f.id)}">Block ${esc(f.block)} · Room ${esc(f.flat_number)} (${esc(floorLabel(f.floor))})</option>
     `).join('');
   $('#delay-contractor').innerHTML = contractorOptions('');
   showFormError(form, '');
@@ -1998,15 +1904,12 @@ $('#contractors-table').addEventListener('click', onContractorsClick);
 $('#projects-container').addEventListener('click', onProjectsClick);
 $('#btn-new-project').addEventListener('click', openProjectModal);
 $('#form-project').addEventListener('submit', saveProject);
-$('#btn-add-units-bulk').addEventListener('click', openBulkUnitsModal);
 $('#btn-parse-log').addEventListener('click', processLogText);
 $('#btn-new-log-page').addEventListener('click', openDailyLogModal);
 $('#form-ask').addEventListener('submit', askGemini);
 $('#form-ask').addEventListener('click', onAskSuggestion);
 $('#btn-edit-project').addEventListener('click', openEditProjectModal);
 $('#form-edit-project').addEventListener('submit', saveEditProject);
-$('#form-flats').addEventListener('submit', saveFlats);
-$('#form-flats').addEventListener('input', updateFlatsPreview);
 $('#btn-export-pdf').addEventListener('click', exportDailyReport);
 $('#btn-report-daily').addEventListener('click', exportDailyReport);
 $('#btn-view-report').addEventListener('click', openProjectReport);

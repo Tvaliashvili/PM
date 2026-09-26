@@ -120,7 +120,7 @@ export async function buildProjectReport({
         ${tile('დახარჯული', 'Spent', m(cost.spent),
           cost.budget ? `${Math.round((cost.spent / cost.budget) * 100)}% ${L('ბიუჯეტის', 'of budget')}` : '',
           cost.spent > cost.budget && cost.budget ? 'bad' : '')}
-        ${tile('ერთეულები', 'Units', String(units.length), area ? `${num.format(area)} m²` : '')}
+        ${tile('ოთახები', 'Rooms', String(units.length), area ? `${num.format(area)} m²` : '')}
         ${tile('შეფერხებები (30 დღე)', 'Delays (30 days)', String(delays.length),
           delayHours ? `${num.format(delayHours)} ${L('საათი', 'hours')}` : '')}
       </div>
@@ -284,7 +284,7 @@ export async function buildProjectReport({
   }
   const unitsSection = `
     <section class="rpt-section rpt-avoid">
-      ${H('ერთეულები', 'Units')}
+      ${H('ოთახები', 'Rooms')}
       ${units.length ? `
         <div class="rpt-two">
           <table>

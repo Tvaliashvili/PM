@@ -92,7 +92,7 @@
         </a>
         <a href="#units" data-nav="units" class="nav-link">
           <svg viewBox="0 0 24 24" class="nav-icon"><path d="M4 4h4v4H4V4zm6 0h4v4h-4V4zm6 0h4v4h-4V4zM4 10h4v4H4v-4zm6 0h4v4h-4v-4zm6 0h4v4h-4v-4zM4 16h4v4H4v-4zm6 0h4v4h-4v-4zm6 0h4v4h-4v-4z"/></svg>
-          Units
+          Rooms
         </a>
         <a href="#daily-logs" data-nav="daily-logs" class="nav-link">
           <svg viewBox="0 0 24 24" class="nav-icon"><path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V10h14v10zM7 12h5v5H7v-5z"/></svg>
@@ -247,16 +247,13 @@
         <section id="section-units" data-section="units" class="module hidden">
           <div class="module-header">
             <div>
-              <h1 class="text-xl font-semibold text-white">Units</h1>
-              <p class="text-sm text-slate-500">Apartments and other units — type, area, rooms and status.</p>
+              <h1 class="text-xl font-semibold text-white">Rooms</h1>
+              <p class="text-sm text-slate-500">Each room with its number, type, area and status.</p>
             </div>
-            <div class="flex gap-2">
-              <button id="btn-add-units-bulk" class="btn btn-secondary">Add in Bulk</button>
-              <button id="btn-add-unit" class="btn btn-primary">
-                <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
-                Add Unit
-              </button>
-            </div>
+            <button id="btn-add-unit" class="btn btn-primary">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
+              Add Room
+            </button>
           </div>
           <div class="space-y-4">
             <div id="units-summary" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
@@ -358,7 +355,7 @@
           <div class="module-header">
             <div>
               <h1 class="text-xl font-semibold text-white">Delays</h1>
-              <p class="text-sm text-slate-500">Causes, durations and affected units.</p>
+              <p class="text-sm text-slate-500">Causes, durations and affected rooms.</p>
             </div>
             <button id="btn-new-delay" class="btn btn-primary">
               <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
@@ -427,7 +424,7 @@
         <div><span>მუშები ობიექტზე<em>Manpower on site</em></span><strong data-field="manpower-total"></strong></div>
         <div><span>შეფერხებები<em>Delays today</em></span><strong data-field="delay-count"></strong></div>
         <div><span>დაკარგული საათები<em>Hours lost</em></span><strong data-field="delay-hours"></strong></div>
-        <div><span>ერთეულები სულ<em>Total units</em></span><strong data-field="total-flats"></strong></div>
+        <div><span>ოთახები სულ<em>Total rooms</em></span><strong data-field="total-flats"></strong></div>
         <div><span>პროგრესი (გეგმა)<em>Progress (planned)</em></span><strong data-field="progress"></strong></div>
       </div>
 
@@ -740,12 +737,12 @@
     </form>
   </dialog>
 
-  <!-- Unit (add / edit) -->
+  <!-- Room (add / edit) -->
   <dialog id="modal-unit" class="modal" aria-labelledby="unit-title">
     <form id="form-unit">
       <input type="hidden" name="id">
       <div class="modal-header">
-        <h2 id="unit-title">Add Unit</h2>
+        <h2 id="unit-title">Add Room</h2>
         <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
       </div>
       <div class="modal-body space-y-4">
@@ -759,11 +756,11 @@
             <input name="floor" type="number" min="-5" max="80" step="1" required class="input-dark w-full">
           </label>
           <label class="block">
-            <span class="form-label">Unit no.</span>
+            <span class="form-label">Room no.</span>
             <input name="flat_number" required maxlength="20" class="input-dark w-full" placeholder="301">
           </label>
         </div>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <label class="block">
             <span class="form-label">Type</span>
             <select id="unit-type" name="unit_type" class="select-dark w-full"></select>
@@ -771,10 +768,6 @@
           <label class="block">
             <span class="form-label">Area (m²)</span>
             <input name="area_m2" type="number" min="0" step="0.01" class="input-dark w-full">
-          </label>
-          <label class="block">
-            <span class="form-label">Rooms</span>
-            <input name="rooms" type="number" min="0" max="20" step="1" class="input-dark w-full">
           </label>
           <label class="block">
             <span class="form-label">Status</span>
@@ -789,57 +782,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-close>Cancel</button>
-        <button type="submit" class="btn btn-primary">Save Unit</button>
-      </div>
-    </form>
-  </dialog>
-
-  <!-- Add units in bulk (one block at a time) -->
-  <dialog id="modal-flats" class="modal" aria-labelledby="flats-title">
-    <form id="form-flats">
-      <div class="modal-header">
-        <h2 id="flats-title">Add Units in Bulk</h2>
-        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
-      </div>
-      <div class="modal-body space-y-4">
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <label class="block">
-            <span class="form-label">Block</span>
-            <input name="block" required maxlength="20" value="A" class="input-dark w-full" placeholder="A">
-          </label>
-          <label class="block">
-            <span class="form-label">From floor</span>
-            <input name="floor_from" type="number" min="0" max="80" step="1" value="1" required class="input-dark w-full">
-          </label>
-          <label class="block">
-            <span class="form-label">To floor</span>
-            <input name="floor_to" type="number" min="0" max="80" step="1" value="5" required class="input-dark w-full">
-          </label>
-          <label class="block">
-            <span class="form-label">Units / floor</span>
-            <input name="flats_per_floor" type="number" min="1" max="30" step="1" value="4" required class="input-dark w-full">
-          </label>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <label class="block">
-            <span class="form-label">Type (optional)</span>
-            <select id="bulk-unit-type" name="unit_type" class="select-dark w-full"></select>
-          </label>
-          <label class="block">
-            <span class="form-label">Area m² each (optional)</span>
-            <input name="area_m2" type="number" min="0" step="0.01" class="input-dark w-full">
-          </label>
-        </div>
-        <p id="flats-preview" class="text-xs text-slate-400"></p>
-        <p class="text-xs text-slate-500">
-          Numbers are floor + position (101, 102 … ground floor G01). Units that already exist in this block are skipped,
-          so you can run this again to extend a block. Edit individual units afterwards for their exact area and type.
-        </p>
-        <p class="form-error hidden" data-error></p>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-close>Cancel</button>
-        <button type="submit" class="btn btn-primary">Add Units</button>
+        <button type="submit" class="btn btn-primary">Save Room</button>
       </div>
     </form>
   </dialog>
@@ -910,7 +853,7 @@
       </div>
       <div class="modal-body space-y-4">
         <label class="block">
-          <span class="form-label">Affected unit</span>
+          <span class="form-label">Affected room</span>
           <select id="delay-flat" name="flat_id" class="select-dark w-full"></select>
         </label>
         <label class="block">
