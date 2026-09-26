@@ -162,6 +162,13 @@ alter table public.flats drop constraint if exists flats_status_check;
 alter table public.flats add constraint flats_status_check
   check (status in ('not_started', 'in_progress', 'finished', 'handed_over'));
 
+-- Per-project currency (amounts are stored as plain numbers in that currency).
+alter table public.projects
+  add column if not exists currency text not null default 'USD';
+alter table public.projects drop constraint if exists projects_currency_check;
+alter table public.projects add constraint projects_currency_check
+  check (currency in ('USD', 'GEL'));
+
 -- Timetable: overall progress = done activities weighted by planned duration.
 create table if not exists public.schedule_tasks (
   id              uuid primary key default gen_random_uuid(),

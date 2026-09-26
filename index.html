@@ -458,6 +458,10 @@
           <span class="form-label">Location</span>
           <input name="location" maxlength="120" class="input-dark w-full" placeholder="e.g. Vake, Tbilisi">
         </label>
+        <label class="block">
+          <span class="form-label">Currency</span>
+          <select name="currency" class="select-dark w-full" data-currency-options></select>
+        </label>
         <p class="form-error hidden" data-error></p>
       </div>
       <div class="modal-footer">
@@ -492,7 +496,14 @@
             <span class="form-label">Planned completion</span>
             <input name="end_date" type="date" class="input-dark w-full">
           </label>
+          <label class="block">
+            <span class="form-label">Currency</span>
+            <select name="currency" class="select-dark w-full" data-currency-options></select>
+          </label>
         </div>
+        <p class="text-xs text-slate-500">
+          Changing the currency relabels existing amounts — it doesn't convert them.
+        </p>
         <p class="form-error hidden" data-error></p>
       </div>
       <div class="modal-footer">

@@ -2,7 +2,7 @@
 // CPMG PM — main app logic
 // =============================================================
 import {
-  SUPABASE_URL, SUPABASE_KEY, CURRENCY_CODE,
+  SUPABASE_URL, SUPABASE_KEY, CURRENCIES, DEFAULT_CURRENCY,
   UNIT_TYPES, UNIT_STATUSES,
   MANPOWER_TRADES, WEATHER_OPTIONS, DELAY_CAUSES,
   BOQ_UNITS, BOQ_CATEGORIES, BOQ_STATUSES,
@@ -33,9 +33,24 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ));
 
-const money = new Intl.NumberFormat(undefined, {
-  style: 'currency', currency: CURRENCY_CODE, maximumFractionDigits: 0,
-});
+// Money is shown in the open project's currency ($ or ₾).
+const moneyFormats = new Map();
+function moneyFormat(decimals) {
+  const currency = state.projects.find((p) => p.id === state.projectId)?.currency ?? DEFAULT_CURRENCY;
+  const key = `${currency}:${decimals}`;
+  if (!moneyFormats.has(key)) {
+    moneyFormats.set(key, new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+      currencyDisplay: 'narrowSymbol',
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }));
+  }
+  return moneyFormats.get(key);
+}
+const money  = { format: (n) => moneyFormat(0).format(n) };
+const money2 = { format: (n) => moneyFormat(2).format(n) };
 
 const todayISO = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD, local time
 
@@ -190,7 +205,7 @@ function showSetupNotice() {
 async function loadProjects() {
   const { data, error } = await db
     .from('projects')
-    .select('id, name, location, total_flats, created_at, start_date, end_date')
+    .select('id, name, location, total_flats, created_at, start_date, end_date, currency')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -286,7 +301,7 @@ async function renderProjectList() {
       <article class="project-card${p.id === state.projectId ? ' is-active' : ''}">
         <button type="button" class="project-card-open" data-open-project="${esc(p.id)}">
           <p class="pr-8 font-semibold text-white truncate">${esc(p.name)}</p>
-          <p class="text-sm text-slate-500 truncate">${esc(p.location || 'No location set')}</p>
+          <p class="text-sm text-slate-500 truncate">${esc(p.location || 'No location set')} · ${esc(p.currency ?? DEFAULT_CURRENCY)}</p>
           <p class="text-xs text-slate-500 mt-1">${p.start_date && p.end_date
             ? `${esc(formatDate(p.start_date))} → ${esc(formatDate(p.end_date))}`
             : 'Dates not set'}</p>
@@ -352,7 +367,11 @@ async function saveProject(e) {
   setBusy(btn, true, 'Creating…');
   const { data: project, error } = await db
     .from('projects')
-    .insert({ name: fd.get('name').trim(), location: fd.get('location').trim() || null })
+    .insert({
+      name: fd.get('name').trim(),
+      location: fd.get('location').trim() || null,
+      currency: fd.get('currency') || DEFAULT_CURRENCY,
+    })
     .select('id')
     .single();
   setBusy(btn, false);
@@ -1046,6 +1065,7 @@ function openEditProjectModal() {
   f.location.value = project.location ?? '';
   f.start_date.value = project.start_date ?? '';
   f.end_date.value = project.end_date ?? '';
+  f.currency.value = project.currency ?? DEFAULT_CURRENCY;
   showFormError(form, '');
   openModal('modal-edit-project');
 }
@@ -1062,6 +1082,7 @@ async function saveEditProject(e) {
     location: fd.get('location').trim() || null,
     start_date: fd.get('start_date') || null,
     end_date: fd.get('end_date') || null,
+    currency: fd.get('currency') || DEFAULT_CURRENCY,
   };
   if (row.start_date && row.end_date && row.end_date < row.start_date) {
     showFormError(form, 'Planned completion must be on or after the start date.');
@@ -1083,6 +1104,8 @@ async function saveEditProject(e) {
   toast('Project updated.', 'success');
   applyProjectHeader(project);
   renderTimeline();
+  renderBoq();                     // amounts in the (possibly new) currency
+  refreshDashboard(project.id);
 }
 
 // =============================================================
@@ -1090,9 +1113,6 @@ async function saveEditProject(e) {
 // cash_flow rows are BOQ items: planned = budget, actual = spent,
 // due_date places the payment in the monthly cash-flow table.
 // =============================================================
-const money2 = new Intl.NumberFormat(undefined, {
-  style: 'currency', currency: CURRENCY_CODE, minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
 const qtyFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 });
 const BOQ_STATUS_CHIP = {
   planned: 'status-pending', committed: 'status-in_progress', paid: 'status-done', cancelled: 'status-pending',
@@ -1389,6 +1409,10 @@ function initModals() {
   $('#boq-status').innerHTML = Object.entries(BOQ_STATUSES)
     .map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join('');
   $('#boq-categories').innerHTML = BOQ_CATEGORIES.map((c) => `<option value="${esc(c)}"></option>`).join('');
+
+  const currencyOptions = Object.entries(CURRENCIES)
+    .map(([code, label]) => `<option value="${code}">${esc(label)}</option>`).join('');
+  $$('[data-currency-options]').forEach((sel) => { sel.innerHTML = currencyOptions; });
 
   const typeOptions = '<option value="">—</option>'
     + UNIT_TYPES.map((u) => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
