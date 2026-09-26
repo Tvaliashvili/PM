@@ -433,9 +433,23 @@ textarea.input-dark { resize: vertical; }
   width: 718px; /* A4 (794px @ 96dpi) minus 10mm side margins */
   background: #fff;
   color: #0f172a;
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'Inter', 'Noto Sans Georgian', system-ui, sans-serif;
   font-size: 12px;
   line-height: 1.5;
+}
+/* English line under each Georgian label */
+.pdf-page em { font-style: normal; font-weight: 400; color: #64748b; }
+.pdf-page th em,
+.pdf-facts span em { display: block; font-size: 0.85em; }
+.pdf-page h2 em { font-size: 0.85em; text-transform: none; letter-spacing: 0; margin-left: 4px; }
+.pdf-summary-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.pdf-lang {
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #b45309;
 }
 .pdf-page h1 { font-size: 22px; font-weight: 700; color: #0f172a; line-height: 1.2; }
 .pdf-page h2 {

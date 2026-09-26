@@ -12,7 +12,7 @@
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Georgian:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
   <!-- Supabase JS v2 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -315,51 +315,69 @@
 
   <!-- Printable daily report template (filled by js/pdfReport.js) -->
   <template id="daily-report-template">
+    <!-- Bilingual: Georgian first, English beneath (<em>). -->
     <div class="pdf-page">
       <div class="pdf-header">
         <div>
-          <p class="pdf-eyebrow">Daily Site Report</p>
+          <p class="pdf-eyebrow">ობიექტის დღიური ანგარიში · Daily Site Report</p>
           <h1 data-field="project"></h1>
           <p class="pdf-muted" data-field="location"></p>
         </div>
         <div class="pdf-header-date">
-          <p class="pdf-eyebrow">Date</p>
-          <p class="pdf-strong" data-field="date"></p>
+          <p class="pdf-eyebrow">თარიღი · Date</p>
+          <p class="pdf-strong" data-field="date-ka"></p>
+          <p class="pdf-muted" data-field="date-en"></p>
         </div>
       </div>
 
       <div class="pdf-facts pdf-avoid-break">
-        <div><span>Weather</span><strong data-field="weather"></strong></div>
-        <div><span>Manpower on site</span><strong data-field="manpower-total"></strong></div>
-        <div><span>Delays today</span><strong data-field="delay-count"></strong></div>
-        <div><span>Hours lost</span><strong data-field="delay-hours"></strong></div>
-        <div><span>Total flats</span><strong data-field="total-flats"></strong></div>
+        <div><span>ამინდი<em>Weather</em></span><strong data-field="weather"></strong></div>
+        <div><span>მუშები ობიექტზე<em>Manpower on site</em></span><strong data-field="manpower-total"></strong></div>
+        <div><span>შეფერხებები<em>Delays today</em></span><strong data-field="delay-count"></strong></div>
+        <div><span>დაკარგული საათები<em>Hours lost</em></span><strong data-field="delay-hours"></strong></div>
+        <div><span>ბინები სულ<em>Total flats</em></span><strong data-field="total-flats"></strong></div>
       </div>
 
       <section class="pdf-section pdf-avoid-break">
-        <h2>Executive Summary</h2>
-        <ul class="pdf-summary" data-list="summary"></ul>
+        <h2>მოკლე შეჯამება <em>Executive Summary</em></h2>
+        <div class="pdf-summary-cols">
+          <div>
+            <p class="pdf-lang">ქართული</p>
+            <ul class="pdf-summary" data-list="summary-ka"></ul>
+          </div>
+          <div>
+            <p class="pdf-lang">English</p>
+            <ul class="pdf-summary" data-list="summary-en"></ul>
+          </div>
+        </div>
         <p class="pdf-note" data-field="summary-note"></p>
       </section>
 
       <section class="pdf-section pdf-avoid-break">
-        <h2>Manpower</h2>
+        <h2>სამუშაო ძალა <em>Manpower</em></h2>
         <table>
-          <thead><tr><th>Trade</th><th class="num">Workers</th></tr></thead>
+          <thead><tr><th>სპეციალობა<em>Trade</em></th><th class="num">მუშები<em>Workers</em></th></tr></thead>
           <tbody data-rows="manpower"></tbody>
         </table>
       </section>
 
       <section class="pdf-section">
-        <h2>Delays</h2>
+        <h2>შეფერხებები <em>Delays</em></h2>
         <table>
-          <thead><tr><th>Cause</th><th>Location</th><th class="num">Hours</th><th>Description</th></tr></thead>
+          <thead>
+            <tr>
+              <th>მიზეზი<em>Cause</em></th>
+              <th>ადგილი<em>Location</em></th>
+              <th class="num">საათი<em>Hours</em></th>
+              <th>აღწერა<em>Description</em></th>
+            </tr>
+          </thead>
           <tbody data-rows="delays"></tbody>
         </table>
       </section>
 
       <section class="pdf-section pdf-avoid-break">
-        <h2>Site Notes</h2>
+        <h2>ობიექტის შენიშვნები <em>Site Notes</em></h2>
         <p class="pdf-notes" data-field="notes"></p>
       </section>
 

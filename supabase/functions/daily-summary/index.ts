@@ -1,6 +1,6 @@
 // =============================================================
 // Supabase Edge Function: daily-summary
-// Turns one day's site data into a 3-bullet executive summary via Google Gemini.
+// Turns one day's site data into a 3-bullet executive summary, in Georgian and English, via Google Gemini.
 // Keeps GEMINI_API_KEY server-side — the browser never sees it.
 //
 // Deploy:
@@ -32,23 +32,32 @@ const json = (body: unknown, status = 200) =>
 
 const MAX_PAYLOAD_CHARS = 50_000;
 
-const SYSTEM_PROMPT = `You write the executive summary for a daily site report on a residential flat development. The report is read by the client and senior management, who want the day's position at a glance.
+const SYSTEM_PROMPT = `You write the executive summary for a daily site report on a residential flat development in Georgia. The company works internationally and locally, so every report is bilingual: the client and senior management read it in Georgian or English and want the day's position at a glance.
 
 Write exactly three bullets:
 1. Progress — what work was done on site today.
 2. Resources — manpower on site and any weather impact.
 3. Delays and risks — what was lost, why, and the next action needed.
 
-Each bullet is one or two plain sentences with specific figures from the data. Use only the data provided; if something is missing, say so briefly instead of guessing.`;
+Each bullet is one or two plain sentences with specific figures from the data. Use only the data provided; if something is missing, say so briefly instead of guessing.
+
+Return the same three bullets twice: "ka" in natural, professional Georgian as used in Georgian construction reporting, and "en" in English. The two versions must state the same facts and figures. Start the Georgian bullets with "პროგრესი:", "რესურსები:" and "შეფერხებები და რისკები:", and the English ones with "Progress:", "Resources:" and "Delays and risks:". Site notes may be in either language — translate their content as needed.`;
 
 // Gemini structured output (OpenAPI-style schema)
 const SUMMARY_SCHEMA = {
   type: "OBJECT",
   properties: {
-    bullets: { type: "ARRAY", items: { type: "STRING" } },
+    ka: { type: "ARRAY", items: { type: "STRING" } },
+    en: { type: "ARRAY", items: { type: "STRING" } },
   },
-  required: ["bullets"],
+  required: ["ka", "en"],
 };
+
+const cleanBullets = (list: unknown) =>
+  (Array.isArray(list) ? list : [])
+    .map((b) => String(b).trim())
+    .filter(Boolean)
+    .slice(0, 3);
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -96,15 +105,19 @@ Deno.serve(async (req) => {
     let data: any = {};
     let model = GEMINI_MODELS[0];
 
-    for (model of GEMINI_MODELS) {
-      res = await fetch(geminiUrl(model), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-        body: requestBody,
-      });
-      data = await res.json().catch(() => ({}));
-      if (!RETRYABLE.has(res.status)) break;
-      console.warn(`Gemini ${model} returned ${res.status}, trying next model`);
+    // Two passes over the model list; Gemini's "high demand" 503s are usually brief.
+    attempts: for (let pass = 0; pass < 2; pass++) {
+      if (pass > 0) await new Promise((r) => setTimeout(r, 2000));
+      for (model of GEMINI_MODELS) {
+        res = await fetch(geminiUrl(model), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+          body: requestBody,
+        });
+        data = await res.json().catch(() => ({}));
+        if (!RETRYABLE.has(res.status)) break attempts;
+        console.warn(`Gemini ${model} returned ${res.status}, trying next model`);
+      }
     }
 
     if (!res.ok) {
@@ -120,13 +133,12 @@ Deno.serve(async (req) => {
     }
 
     const text = (candidate?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("");
-    const bullets = (JSON.parse(text).bullets as string[])
-      .map((b) => b.trim())
-      .filter(Boolean)
-      .slice(0, 3);
+    const parsed = JSON.parse(text);
+    const ka = cleanBullets(parsed.ka);
+    const en = cleanBullets(parsed.en);
 
-    if (!bullets.length) return json({ error: "Gemini returned an empty summary" }, 502);
-    return json({ bullets, model });
+    if (!ka.length || !en.length) return json({ error: "Gemini returned an empty summary" }, 502);
+    return json({ ka, en, model });
   } catch (err) {
     console.error(err);
     return json({ error: "Summary generation failed" }, 500);
