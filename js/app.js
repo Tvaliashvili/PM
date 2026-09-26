@@ -347,7 +347,9 @@ function onProjectsClick(e) {
 async function deleteProject(projectId) {
   const project = state.projects.find((p) => p.id === projectId);
   if (!project) return;
-  if (!confirm(`Delete "${project.name}"?\n\nThis permanently removes its flats, daily logs, delays and cash-flow items.`)) return;
+  if (!confirm(`Delete "${project.name}" and everything in it?\n\n`
+    + 'This permanently removes its timetable, budgets and payments, contractors, units, '
+    + 'daily logs and delays. This cannot be undone.')) return;
 
   const { error } = await db.from('projects').delete().eq('id', projectId);
   if (error) {
