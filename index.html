@@ -271,10 +271,38 @@
           <div class="module-header">
             <div>
               <h1 class="text-xl font-semibold text-white">Daily Logs</h1>
-              <p class="text-sm text-slate-500">Weather, manpower and site notes.</p>
+              <p class="text-sm text-slate-500">Weather, manpower and site notes — and ask Gemini anything about the project.</p>
             </div>
+            <button id="btn-new-log-page" class="btn btn-primary">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
+              New Daily Log
+            </button>
           </div>
-          <div id="daily-logs-container" class="panel empty-state">Daily logs will appear here.</div>
+
+          <!-- Ask Gemini -->
+          <form id="form-ask" class="panel ask-panel space-y-3">
+            <div class="flex items-center gap-2">
+              <span class="ask-badge">✦</span>
+              <h2 class="panel-title !mb-0">Ask Gemini about this project</h2>
+            </div>
+            <p class="text-xs text-slate-500">
+              Gemini reads all of this project's daily logs, timetable, contractors, delays and payments, and answers in the
+              language you ask in.
+            </p>
+            <textarea name="question" rows="2" maxlength="1000" required class="input-dark w-full"
+                      placeholder="e.g. How many days did we lose to rain this month?  ·  როდის ჩაისხა მე-3 სართულის ფილა?"></textarea>
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="submit" class="btn btn-primary">Ask Gemini</button>
+              <span class="text-xs text-slate-500">Try:</span>
+              <button type="button" class="ask-suggestion" data-ask="Summarise the last 7 days on site.">Last 7 days</button>
+              <button type="button" class="ask-suggestion" data-ask="Which contractor has caused the most delays, and why?">Worst contractor delays</button>
+              <button type="button" class="ask-suggestion" data-ask="How many workers were on site on average per day this month, by trade?">Average manpower</button>
+              <button type="button" class="ask-suggestion" data-ask="რა არის ყველაზე დიდი რისკი პროექტის ვადებისთვის?">ყველაზე დიდი რისკი</button>
+            </div>
+            <div id="ask-answer" class="ask-answer hidden"></div>
+          </form>
+
+          <div id="daily-logs-container" class="space-y-3 mt-4"></div>
         </section>
 
         <!-- CASH FLOW -->

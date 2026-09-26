@@ -16,15 +16,18 @@ export const json = (body: unknown, status = 200) =>
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 
-/** Returns an error Response unless the caller is a signed-in user. */
-export async function requireUser(req: Request): Promise<Response | null> {
-  // The anon key is itself a valid JWT, so require a real signed-in user.
-  const supabase = createClient(
+/** Supabase client acting as the caller, so row-level security applies to its queries. */
+export const userClient = (req: Request) =>
+  createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_ANON_KEY")!,
     { global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } } },
   );
-  const { data: { user } } = await supabase.auth.getUser();
+
+/** Returns an error Response unless the caller is a signed-in user. */
+export async function requireUser(req: Request): Promise<Response | null> {
+  // The anon key is itself a valid JWT, so require a real signed-in user.
+  const { data: { user } } = await userClient(req).auth.getUser();
   return user ? null : json({ error: "Not signed in" }, 401);
 }
 
@@ -101,7 +104,7 @@ export async function generateJson(
 }
 
 /** Standard wrapper: CORS preflight, POST only, signed-in user, JSON body, error mapping. */
-export function serveJson(handler: (payload: any) => Promise<Response>) {
+export function serveJson(handler: (payload: any, req: Request) => Promise<Response>) {
   Deno.serve(async (req) => {
     if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
     if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -117,7 +120,7 @@ export function serveJson(handler: (payload: any) => Promise<Response>) {
     }
 
     try {
-      return await handler(payload);
+      return await handler(payload, req);
     } catch (err) {
       if (err instanceof GeminiError) return json({ error: err.message }, err.status);
       console.error(err);

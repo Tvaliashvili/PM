@@ -241,6 +241,53 @@ html, body { background: var(--ink-950); }
 .table-action:hover { background: var(--ink-800); color: #fff; }
 .table-action.is-danger:hover { background: rgba(244, 63, 94, 0.12); color: #fb7185; }
 
+/* ---------- Daily logs + Ask Gemini ---------- */
+.ask-panel { border-color: rgba(245, 158, 11, 0.35); }
+.ask-badge {
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 0.5rem;
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--brand-400);
+  font-size: 0.85rem;
+}
+.ask-suggestion {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--ink-700);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+.ask-suggestion:hover { border-color: var(--brand-500); color: var(--brand-400); }
+.ask-answer {
+  padding: 0.9rem 1rem;
+  border-radius: 0.6rem;
+  background: var(--ink-850);
+  border: 1px solid var(--ink-700);
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.ask-answer .ask-q { margin-bottom: 0.4rem; font-size: 0.75rem; color: #64748b; white-space: normal; }
+
+.log-card {
+  padding: 1rem 1.1rem;
+  background: var(--ink-900);
+  border: 1px solid var(--ink-700);
+  border-radius: 0.75rem;
+}
+.log-card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 0.75rem; margin-bottom: 0.5rem; }
+.log-card-date { font-weight: 600; color: #fff; }
+.log-card-meta { margin-left: auto; font-size: 0.75rem; color: #94a3b8; }
+.log-card-crew { margin-bottom: 0.6rem; font-size: 0.75rem; color: #64748b; }
+.log-notes { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.log-notes p { white-space: pre-wrap; font-size: 0.85rem; color: #cbd5e1; }
+.log-notes .log-lang { display: block; margin-bottom: 0.2rem; font-size: 0.65rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--brand-400); }
+@media (max-width: 639px) { .log-notes { grid-template-columns: 1fr; } }
+
 /* ---------- Projects list ---------- */
 .nav-group-label {
   margin: 0.9rem 0.75rem 0.35rem;

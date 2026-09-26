@@ -103,7 +103,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-view-report', '#btn-add-unit', '#btn-add-units-bulk', '#btn-add-task', '#btn-add-contractor',
+  ['#btn-new-log', '#btn-new-log-page', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-view-report', '#btn-add-unit', '#btn-add-units-bulk', '#btn-add-task', '#btn-add-contractor',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -250,7 +250,7 @@ async function selectProject(projectId) {
 
   storage.set('cpm.projectId', project.id);
   await Promise.all([
-    loadUnits(project.id), loadSchedule(project.id), refreshDashboard(project.id),
+    loadUnits(project.id), loadSchedule(project.id), refreshDashboard(project.id), loadLogs(project.id),
   ]);
 }
 
@@ -1600,6 +1600,77 @@ function onContractorsClick(e) {
 }
 
 // =============================================================
+// Daily logs list + Ask Gemini (whole-project Q&A)
+// =============================================================
+async function loadLogs(projectId) {
+  const el = $('#daily-logs-container');
+  const { data, error } = await db
+    .from('daily_logs')
+    .select('log_date, weather, manpower, notes, notes_en')
+    .eq('project_id', projectId)
+    .order('log_date', { ascending: false })
+    .limit(60);
+
+  if (projectId !== state.projectId) return;
+  if (error) {
+    el.innerHTML = `<div class="panel empty-state">Could not load logs: ${esc(error.message)}</div>`;
+    return;
+  }
+  if (!data.length) {
+    el.innerHTML = '<div class="panel empty-state">No daily logs yet — click New Daily Log and paste today's WhatsApp log.</div>';
+    return;
+  }
+
+  const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key;
+  el.innerHTML = data.map((l) => {
+    const crew = Object.entries(l.manpower || {}).filter(([, n]) => n > 0);
+    const total = crew.reduce((sum, [, n]) => sum + Number(n), 0);
+    return `
+      <article class="log-card">
+        <div class="log-card-head">
+          <span class="log-card-date">${esc(formatDate(l.log_date))}</span>
+          <span class="log-card-meta">${esc([l.weather, total ? `${total} on site` : ''].filter(Boolean).join(' · '))}</span>
+        </div>
+        ${crew.length ? `<p class="log-card-crew">${crew.map(([k, n]) => `${esc(tradeLabel(k))} ${n}`).join(' · ')}</p>` : ''}
+        <div class="log-notes">
+          <p><span class="log-lang">ქართული</span>${esc(l.notes || '—')}</p>
+          <p><span class="log-lang">English</span>${esc(l.notes_en || '—')}</p>
+        </div>
+      </article>`;
+  }).join('') + (data.length === 60 ? '<p class="text-xs text-slate-500">Showing the latest 60 logs. Ask Gemini to search older ones.</p>' : '');
+}
+
+async function askGemini(e) {
+  e.preventDefault();
+  if (!requireProject()) return;
+  const form = e.currentTarget;
+  const btn = $('[type=submit]', form);
+  const out = $('#ask-answer');
+  const question = form.elements.question.value.trim();
+  if (!question) return;
+
+  out.classList.remove('hidden');
+  out.innerHTML = `<p class="ask-q">${esc(question)}</p>Reading the project's logs…`;
+  setBusy(btn, true, 'Asking…');
+  const { data, error } = await db.functions.invoke('ask-project', {
+    body: { project_id: state.projectId, question, today: todayISO() },
+  });
+  setBusy(btn, false);
+
+  out.innerHTML = `<p class="ask-q">${esc(question)}</p>${esc(error
+    ? `Gemini couldn't answer: ${await functionErrorMessage(error)}`
+    : data.answer)}`;
+}
+
+function onAskSuggestion(e) {
+  const chip = e.target.closest('[data-ask]');
+  if (!chip) return;
+  const form = $('#form-ask');
+  form.elements.question.value = chip.dataset.ask;
+  form.requestSubmit();
+}
+
+// =============================================================
 // Modals
 // =============================================================
 function openModal(id) {
@@ -1763,6 +1834,7 @@ async function saveDailyLog(e) {
   closeModal('modal-daily-log');
   toast('Daily log saved.', 'success');
   refreshDashboard(state.projectId);
+  loadLogs(state.projectId);
 }
 
 // ---------- Delay ----------
@@ -1928,6 +2000,9 @@ $('#btn-new-project').addEventListener('click', openProjectModal);
 $('#form-project').addEventListener('submit', saveProject);
 $('#btn-add-units-bulk').addEventListener('click', openBulkUnitsModal);
 $('#btn-parse-log').addEventListener('click', processLogText);
+$('#btn-new-log-page').addEventListener('click', openDailyLogModal);
+$('#form-ask').addEventListener('submit', askGemini);
+$('#form-ask').addEventListener('click', onAskSuggestion);
 $('#btn-edit-project').addEventListener('click', openEditProjectModal);
 $('#form-edit-project').addEventListener('submit', saveEditProject);
 $('#form-flats').addEventListener('submit', saveFlats);
