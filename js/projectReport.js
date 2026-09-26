@@ -96,6 +96,7 @@ export async function buildProjectReport({
         <p class="rpt-eyebrow">პროექტის ანგარიში · Project Report</p>
         <h1>${esc(project.name)}</h1>
         <p class="rpt-muted">${esc([project.location, project.currency].filter(Boolean).join(' · '))}</p>
+        ${project.client_name ? `<p class="rpt-client">დამკვეთი · Client: <strong>${esc(project.client_name)}</strong></p>` : ''}
       </div>
       <div class="rpt-header-date">
         <p class="rpt-eyebrow">თარიღი · Date</p>

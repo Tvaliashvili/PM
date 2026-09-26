@@ -539,6 +539,10 @@ textarea.input-dark { resize: vertical; }
 .rpt-header h1 { color: #fff; font-size: 24px; margin: 2px 0; }
 .rpt-header .rpt-muted { color: #cbd5e1; }
 .rpt-header-date { text-align: right; }
+.rpt-client { margin-top: 4px; color: #fde68a; font-size: 11px; }
+.rpt-client strong { color: #fff; }
+.pdf-client { margin-top: 2px; font-weight: 600; color: #334155; }
+.pdf-client:empty { display: none; }
 .rpt-eyebrow {
   font-size: 10px;
   font-weight: 600;

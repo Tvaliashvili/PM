@@ -168,6 +168,9 @@ alter table public.daily_logs
   add column if not exists notes_en text,
   add column if not exists raw_text text;
 
+-- The client (employer) who hired the company for this project.
+alter table public.projects add column if not exists client_name text;
+
 -- Per-project currency (amounts are stored as plain numbers in that currency).
 alter table public.projects
   add column if not exists currency text not null default 'USD';

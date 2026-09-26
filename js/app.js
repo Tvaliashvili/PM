@@ -213,7 +213,7 @@ function showSetupNotice() {
 async function loadProjects() {
   const { data, error } = await db
     .from('projects')
-    .select('id, name, location, total_flats, created_at, start_date, end_date, currency')
+    .select('id, name, location, client_name, total_flats, created_at, start_date, end_date, currency')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -262,9 +262,10 @@ function applyProjectHeader(project) {
   navLabel.textContent = project?.name ?? '';
   navLabel.classList.toggle('hidden', !project);
   $('#topbar-project-name').textContent = project?.name ?? '';
-  $('#topbar-project-location').textContent = project?.location ?? '';
+  $('#topbar-project-location').textContent = [project?.location, project?.client_name && `Client: ${project.client_name}`]
+    .filter(Boolean).join(' · ');
   $('#dashboard-subtitle').textContent = project
-    ? [project.name, project.location].filter(Boolean).join(' · ')
+    ? [project.name, project.location, project.client_name && `Client: ${project.client_name}`].filter(Boolean).join(' · ')
     : 'Select a project to view its status.';
 }
 
@@ -313,6 +314,7 @@ async function renderProjectList() {
         <button type="button" class="project-card-open" data-open-project="${esc(p.id)}">
           <p class="pr-8 font-semibold text-white truncate">${esc(p.name)}</p>
           <p class="text-sm text-slate-500 truncate">${esc(p.location || 'No location set')} · ${esc(p.currency ?? DEFAULT_CURRENCY)}</p>
+          ${p.client_name ? `<p class="text-xs text-slate-400 truncate">Client: ${esc(p.client_name)}</p>` : ''}
           <p class="text-xs text-slate-500 mt-1">${p.start_date && p.end_date
             ? `${esc(formatDate(p.start_date))} → ${esc(formatDate(p.end_date))}`
             : 'Dates not set'}</p>
@@ -383,6 +385,7 @@ async function saveProject(e) {
     .insert({
       name: fd.get('name').trim(),
       location: fd.get('location').trim() || null,
+      client_name: fd.get('client_name').trim() || null,
       currency: fd.get('currency') || DEFAULT_CURRENCY,
     })
     .select('id')
@@ -1151,6 +1154,7 @@ function openEditProjectModal() {
   const f = form.elements;
   f.name.value = project.name;
   f.location.value = project.location ?? '';
+  f.client_name.value = project.client_name ?? '';
   f.start_date.value = project.start_date ?? '';
   f.end_date.value = project.end_date ?? '';
   f.currency.value = project.currency ?? DEFAULT_CURRENCY;
@@ -1168,6 +1172,7 @@ async function saveEditProject(e) {
   const row = {
     name: fd.get('name').trim(),
     location: fd.get('location').trim() || null,
+    client_name: fd.get('client_name').trim() || null,
     start_date: fd.get('start_date') || null,
     end_date: fd.get('end_date') || null,
     currency: fd.get('currency') || DEFAULT_CURRENCY,

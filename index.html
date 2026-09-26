@@ -385,6 +385,7 @@
           <p class="pdf-eyebrow">ობიექტის დღიური ანგარიში · Daily Site Report</p>
           <h1 data-field="project"></h1>
           <p class="pdf-muted" data-field="location"></p>
+          <p class="pdf-client" data-field="client"></p>
         </div>
         <div class="pdf-header-date">
           <p class="pdf-eyebrow">თარიღი · Date</p>
@@ -498,6 +499,10 @@
           <input name="location" maxlength="120" class="input-dark w-full" placeholder="e.g. Vake, Tbilisi">
         </label>
         <label class="block">
+          <span class="form-label">Client (company that hired us)</span>
+          <input name="client_name" maxlength="160" class="input-dark w-full" placeholder="e.g. Archi Group">
+        </label>
+        <label class="block">
           <span class="form-label">Currency</span>
           <select name="currency" class="select-dark w-full" data-currency-options></select>
         </label>
@@ -526,6 +531,10 @@
           <label class="block">
             <span class="form-label">Location</span>
             <input name="location" maxlength="120" class="input-dark w-full">
+          </label>
+          <label class="block sm:col-span-2">
+            <span class="form-label">Client (company that hired us)</span>
+            <input name="client_name" maxlength="160" class="input-dark w-full">
           </label>
           <label class="block">
             <span class="form-label">Start date</span>

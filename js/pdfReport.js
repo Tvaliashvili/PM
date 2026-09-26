@@ -126,6 +126,7 @@ function buildReport({ project, day, logs, delays, manpower, summary, progress, 
 
   set('project', project.name);
   set('location', project.location || '');
+  set('client', project.client_name ? `დამკვეთი / Client: ${project.client_name}` : '');
   set('date-ka', dateKa(day.date));
   set('date-en', dateEn(day.date));
   set('weather', weather || bi('Not recorded'));
@@ -191,7 +192,12 @@ export async function generateDailyReport({ db, project, progress, userEmail }) 
 
   const summary = await fetchSummary(db, {
     date: day.date,
-    project: { name: project.name, location: project.location, total_units: project.total_flats },
+    project: {
+      name: project.name,
+      location: project.location,
+      client: project.client_name, // the company that hired us — the report's main reader
+      total_units: project.total_flats,
+    },
     // Timetable position (progress is weighted by planned duration).
     schedule: progress?.count ? {
       progress_pct: progress.actualPct,
