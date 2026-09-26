@@ -59,8 +59,8 @@ export const DELAY_CAUSES = [
 export const REPORT_AUTHOR = {
   name:    'Sandro Tvaliashvili',
   nameKa:  'სანდრო თვალიაშვილი',
-  title:   'ConTech Project Manager',
-  titleKa: 'ConTech-ის პროექტის მენეჯერი',
+  title:   'Project Manager',
+  titleKa: 'პროექტის მენეჯერი',
 };
 
 // Units for a work item's quantity (quantity × rate = budget).
