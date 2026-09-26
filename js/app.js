@@ -9,6 +9,7 @@ import {
 } from './config.js';
 import { generateDailyReport } from './pdfReport.js';
 import { scheduleProgress, taskState, durationDays } from './schedule.js';
+import { ka } from './bilingual.js';
 
 // ---------- Supabase ----------
 const isConfigured = !SUPABASE_URL.includes('YOUR-') && !SUPABASE_KEY.includes('YOUR-');
@@ -1443,6 +1444,54 @@ function openDailyLogModal() {
   updateManpowerTotal();
   showFormError(form, '');
   openModal('modal-daily-log');
+  form.elements.raw_text.focus();
+}
+
+// Readable message from a failed supabase.functions.invoke().
+async function functionErrorMessage(error) {
+  try {
+    const body = await error.context?.json();
+    if (body?.error) return body.error;
+  } catch { /* non-JSON error body */ }
+  return error.message;
+}
+
+// Sends the pasted Georgian log to Gemini and fills the form with the result.
+async function processLogText() {
+  const form = $('#form-daily-log');
+  const f = form.elements;
+  const raw = f.raw_text.value.trim();
+  if (!raw) {
+    showFormError(form, 'Paste the log text first.');
+    f.raw_text.focus();
+    return;
+  }
+
+  const btn = $('#btn-parse-log');
+  showFormError(form, '');
+  setBusy(btn, true, 'Processing…');
+  const { data, error } = await db.functions.invoke('parse-log', {
+    body: {
+      text: raw,
+      today: todayISO(),
+      trades: MANPOWER_TRADES.map((t) => ({ key: t.key, label: t.label, ka: ka(t.label) })),
+      weather: WEATHER_OPTIONS.map((w) => ({ key: w, label: w, ka: ka(w) })),
+    },
+  });
+  setBusy(btn, false);
+
+  if (error) {
+    showFormError(form, `Gemini couldn't process the log: ${await functionErrorMessage(error)}`);
+    return;
+  }
+
+  if (data.date && data.date <= todayISO()) f.log_date.value = data.date;
+  f.weather.value = data.weather || '';
+  for (const t of MANPOWER_TRADES) f[`mp_${t.key}`].value = data.manpower?.[t.key] || '';
+  f.notes.value = data.notes_ka || '';
+  f.notes_en.value = data.notes_en || '';
+  updateManpowerTotal();
+  toast('Log processed — check the details, then save.', 'success');
 }
 
 async function saveDailyLog(e) {
@@ -1462,7 +1511,10 @@ async function saveDailyLog(e) {
     log_date:   fd.get('log_date'),
     weather:    fd.get('weather') || null,
     manpower,
-    notes:      fd.get('notes').trim() || null,
+    // Georgian notes fall back to the raw paste if it wasn't processed.
+    notes:      fd.get('notes').trim() || fd.get('raw_text').trim() || null,
+    notes_en:   fd.get('notes_en').trim() || null,
+    raw_text:   fd.get('raw_text').trim() || null,
   };
 
   showFormError(form, '');
@@ -1585,6 +1637,7 @@ $('#projects-container').addEventListener('click', onProjectsClick);
 $('#btn-new-project').addEventListener('click', openProjectModal);
 $('#form-project').addEventListener('submit', saveProject);
 $('#btn-add-units-bulk').addEventListener('click', openBulkUnitsModal);
+$('#btn-parse-log').addEventListener('click', processLogText);
 $('#btn-edit-project').addEventListener('click', openEditProjectModal);
 $('#form-edit-project').addEventListener('submit', saveEditProject);
 $('#btn-add-boq').addEventListener('click', () => openBoqModal(null));

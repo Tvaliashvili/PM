@@ -413,7 +413,16 @@
 
       <section class="pdf-section pdf-avoid-break">
         <h2>ობიექტის შენიშვნები <em>Site Notes</em></h2>
-        <p class="pdf-notes" data-field="notes"></p>
+        <div class="pdf-summary-cols">
+          <div>
+            <p class="pdf-lang">ქართული</p>
+            <p class="pdf-notes" data-field="notes-ka"></p>
+          </div>
+          <div>
+            <p class="pdf-lang">English</p>
+            <p class="pdf-notes" data-field="notes-en"></p>
+          </div>
+        </div>
       </section>
 
       <p class="pdf-footer" data-field="generated"></p>
@@ -720,7 +729,21 @@
         <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
       </div>
       <div class="modal-body space-y-4">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <!-- 1. Paste -->
+        <label class="block">
+          <span class="form-label">Paste your log (e.g. from WhatsApp, in Georgian)</span>
+          <textarea name="raw_text" rows="6" class="input-dark w-full"
+                    placeholder="დღიური ანგარიში… ამინდი… ობიექტზე: კალატოზი 6, მუშა 10…"></textarea>
+        </label>
+        <div class="flex flex-wrap items-center gap-3">
+          <button type="button" id="btn-parse-log" class="btn btn-secondary">Process with Gemini</button>
+          <p class="text-xs text-slate-500">
+            Fills in the date, weather and headcount, corrects the Georgian and writes the English version. Check it, then save.
+          </p>
+        </div>
+
+        <!-- 2. Review -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-ink-700">
           <label class="block">
             <span class="form-label">Date</span>
             <input name="log_date" type="date" required class="input-dark w-full">
@@ -734,11 +757,18 @@
           <legend class="form-label">Manpower on site · Total <span id="manpower-total" class="text-white">0</span></legend>
           <div id="manpower-fields" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
         </fieldset>
-        <label class="block">
-          <span class="form-label">Notes</span>
-          <textarea name="notes" rows="4" class="input-dark w-full"
-                    placeholder="Work completed, deliveries, inspections, issues…"></textarea>
-        </label>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="form-label">Notes — ქართული</span>
+            <textarea name="notes" rows="6" class="input-dark w-full"
+                      placeholder="Corrected Georgian appears here"></textarea>
+          </label>
+          <label class="block">
+            <span class="form-label">Notes — English</span>
+            <textarea name="notes_en" rows="6" class="input-dark w-full"
+                      placeholder="English version appears here"></textarea>
+          </label>
+        </div>
         <p class="form-error hidden" data-error></p>
       </div>
       <div class="modal-footer">

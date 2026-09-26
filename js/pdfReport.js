@@ -43,7 +43,7 @@ function mergeManpower(logs) {
 async function fetchTodayData(db, projectId, day) {
   const [logs, delays] = await Promise.all([
     db.from('daily_logs')
-      .select('log_date, weather, manpower, notes')
+      .select('log_date, weather, manpower, notes, notes_en')
       .eq('project_id', projectId)
       .eq('log_date', day.date),
     db.from('delays')
@@ -161,8 +161,10 @@ function buildReport({ project, day, logs, delays, manpower, summary, progress, 
     addEmptyRow(delayRows, 4, bi('No delays recorded today.'));
   }
 
-  // Notes (as typed on site) + footer
-  set('notes', logs.map((l) => l.notes).filter(Boolean).join('\n\n') || bi('No site notes recorded.'));
+  // Site notes (Gemini-corrected Georgian + English) + footer
+  const joinNotes = (key) => logs.map((l) => l[key]).filter(Boolean).join('\n\n');
+  set('notes-ka', joinNotes('notes') || ka('No site notes recorded.'));
+  set('notes-en', joinNotes('notes_en') || 'No site notes recorded.');
   const stamp = new Date().toLocaleString('en-GB');
   set('generated', `${bi('Generated')} ${stamp}${userEmail ? ` · ${userEmail}` : ''}`);
 
@@ -188,7 +190,7 @@ export async function generateDailyReport({ db, project, progress, userEmail }) 
       planned_by_today_pct: progress.plannedPct,
       overdue_activities: progress.overdue.map((t) => ({ activity: t.name, days_late: t.daysLate })),
     } : null,
-    daily_logs: logs.map((l) => ({ weather: l.weather, notes: l.notes })),
+    daily_logs: logs.map((l) => ({ weather: l.weather, notes_ka: l.notes, notes_en: l.notes_en })),
     manpower: Object.fromEntries(manpower.map(([trade, n]) => [tradeLabel(trade), n])),
     delays: delays.map((d) => ({
       cause: d.delay_cause,

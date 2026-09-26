@@ -162,6 +162,12 @@ alter table public.flats drop constraint if exists flats_status_check;
 alter table public.flats add constraint flats_status_check
   check (status in ('not_started', 'in_progress', 'finished', 'handed_over'));
 
+-- Daily logs are pasted in Georgian (usually from WhatsApp): raw_text keeps the
+-- paste as-is, notes holds Gemini's corrected Georgian and notes_en its English.
+alter table public.daily_logs
+  add column if not exists notes_en text,
+  add column if not exists raw_text text;
+
 -- Per-project currency (amounts are stored as plain numbers in that currency).
 alter table public.projects
   add column if not exists currency text not null default 'USD';
