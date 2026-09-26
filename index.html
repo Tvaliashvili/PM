@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CPMG PM</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="js/tailwind.config.js"></script>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Supabase JS v2 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- html2pdf.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+
+<body class="bg-ink-950 text-slate-200 font-sans antialiased">
+
+  <!-- =====================================================
+       VIEW 1: PROJECT LIST (full page, no sidebar)
+       ===================================================== -->
+  <div id="view-projects" class="min-h-screen flex flex-col">
+    <header class="sticky top-0 z-20 h-16 shrink-0 flex items-center gap-3 px-4 sm:px-8 bg-ink-900/80 backdrop-blur border-b border-ink-700">
+      <div class="w-9 h-9 rounded-lg bg-brand-500 grid place-items-center text-ink-950 font-bold">C</div>
+      <div class="leading-tight">
+        <p class="font-semibold text-white">CPMG PM</p>
+        <p class="text-xs text-slate-500">Residential Flats</p>
+      </div>
+      <div class="ml-auto flex items-center gap-4 text-xs text-slate-500 min-w-0">
+        <span data-user-email class="hidden sm:block truncate">Not signed in</span>
+        <button data-sign-out class="hidden shrink-0 text-slate-400 hover:text-white">Sign out</button>
+      </div>
+    </header>
+
+    <main class="flex-1 w-full max-w-6xl mx-auto p-4 sm:p-8">
+      <div class="module-header">
+        <div>
+          <h1 class="text-2xl font-semibold text-white">Projects</h1>
+          <p class="text-sm text-slate-500">Select a project to open its dashboard.</p>
+        </div>
+        <button id="btn-new-project" class="btn btn-primary">
+          <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
+          New Project
+        </button>
+      </div>
+      <div id="projects-container" class="panel empty-state">Loading projects…</div>
+    </main>
+  </div>
+
+  <!-- =====================================================
+       VIEW 2: PROJECT WORKSPACE (sidebar + modules)
+       ===================================================== -->
+  <div id="view-workspace" class="hidden flex h-screen overflow-hidden">
+
+    <!-- ===================== SIDEBAR ===================== -->
+    <aside id="sidebar"
+           class="sidebar fixed inset-y-0 left-0 z-40 w-64 -translate-x-full bg-ink-900 border-r border-ink-700
+                  flex flex-col transition-transform duration-200 lg:static lg:translate-x-0">
+      <div class="h-16 flex items-center gap-3 px-5 border-b border-ink-700">
+        <div class="w-9 h-9 rounded-lg bg-brand-500 grid place-items-center text-ink-950 font-bold">C</div>
+        <div class="leading-tight">
+          <p class="font-semibold text-white">CPMG PM</p>
+          <p class="text-xs text-slate-500">Residential Flats</p>
+        </div>
+      </div>
+
+      <nav class="flex-1 overflow-y-auto p-3 space-y-1" aria-label="Main">
+        <a href="#projects" class="nav-link">
+          <svg viewBox="0 0 24 24" class="nav-icon"><path d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20v-2z"/></svg>
+          All Projects
+        </a>
+        <p id="nav-project-name" class="nav-group-label hidden"></p>
+        <a href="#dashboard" data-nav="dashboard" class="nav-link">
+          <svg viewBox="0 0 24 24" class="nav-icon"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+          Dashboard
+        </a>
+        <a href="#flat-matrix" data-nav="flat-matrix" class="nav-link">
+          <svg viewBox="0 0 24 24" class="nav-icon"><path d="M4 4h4v4H4V4zm6 0h4v4h-4V4zm6 0h4v4h-4V4zM4 10h4v4H4v-4zm6 0h4v4h-4v-4zm6 0h4v4h-4v-4zM4 16h4v4H4v-4zm6 0h4v4h-4v-4zm6 0h4v4h-4v-4z"/></svg>
+          Flat Matrix
+        </a>
+        <a href="#daily-logs" data-nav="daily-logs" class="nav-link">
+          <svg viewBox="0 0 24 24" class="nav-icon"><path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V10h14v10zM7 12h5v5H7v-5z"/></svg>
+          Daily Logs
+        </a>
+        <a href="#cash-flow" data-nav="cash-flow" class="nav-link">
+          <svg viewBox="0 0 24 24" class="nav-icon"><path d="M3 17l6-6 4 4 8-8v4h2V3h-8v2h4l-6 6-4-4-8 8 2 2z"/></svg>
+          Cash Flow
+        </a>
+        <a href="#delays" data-nav="delays" class="nav-link">
+          <svg viewBox="0 0 24 24" class="nav-icon"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 11h-2V7h2v6zm0 4h-2v-2h2v2z"/></svg>
+          Delays
+        </a>
+        <a href="#reports" data-nav="reports" class="nav-link">
+          <svg viewBox="0 0 24 24" class="nav-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 13h8v2H8v-2zm0 4h5v2H8v-2z"/></svg>
+          PDF Reports
+        </a>
+      </nav>
+
+      <div class="p-4 border-t border-ink-700 flex items-center justify-between gap-2 text-xs text-slate-500">
+        <p data-user-email class="truncate">Not signed in</p>
+        <button data-sign-out class="hidden shrink-0 text-slate-400 hover:text-white">Sign out</button>
+      </div>
+    </aside>
+
+    <!-- Mobile overlay -->
+    <div id="sidebar-overlay" class="fixed inset-0 z-30 bg-black/60 hidden lg:hidden"></div>
+
+    <!-- ===================== MAIN COLUMN ===================== -->
+    <div class="flex-1 flex flex-col min-w-0">
+
+      <!-- ---------- TOP BAR ---------- -->
+      <header class="h-16 shrink-0 flex items-center gap-3 px-4 sm:px-6 bg-ink-900/80 backdrop-blur border-b border-ink-700">
+        <button id="sidebar-toggle" class="lg:hidden p-2 -ml-2 rounded-md text-slate-400 hover:text-white hover:bg-ink-800"
+                aria-label="Open navigation">
+          <svg viewBox="0 0 24 24" class="w-6 h-6 fill-current"><path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/></svg>
+        </button>
+
+        <div class="flex items-center gap-2 min-w-0">
+          <label for="project-select" class="hidden sm:block text-xs uppercase tracking-wide text-slate-500">Project</label>
+          <select id="project-select" class="select-dark w-44 sm:w-64">
+            <option value="">Loading projects…</option>
+          </select>
+        </div>
+
+        <div class="ml-auto flex items-center gap-2">
+          <button id="btn-new-log" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
+            <span class="hidden sm:inline">New Daily Log</span>
+          </button>
+          <button id="btn-export-pdf" class="btn btn-secondary">
+            <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z"/></svg>
+            <span class="hidden sm:inline">Export PDF</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- ---------- MAIN CONTENT ---------- -->
+      <main id="main-content" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+
+        <!-- DASHBOARD -->
+        <section id="section-dashboard" data-section="dashboard" class="module">
+          <div class="module-header">
+            <div>
+              <h1 class="text-xl font-semibold text-white">Dashboard</h1>
+              <p id="dashboard-subtitle" class="text-sm text-slate-500">Select a project to view its status.</p>
+            </div>
+          </div>
+
+          <!-- KPI cards -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <article class="kpi-card">
+              <div class="flex items-center justify-between">
+                <p class="kpi-label">Overall Progress</p>
+                <span class="kpi-icon bg-emerald-500/10 text-emerald-400">
+                  <svg viewBox="0 0 24 24" class="w-5 h-5 fill-current"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/></svg>
+                </span>
+              </div>
+              <p id="kpi-progress" class="kpi-value">—%</p>
+              <div class="mt-3 h-2 rounded-full bg-ink-700 overflow-hidden">
+                <div id="kpi-progress-bar" class="h-full bg-emerald-500 transition-all duration-500" style="width:0%"></div>
+              </div>
+              <p id="kpi-progress-meta" class="kpi-meta">0 of 0 flats complete</p>
+            </article>
+
+            <article class="kpi-card">
+              <div class="flex items-center justify-between">
+                <p class="kpi-label">Active Delays</p>
+                <span class="kpi-icon bg-rose-500/10 text-rose-400">
+                  <svg viewBox="0 0 24 24" class="w-5 h-5 fill-current"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+                </span>
+              </div>
+              <p id="kpi-delays" class="kpi-value">—</p>
+              <p id="kpi-delays-meta" class="kpi-meta">0 hours lost</p>
+            </article>
+
+            <article class="kpi-card">
+              <div class="flex items-center justify-between">
+                <p class="kpi-label">Net Cash Flow</p>
+                <span class="kpi-icon bg-brand-500/10 text-brand-400">
+                  <svg viewBox="0 0 24 24" class="w-5 h-5 fill-current"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
+                </span>
+              </div>
+              <p id="kpi-cashflow" class="kpi-value">—</p>
+              <p id="kpi-cashflow-meta" class="kpi-meta">Planned vs actual</p>
+            </article>
+          </div>
+
+          <!-- Dashboard panels -->
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-4">
+            <div class="panel">
+              <h2 class="panel-title">Recent Daily Logs</h2>
+              <div id="dashboard-recent-logs" class="empty-state">No logs yet.</div>
+            </div>
+            <div class="panel">
+              <h2 class="panel-title">Latest Delays</h2>
+              <div id="dashboard-recent-delays" class="empty-state">No delays recorded.</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- FLAT MATRIX -->
+        <section id="section-flat-matrix" data-section="flat-matrix" class="module hidden">
+          <div class="module-header">
+            <div>
+              <h1 class="text-xl font-semibold text-white">Flat Matrix</h1>
+              <p class="text-sm text-slate-500">Stage status for every flat by block and floor.</p>
+            </div>
+          </div>
+          <div id="flat-matrix-container" class="panel empty-state">Flat matrix will appear here.</div>
+        </section>
+
+        <!-- DAILY LOGS -->
+        <section id="section-daily-logs" data-section="daily-logs" class="module hidden">
+          <div class="module-header">
+            <div>
+              <h1 class="text-xl font-semibold text-white">Daily Logs</h1>
+              <p class="text-sm text-slate-500">Weather, manpower and site notes.</p>
+            </div>
+          </div>
+          <div id="daily-logs-container" class="panel empty-state">Daily logs will appear here.</div>
+        </section>
+
+        <!-- CASH FLOW -->
+        <section id="section-cash-flow" data-section="cash-flow" class="module hidden">
+          <div class="module-header">
+            <div>
+              <h1 class="text-xl font-semibold text-white">Cash Flow</h1>
+              <p class="text-sm text-slate-500">BOQ items — planned vs actual cost.</p>
+            </div>
+          </div>
+          <div id="cash-flow-container" class="panel empty-state">Cash flow table will appear here.</div>
+        </section>
+
+        <!-- DELAYS -->
+        <section id="section-delays" data-section="delays" class="module hidden">
+          <div class="module-header">
+            <div>
+              <h1 class="text-xl font-semibold text-white">Delays</h1>
+              <p class="text-sm text-slate-500">Causes, durations and affected flats.</p>
+            </div>
+            <button id="btn-new-delay" class="btn btn-primary">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
+              Log Delay
+            </button>
+          </div>
+          <div id="delays-container" class="panel empty-state">Delay register will appear here.</div>
+        </section>
+
+        <!-- PDF REPORTS -->
+        <section id="section-reports" data-section="reports" class="module hidden">
+          <div class="module-header">
+            <div>
+              <h1 class="text-xl font-semibold text-white">PDF Reports</h1>
+              <p class="text-sm text-slate-500">Generate and export project reports.</p>
+            </div>
+          </div>
+          <div id="reports-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="panel">
+              <h2 class="panel-title">Daily Site Report</h2>
+              <p class="text-sm text-slate-400 mb-4">
+                Today's weather, manpower, delays and site notes, with a 3-point executive summary written by Gemini.
+                Downloads as <span class="text-slate-300">Daily_Report_YYYY-MM-DD.pdf</span>.
+              </p>
+              <button id="btn-report-daily" class="btn btn-primary"><span>Generate Daily Report</span></button>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- Off-screen render target for PDF export (not display:none, so html2canvas can measure it) -->
+  <div id="pdf-export-root" class="pdf-offscreen" aria-hidden="true"></div>
+
+  <!-- Printable daily report template (filled by js/pdfReport.js) -->
+  <template id="daily-report-template">
+    <div class="pdf-page">
+      <div class="pdf-header">
+        <div>
+          <p class="pdf-eyebrow">Daily Site Report</p>
+          <h1 data-field="project"></h1>
+          <p class="pdf-muted" data-field="location"></p>
+        </div>
+        <div class="pdf-header-date">
+          <p class="pdf-eyebrow">Date</p>
+          <p class="pdf-strong" data-field="date"></p>
+        </div>
+      </div>
+
+      <div class="pdf-facts pdf-avoid-break">
+        <div><span>Weather</span><strong data-field="weather"></strong></div>
+        <div><span>Manpower on site</span><strong data-field="manpower-total"></strong></div>
+        <div><span>Delays today</span><strong data-field="delay-count"></strong></div>
+        <div><span>Hours lost</span><strong data-field="delay-hours"></strong></div>
+        <div><span>Total flats</span><strong data-field="total-flats"></strong></div>
+      </div>
+
+      <section class="pdf-section pdf-avoid-break">
+        <h2>Executive Summary</h2>
+        <ul class="pdf-summary" data-list="summary"></ul>
+        <p class="pdf-note" data-field="summary-note"></p>
+      </section>
+
+      <section class="pdf-section pdf-avoid-break">
+        <h2>Manpower</h2>
+        <table>
+          <thead><tr><th>Trade</th><th class="num">Workers</th></tr></thead>
+          <tbody data-rows="manpower"></tbody>
+        </table>
+      </section>
+
+      <section class="pdf-section">
+        <h2>Delays</h2>
+        <table>
+          <thead><tr><th>Cause</th><th>Location</th><th class="num">Hours</th><th>Description</th></tr></thead>
+          <tbody data-rows="delays"></tbody>
+        </table>
+      </section>
+
+      <section class="pdf-section pdf-avoid-break">
+        <h2>Site Notes</h2>
+        <p class="pdf-notes" data-field="notes"></p>
+      </section>
+
+      <p class="pdf-footer" data-field="generated"></p>
+    </div>
+  </template>
+
+  <!-- ===================== MODALS ===================== -->
+
+  <!-- Sign in (cannot be dismissed) -->
+  <dialog id="modal-login" class="modal modal-sm" data-locked aria-labelledby="login-title">
+    <form id="form-login" class="modal-body space-y-4">
+      <div>
+        <h2 id="login-title" class="text-lg font-semibold text-white">Sign in</h2>
+        <p class="text-sm text-slate-500">Use your Supabase account to continue.</p>
+      </div>
+      <label class="block">
+        <span class="form-label">Email</span>
+        <input name="email" type="email" required autocomplete="email" class="input-dark w-full">
+      </label>
+      <label class="block">
+        <span class="form-label">Password</span>
+        <input name="password" type="password" required autocomplete="current-password" class="input-dark w-full">
+      </label>
+      <p class="form-error hidden" data-error></p>
+      <button type="submit" class="btn btn-primary w-full justify-center">Sign in</button>
+    </form>
+  </dialog>
+
+  <!-- New project -->
+  <dialog id="modal-project" class="modal" aria-labelledby="project-title">
+    <form id="form-project">
+      <div class="modal-header">
+        <h2 id="project-title">New Project</h2>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="form-label">Project name</span>
+            <input name="name" required maxlength="120" class="input-dark w-full" placeholder="e.g. Riverside Flats">
+          </label>
+          <label class="block">
+            <span class="form-label">Location</span>
+            <input name="location" maxlength="120" class="input-dark w-full" placeholder="e.g. Vake, Tbilisi">
+          </label>
+        </div>
+
+        <fieldset class="space-y-3">
+          <legend class="form-label">Flats — generated automatically, set floors to 0 to skip</legend>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <label class="block">
+              <span class="form-label">Blocks</span>
+              <input name="blocks" value="A" class="input-dark w-full" placeholder="A, B">
+            </label>
+            <label class="block">
+              <span class="form-label">Floors</span>
+              <input name="floors" type="number" min="0" max="60" step="1" value="5" class="input-dark w-full">
+            </label>
+            <label class="block">
+              <span class="form-label">Flats / floor</span>
+              <input name="flats_per_floor" type="number" min="0" max="30" step="1" value="4" class="input-dark w-full">
+            </label>
+            <label class="block">
+              <span class="form-label">First floor</span>
+              <select name="start_floor" class="select-dark w-full">
+                <option value="1">Floor 1</option>
+                <option value="0">Ground</option>
+              </select>
+            </label>
+          </div>
+          <p id="project-flat-preview" class="text-xs text-slate-400"></p>
+        </fieldset>
+
+        <p class="form-error hidden" data-error></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Project</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- New daily log -->
+  <dialog id="modal-daily-log" class="modal" aria-labelledby="daily-log-title">
+    <form id="form-daily-log">
+      <div class="modal-header">
+        <h2 id="daily-log-title">New Daily Log</h2>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="form-label">Date</span>
+            <input name="log_date" type="date" required class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Weather</span>
+            <select id="log-weather" name="weather" class="select-dark w-full"></select>
+          </label>
+        </div>
+        <fieldset>
+          <legend class="form-label">Manpower on site · Total <span id="manpower-total" class="text-white">0</span></legend>
+          <div id="manpower-fields" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+        </fieldset>
+        <label class="block">
+          <span class="form-label">Notes</span>
+          <textarea name="notes" rows="4" class="input-dark w-full"
+                    placeholder="Work completed, deliveries, inspections, issues…"></textarea>
+        </label>
+        <p class="form-error hidden" data-error></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Log</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- New delay -->
+  <dialog id="modal-delay" class="modal" aria-labelledby="delay-title">
+    <form id="form-delay">
+      <div class="modal-header">
+        <h2 id="delay-title">Log Delay</h2>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body space-y-4">
+        <label class="block">
+          <span class="form-label">Affected flat</span>
+          <select id="delay-flat" name="flat_id" class="select-dark w-full"></select>
+        </label>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="form-label">Cause</span>
+            <select id="delay-cause" name="delay_cause" required class="select-dark w-full"></select>
+          </label>
+          <label class="block">
+            <span class="form-label">Duration (hours)</span>
+            <input name="duration_hours" type="number" min="0" step="0.5" required class="input-dark w-full">
+          </label>
+        </div>
+        <label class="block">
+          <span class="form-label">Description</span>
+          <textarea name="description" rows="3" class="input-dark w-full"
+                    placeholder="What happened and what's needed to resolve it…"></textarea>
+        </label>
+        <p class="form-error hidden" data-error></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Delay</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Toasts -->
+  <div id="toast-root" class="fixed bottom-4 right-4 left-4 sm:left-auto z-50 flex flex-col items-end gap-2" aria-live="polite"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
