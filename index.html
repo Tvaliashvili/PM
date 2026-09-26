@@ -88,6 +88,10 @@
           <svg viewBox="0 0 24 24" class="nav-icon"><path d="M3 5h2v2H3V5zm4 0h14v2H7V5zM3 11h2v2H3v-2zm4 0h14v2H7v-2zm-4 6h2v2H3v-2zm4 0h14v2H7v-2z"/></svg>
           Timetable
         </a>
+        <a href="#contractors" data-nav="contractors" class="nav-link">
+          <svg viewBox="0 0 24 24" class="nav-icon"><path d="M16 11c1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 3-1.34 3-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5C15 14.17 10.33 13 8 13zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+          Contractors
+        </a>
         <a href="#units" data-nav="units" class="nav-link">
           <svg viewBox="0 0 24 24" class="nav-icon"><path d="M4 4h4v4H4V4zm6 0h4v4h-4V4zm6 0h4v4h-4V4zM4 10h4v4H4v-4zm6 0h4v4h-4v-4zm6 0h4v4h-4v-4zM4 16h4v4H4v-4zm6 0h4v4h-4v-4zm6 0h4v4h-4v-4z"/></svg>
           Units
@@ -187,13 +191,13 @@
 
             <article class="kpi-card">
               <div class="flex items-center justify-between">
-                <p class="kpi-label">Net Cash Flow</p>
+                <p class="kpi-label">Spent vs Budget</p>
                 <span class="kpi-icon bg-brand-500/10 text-brand-400">
                   <svg viewBox="0 0 24 24" class="w-5 h-5 fill-current"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
                 </span>
               </div>
               <p id="kpi-cashflow" class="kpi-value">—</p>
-              <p id="kpi-cashflow-meta" class="kpi-meta">Planned vs actual</p>
+              <p id="kpi-cashflow-meta" class="kpi-meta">From timetable budgets and payments</p>
             </article>
           </div>
 
@@ -280,15 +284,18 @@
           <div class="module-header">
             <div>
               <h1 class="text-xl font-semibold text-white">BOQ &amp; Cash Flow</h1>
-              <p class="text-sm text-slate-500">Bill of quantities — budget, spend and when payments fall due.</p>
+              <p class="text-sm text-slate-500">
+                The timetable's main work items with their budgets and payments. Add or edit items here or on the Timetable.
+              </p>
             </div>
-            <button id="btn-add-boq" class="btn btn-primary">
+            <button id="btn-add-item" class="btn btn-primary">
               <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
-              Add BOQ Item
+              Add Item
             </button>
           </div>
           <div id="cash-flow-container" class="space-y-4">
             <div id="cash-summary" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
+            <p id="cash-position" class="text-sm text-slate-400"></p>
             <div class="panel">
               <h2 class="panel-title">Bill of Quantities</h2>
               <div id="boq-table" class="overflow-x-auto"></div>
@@ -296,11 +303,30 @@
             <div class="panel">
               <h2 class="panel-title">Monthly Cash Flow</h2>
               <p class="text-xs text-slate-500 mb-3">
-                Planned = BOQ budget due that month. Actual = spend recorded against items due that month.
-                Cumulative columns show the running total — the gap between them is your position against budget.
+                Planned = each item's budget spread evenly over its planned dates. Actual = payments made that month.
+                The cumulative columns are running totals — compare them to see if spending is ahead of or behind plan.
               </p>
               <div id="cashflow-months" class="overflow-x-auto"></div>
             </div>
+          </div>
+        </section>
+
+        <!-- CONTRACTORS -->
+        <section id="section-contractors" data-section="contractors" class="module hidden">
+          <div class="module-header">
+            <div>
+              <h1 class="text-xl font-semibold text-white">Contractors</h1>
+              <p class="text-sm text-slate-500">
+                Who has which job on this project, and whether they finish on time. Contractors are shared across all projects.
+              </p>
+            </div>
+            <button id="btn-add-contractor" class="btn btn-primary">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
+              Add Contractor
+            </button>
+          </div>
+          <div class="panel">
+            <div id="contractors-table" class="overflow-x-auto"></div>
           </div>
         </section>
 
@@ -522,81 +548,25 @@
     </form>
   </dialog>
 
-  <!-- BOQ item (add / edit) -->
-  <dialog id="modal-boq" class="modal" aria-labelledby="boq-title">
-    <form id="form-boq">
-      <input type="hidden" name="id">
-      <div class="modal-header">
-        <h2 id="boq-title">Add BOQ Item</h2>
-        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
-      </div>
-      <div class="modal-body space-y-4">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label class="block sm:col-span-2">
-            <span class="form-label">Item / description</span>
-            <input name="boq_item" required maxlength="200" class="input-dark w-full" placeholder="e.g. Concrete C25 — floor slabs">
-          </label>
-          <label class="block">
-            <span class="form-label">Category</span>
-            <input name="category" list="boq-categories" maxlength="60" class="input-dark w-full" placeholder="e.g. Frame">
-            <datalist id="boq-categories"></datalist>
-          </label>
-          <label class="block">
-            <span class="form-label">Due date</span>
-            <input name="due_date" type="date" class="input-dark w-full">
-          </label>
-        </div>
-        <div class="grid grid-cols-3 gap-3">
-          <label class="block">
-            <span class="form-label">Quantity</span>
-            <input name="quantity" type="number" min="0" step="any" class="input-dark w-full">
-          </label>
-          <label class="block">
-            <span class="form-label">Unit</span>
-            <select id="boq-unit" name="unit" class="select-dark w-full"></select>
-          </label>
-          <label class="block">
-            <span class="form-label">Rate</span>
-            <input name="rate" type="number" min="0" step="0.01" class="input-dark w-full">
-          </label>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <label class="block">
-            <span class="form-label">Planned cost</span>
-            <input name="planned_cost" type="number" min="0" step="0.01" required class="input-dark w-full">
-          </label>
-          <label class="block">
-            <span class="form-label">Actual cost to date</span>
-            <input name="actual_cost" type="number" min="0" step="0.01" value="0" class="input-dark w-full">
-          </label>
-          <label class="block">
-            <span class="form-label">Status</span>
-            <select id="boq-status" name="status" class="select-dark w-full"></select>
-          </label>
-        </div>
-        <p class="text-xs text-slate-500">Planned cost fills in from quantity × rate; for a lump sum, leave those empty and type the amount.</p>
-        <p class="form-error hidden" data-error></p>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-close>Cancel</button>
-        <button type="submit" class="btn btn-primary">Save Item</button>
-      </div>
-    </form>
-  </dialog>
-
-  <!-- Timetable activity (add / edit) -->
-  <dialog id="modal-task" class="modal modal-sm" aria-labelledby="task-title">
+  <!-- Timetable / BOQ item (add / edit) -->
+  <dialog id="modal-task" class="modal" aria-labelledby="task-title">
     <form id="form-task">
       <input type="hidden" name="id">
       <div class="modal-header">
-        <h2 id="task-title">Add Activity</h2>
+        <h2 id="task-title">Add Item</h2>
         <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
       </div>
       <div class="modal-body space-y-4">
-        <label class="block">
-          <span class="form-label">Activity</span>
-          <input name="name" required maxlength="200" class="input-dark w-full" placeholder="e.g. Frame — floors 1–3">
-        </label>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <label class="block sm:col-span-2">
+            <span class="form-label">Work item</span>
+            <input name="name" required maxlength="200" class="input-dark w-full" placeholder="e.g. Pouring slab — Block A, floor 3">
+          </label>
+          <label class="block">
+            <span class="form-label">Contractor</span>
+            <select id="task-contractor" name="contractor_id" class="select-dark w-full"></select>
+          </label>
+        </div>
         <div class="grid grid-cols-2 gap-3">
           <label class="block">
             <span class="form-label">Planned start</span>
@@ -608,11 +578,103 @@
           </label>
         </div>
         <p id="task-duration" class="text-xs text-slate-500"></p>
+
+        <fieldset class="space-y-3 pt-3 border-t border-ink-700">
+          <legend class="form-label">Cost</legend>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <label class="block">
+              <span class="form-label">Quantity</span>
+              <input name="quantity" type="number" min="0" step="any" class="input-dark w-full">
+            </label>
+            <label class="block">
+              <span class="form-label">Unit</span>
+              <select id="task-unit" name="unit" class="select-dark w-full"></select>
+            </label>
+            <label class="block">
+              <span class="form-label">Rate</span>
+              <input name="rate" type="number" min="0" step="0.01" class="input-dark w-full">
+            </label>
+            <label class="block">
+              <span class="form-label">Budget</span>
+              <input name="budget" type="number" min="0" step="0.01" class="input-dark w-full" placeholder="0">
+            </label>
+          </div>
+          <p class="text-xs text-slate-500">Budget fills in from quantity × rate; for a lump sum, leave those empty and type the amount.</p>
+        </fieldset>
         <p class="form-error hidden" data-error></p>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-close>Cancel</button>
-        <button type="submit" class="btn btn-primary">Save Activity</button>
+        <button type="submit" class="btn btn-primary">Save Item</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Payments for one item -->
+  <dialog id="modal-payments" class="modal" aria-labelledby="payments-title">
+    <div class="modal-header">
+      <h2 id="payments-title">Payments</h2>
+      <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body space-y-4">
+      <p id="payments-summary" class="text-sm text-slate-400"></p>
+      <div id="payments-list" class="overflow-x-auto"></div>
+      <form id="form-payment" class="grid grid-cols-1 sm:grid-cols-[9rem_9rem_1fr_auto] gap-3 items-end pt-3 border-t border-ink-700">
+        <label class="block">
+          <span class="form-label">Date paid</span>
+          <input name="paid_on" type="date" required class="input-dark w-full">
+        </label>
+        <label class="block">
+          <span class="form-label">Amount</span>
+          <input name="amount" type="number" min="0.01" step="0.01" required class="input-dark w-full">
+        </label>
+        <label class="block">
+          <span class="form-label">Note</span>
+          <input name="note" maxlength="200" class="input-dark w-full" placeholder="e.g. Advance, invoice #12">
+        </label>
+        <button type="submit" class="btn btn-primary justify-center">Add Payment</button>
+        <p class="form-error hidden sm:col-span-4" data-error></p>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Contractor (add / edit) -->
+  <dialog id="modal-contractor" class="modal" aria-labelledby="contractor-title">
+    <form id="form-contractor">
+      <input type="hidden" name="id">
+      <div class="modal-header">
+        <h2 id="contractor-title">Add Contractor</h2>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="form-label">Company / name</span>
+            <input name="name" required maxlength="120" class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Trade</span>
+            <input name="trade" list="contractor-trades" maxlength="60" class="input-dark w-full" placeholder="e.g. Concrete">
+            <datalist id="contractor-trades"></datalist>
+          </label>
+          <label class="block">
+            <span class="form-label">Contact person</span>
+            <input name="contact_person" maxlength="120" class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Phone</span>
+            <input name="phone" type="tel" maxlength="40" class="input-dark w-full">
+          </label>
+        </div>
+        <label class="block">
+          <span class="form-label">Notes</span>
+          <textarea name="notes" rows="2" class="input-dark w-full"></textarea>
+        </label>
+        <p class="form-error hidden" data-error></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Contractor</button>
       </div>
     </form>
   </dialog>
@@ -789,6 +851,10 @@
         <label class="block">
           <span class="form-label">Affected unit</span>
           <select id="delay-flat" name="flat_id" class="select-dark w-full"></select>
+        </label>
+        <label class="block">
+          <span class="form-label">Responsible contractor (optional)</span>
+          <select id="delay-contractor" name="contractor_id" class="select-dark w-full"></select>
         </label>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block">

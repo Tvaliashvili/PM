@@ -5,10 +5,13 @@ import {
   SUPABASE_URL, SUPABASE_KEY, CURRENCIES, DEFAULT_CURRENCY,
   UNIT_TYPES, UNIT_STATUSES,
   MANPOWER_TRADES, WEATHER_OPTIONS, DELAY_CAUSES,
-  BOQ_UNITS, BOQ_CATEGORIES, BOQ_STATUSES,
+  BOQ_UNITS, CONTRACTOR_TRADES,
 } from './config.js';
 import { generateDailyReport } from './pdfReport.js';
-import { scheduleProgress, taskState, durationDays } from './schedule.js';
+import {
+  scheduleProgress, taskState, durationDays,
+  plannedSpendByMonth, actualSpendByMonth, costPosition, contractorPerformance,
+} from './schedule.js';
 import { ka } from './bilingual.js';
 
 // ---------- Supabase ----------
@@ -20,10 +23,13 @@ const state = {
   projects: [],
   projectsLoaded: false,
   projectId: null,
-  flats: [],    // units of the open project
-  tasks: [],    // timetable activities of the open project
-  progress: null, // scheduleProgress() of the open project
-  boq: [],
+  contractors: [],      // company-wide contractor list
+  // Open project:
+  flats: [],            // units
+  tasks: [],            // timetable items (also the BOQ)
+  payments: [],         // task_payments
+  contractorDelays: [], // delays with contractor_id + hours
+  progress: null,       // scheduleProgress() result
 };
 
 // ---------- Helpers ----------
@@ -96,7 +102,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-add-unit', '#btn-add-units-bulk', '#btn-add-task', '#btn-add-boq',
+  ['#btn-new-log', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-add-unit', '#btn-add-units-bulk', '#btn-add-task', '#btn-add-item',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -204,6 +210,7 @@ function showSetupNotice() {
 // Projects
 // =============================================================
 async function loadProjects() {
+  loadContractors(); // company-wide list, used by timetable items and delays
   const { data, error } = await db
     .from('projects')
     .select('id, name, location, total_flats, created_at, start_date, end_date, currency')
@@ -227,7 +234,9 @@ async function loadProjects() {
 async function selectProject(projectId) {
   state.projectId = projectId || null;
   state.flats = [];
-  state.boq = [];
+  state.tasks = [];
+  state.payments = [];
+  state.contractorDelays = [];
   setProjectActionsEnabled(Boolean(state.projectId));
 
   const project = currentProject();
@@ -240,7 +249,7 @@ async function selectProject(projectId) {
 
   storage.set('cpm.projectId', project.id);
   await Promise.all([
-    loadUnits(project.id), loadSchedule(project.id), refreshDashboard(project.id), loadBoq(project.id),
+    loadUnits(project.id), loadSchedule(project.id), refreshDashboard(project.id),
   ]);
 }
 
@@ -672,7 +681,8 @@ async function saveFlats(e) {
 }
 
 // =============================================================
-// Timetable (schedule_tasks) — drives overall progress
+// Timetable (schedule_tasks) — drives progress, and doubles as the BOQ:
+// each item has dates, a contractor, a budget and dated payments.
 // =============================================================
 const addDays = (iso, n) => {
   const d = new Date(`${iso}T00:00`);
@@ -680,21 +690,44 @@ const addDays = (iso, n) => {
   return d.toLocaleDateString('en-CA');
 };
 
+const contractorName = (id) => state.contractors.find((c) => c.id === id)?.name ?? '';
+const paidOn = (taskId) => sumOf(state.payments.filter((p) => p.task_id === taskId), 'amount');
+
+// Items, payments and contractor-linked delays for one project, then every view built on them.
 async function loadSchedule(projectId) {
-  const { data, error } = await db
-    .from('schedule_tasks')
-    .select('id, name, planned_start, planned_finish, done, done_at')
-    .eq('project_id', projectId)
-    .order('planned_start')
-    .order('planned_finish');
+  const [tasks, payments, delays] = await Promise.all([
+    db.from('schedule_tasks')
+      .select('id, name, planned_start, planned_finish, done, done_at, contractor_id, quantity, unit, rate, budget')
+      .eq('project_id', projectId)
+      .order('planned_start')
+      .order('planned_finish'),
+    db.from('task_payments')
+      .select('id, task_id, paid_on, amount, note')
+      .eq('project_id', projectId)
+      .order('paid_on'),
+    db.from('delays')
+      .select('contractor_id, duration_hours')
+      .eq('project_id', projectId),
+  ]);
 
   if (projectId !== state.projectId) return;
-  if (error) {
-    $('#schedule-table').innerHTML = `<div class="empty-state">Could not load timetable: ${esc(error.message)}</div>`;
+  const failed = [tasks, payments, delays].find((r) => r.error);
+  if (failed) {
+    $('#schedule-table').innerHTML = `<div class="empty-state">Could not load timetable: ${esc(failed.error.message)}</div>`;
     return;
   }
-  state.tasks = data;
+  state.tasks = tasks.data;
+  state.payments = payments.data;
+  state.contractorDelays = delays.data;
+  renderScheduleViews();
+}
+
+function renderScheduleViews() {
   renderSchedule();
+  renderCosts();
+  renderContractors();
+  if (!$('#modal-payments').open) return;
+  renderPaymentsList();
 }
 
 function taskStateChip(task, s) {
@@ -716,16 +749,16 @@ function renderSchedule() {
 
   const gap = p.actualPct - p.plannedPct;
   $('#schedule-summary').innerHTML = [
-    statTile('Progress', `${p.actualPct}%`, `${p.doneCount} of ${p.count} activities done`),
+    statTile('Progress', `${p.actualPct}%`, `${p.doneCount} of ${p.count} items done`),
     statTile('Planned by today', `${p.plannedPct}%`,
       !p.count ? '—' : gap >= 0 ? `Ahead by ${gap} pts` : `Behind by ${-gap} pts`, gap < -5 ? 'negative' : ''),
     statTile('Overdue', String(p.overdue.length),
       p.overdue.length ? `Longest: ${p.overdue[0].daysLate} days late` : 'Nothing overdue', p.overdue.length ? 'negative' : ''),
-    statTile('Remaining', `${100 - p.actualPct}%`, `${p.count - p.doneCount} activities left`),
+    statTile('Remaining', `${100 - p.actualPct}%`, `${p.count - p.doneCount} items left`),
   ].join('');
 
   if (!state.tasks.length) {
-    $('#schedule-table').innerHTML = '<div class="empty-state">No activities yet — click Add Activity to build the timetable. Overall progress is calculated from it.</div>';
+    $('#schedule-table').innerHTML = '<div class="empty-state">No items yet — click Add Item to build the timetable. Progress, the BOQ and cash flow are all calculated from it.</div>';
     return;
   }
 
@@ -738,10 +771,11 @@ function renderSchedule() {
                  aria-label="Mark ${esc(t.name)} as done">
         </td>
         <td class="task-name">${esc(t.name)}</td>
+        <td>${t.contractor_id ? esc(contractorName(t.contractor_id)) : '<span class="text-slate-500">—</span>'}</td>
         <td class="whitespace-nowrap">${esc(formatDate(t.planned_start))}</td>
         <td class="whitespace-nowrap">${esc(formatDate(t.planned_finish))}</td>
         <td class="num">${durationDays(t)} d</td>
-        <td class="num">${p.weightPct(t).toFixed(1)}%</td>
+        <td class="num">${Number(t.budget) ? money.format(t.budget) : '—'}</td>
         <td class="whitespace-nowrap">${taskStateChip(t, s)}</td>
         <td class="text-right whitespace-nowrap">
           <button type="button" class="table-action" data-task-edit="${esc(t.id)}">Edit</button>
@@ -754,8 +788,8 @@ function renderSchedule() {
     <table class="data-table">
       <thead>
         <tr>
-          <th><span class="sr-only">Done</span></th><th>Activity</th><th>Start</th><th>Finish</th>
-          <th class="num">Days</th><th class="num">Weight</th><th>Status</th><th></th>
+          <th><span class="sr-only">Done</span></th><th>Work item</th><th>Contractor</th><th>Start</th><th>Finish</th>
+          <th class="num">Days</th><th class="num">Budget</th><th>Status</th><th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -770,7 +804,7 @@ async function toggleTask(taskId, done) {
   // Optimistic update, rolled back on failure.
   task.done = done;
   task.done_at = done ? todayISO() : null;
-  renderSchedule();
+  renderScheduleViews();
 
   const { error } = await db
     .from('schedule_tasks')
@@ -778,9 +812,17 @@ async function toggleTask(taskId, done) {
     .eq('id', task.id);
   if (error) {
     Object.assign(task, prev);
-    renderSchedule();
+    renderScheduleViews();
     toast(`Could not update "${task.name}": ${error.message}`, 'error');
   }
+}
+
+function contractorOptions(selectedId) {
+  return '<option value="">— None —</option>'
+    + state.contractors.map((c) => `
+      <option value="${esc(c.id)}"${c.id === selectedId ? ' selected' : ''}>
+        ${esc(c.name)}${c.trade ? ` · ${esc(c.trade)}` : ''}
+      </option>`).join('');
 }
 
 function updateTaskDuration() {
@@ -798,15 +840,20 @@ function openTaskModal(task) {
   const f = form.elements;
   form.reset();
   showFormError(form, '');
-  $('#task-title').textContent = task ? 'Edit Activity' : 'Add Activity';
+  $('#task-title').textContent = task ? 'Edit Item' : 'Add Item';
+  $('#task-contractor').innerHTML = contractorOptions(task?.contractor_id ?? '');
 
   f.id.value = task?.id ?? '';
   if (task) {
     f.name.value = task.name;
     f.planned_start.value = task.planned_start;
     f.planned_finish.value = task.planned_finish;
+    f.quantity.value = task.quantity ?? '';
+    f.unit.value = task.unit ?? '';
+    f.rate.value = task.rate ?? '';
+    f.budget.value = Number(task.budget) ? task.budget : '';
   } else {
-    // Start the day after the last activity, else at the project start, else today.
+    // Start the day after the last item, else at the project start, else today.
     const last = state.tasks.reduce((max, t) => (t.planned_finish > max ? t.planned_finish : max), '');
     const start = last ? addDays(last, 1) : (currentProject()?.start_date ?? todayISO());
     f.planned_start.value = start;
@@ -814,6 +861,16 @@ function openTaskModal(task) {
   }
   updateTaskDuration();
   openModal('modal-task');
+}
+
+// Dates → duration hint; quantity × rate → budget.
+function onTaskInput(e) {
+  updateTaskDuration();
+  if (!['quantity', 'rate'].includes(e.target.name)) return;
+  const f = e.currentTarget.elements;
+  const qty = parseFloat(f.quantity.value);
+  const rate = parseFloat(f.rate.value);
+  if (qty >= 0 && rate >= 0) f.budget.value = (Math.round(qty * rate * 100) / 100).toFixed(2);
 }
 
 async function saveTask(e) {
@@ -825,8 +882,13 @@ async function saveTask(e) {
   const id = fd.get('id');
   const row = {
     name:           fd.get('name').trim(),
+    contractor_id:  fd.get('contractor_id') || null,
     planned_start:  fd.get('planned_start'),
     planned_finish: fd.get('planned_finish'),
+    quantity:       numOrNull(fd.get('quantity')),
+    unit:           fd.get('unit') || null,
+    rate:           numOrNull(fd.get('rate')),
+    budget:         Number(fd.get('budget') || 0),
   };
   if (row.planned_finish < row.planned_start) {
     showFormError(form, 'Planned finish must be on or after the planned start.');
@@ -846,7 +908,22 @@ async function saveTask(e) {
   }
 
   closeModal('modal-task');
-  toast(id ? 'Activity updated.' : 'Activity added.', 'success');
+  toast(id ? 'Item updated.' : 'Item added.', 'success');
+  loadSchedule(state.projectId);
+}
+
+async function deleteTask(taskId) {
+  const task = state.tasks.find((t) => t.id === taskId);
+  const payments = state.payments.filter((p) => p.task_id === taskId).length;
+  const extra = payments ? `\n\nIts ${payments} payment(s) will be deleted too.` : '';
+  if (!task || !confirm(`Delete "${task.name}"?${extra}`)) return;
+
+  const { error } = await db.from('schedule_tasks').delete().eq('id', task.id);
+  if (error) {
+    toast(`Could not delete item: ${error.message}`, 'error');
+    return;
+  }
+  toast('Item deleted.', 'success');
   loadSchedule(state.projectId);
 }
 
@@ -855,25 +932,16 @@ function onScheduleChange(e) {
   if (toggle) toggleTask(toggle.dataset.taskToggle, toggle.checked);
 }
 
-async function onScheduleClick(e) {
+// Edit / delete / payments buttons, shared by the Timetable and BOQ tables.
+function onTaskTableClick(e) {
   const edit = e.target.closest('[data-task-edit]');
-  if (edit) {
-    openTaskModal(state.tasks.find((t) => t.id === edit.dataset.taskEdit));
-    return;
-  }
+  if (edit) return openTaskModal(state.tasks.find((t) => t.id === edit.dataset.taskEdit));
 
   const del = e.target.closest('[data-task-delete]');
-  if (!del) return;
-  const task = state.tasks.find((t) => t.id === del.dataset.taskDelete);
-  if (!task || !confirm(`Delete activity "${task.name}"?`)) return;
+  if (del) return deleteTask(del.dataset.taskDelete);
 
-  const { error } = await db.from('schedule_tasks').delete().eq('id', task.id);
-  if (error) {
-    toast(`Could not delete activity: ${error.message}`, 'error');
-    return;
-  }
-  toast('Activity deleted.', 'success');
-  loadSchedule(state.projectId);
+  const pay = e.target.closest('[data-task-payments]');
+  if (pay) openPaymentsModal(pay.dataset.taskPayments);
 }
 
 // =============================================================
@@ -886,19 +954,17 @@ function updateProgressKpi() {
   $('#kpi-progress-bar').style.width = `${p.actualPct}%`;
   $('#kpi-progress-meta').textContent = p.count
     ? `Planned ${p.plannedPct}% by today · ${p.overdue.length} overdue`
-    : 'Add timetable activities to track progress';
+    : 'Add timetable items to track progress';
   renderTimeline();
 }
 
 async function refreshDashboard(projectId) {
-  const [delays, cash, logs] = await Promise.all([
+  // The Spent vs Budget card is updated by renderCosts() from the timetable.
+  const [delays, logs] = await Promise.all([
     db.from('delays')
       .select('id, delay_cause, duration_hours, description, created_at, flats(block, flat_number)')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false }),
-    db.from('cash_flow')
-      .select('planned_cost, actual_cost, status')
-      .eq('project_id', projectId),
     db.from('daily_logs')
       .select('log_date, weather, manpower, notes')
       .eq('project_id', projectId)
@@ -907,7 +973,7 @@ async function refreshDashboard(projectId) {
   ]);
 
   if (projectId !== state.projectId) return;
-  const failed = [delays, cash, logs].find((r) => r.error);
+  const failed = [delays, logs].find((r) => r.error);
   if (failed) {
     toast(`Could not load dashboard: ${failed.error.message}`, 'error');
     return;
@@ -917,17 +983,6 @@ async function refreshDashboard(projectId) {
   const hours = delays.data.reduce((sum, d) => sum + Number(d.duration_hours || 0), 0);
   $('#kpi-delays').textContent = delays.data.length;
   $('#kpi-delays-meta').textContent = `${hours.toLocaleString()} hours lost`;
-
-  // Cash flow: net = planned − actual (positive = under budget), cancelled items excluded
-  const live = cash.data.filter((c) => c.status !== 'cancelled');
-  const planned = live.reduce((sum, c) => sum + Number(c.planned_cost || 0), 0);
-  const actual  = live.reduce((sum, c) => sum + Number(c.actual_cost || 0), 0);
-  const net = planned - actual;
-  const netEl = $('#kpi-cashflow');
-  netEl.textContent = money.format(net);
-  netEl.classList.toggle('positive', net > 0);
-  netEl.classList.toggle('negative', net < 0);
-  $('#kpi-cashflow-meta').textContent = `Planned ${money.format(planned)} · Actual ${money.format(actual)}`;
 
   renderRecentLogs(logs.data);
   renderRecentDelays(delays.data.slice(0, 5));
@@ -1105,39 +1160,15 @@ async function saveEditProject(e) {
   toast('Project updated.', 'success');
   applyProjectHeader(project);
   renderTimeline();
-  renderBoq();                     // amounts in the (possibly new) currency
-  refreshDashboard(project.id);
+  renderScheduleViews();           // amounts in the (possibly new) currency
 }
 
 // =============================================================
-// BOQ & cash flow
-// cash_flow rows are BOQ items: planned = budget, actual = spent,
-// due_date places the payment in the monthly cash-flow table.
+// BOQ & cash flow — built from timetable items and their payments
 // =============================================================
 const qtyFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 });
-const BOQ_STATUS_CHIP = {
-  planned: 'status-pending', committed: 'status-in_progress', paid: 'status-done', cancelled: 'status-pending',
-};
-
 const sumOf = (items, key) => items.reduce((sum, i) => sum + Number(i[key] || 0), 0);
 const monthLabel = (ym) => new Date(`${ym}-01T00:00`).toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
-
-async function loadBoq(projectId) {
-  const { data, error } = await db
-    .from('cash_flow')
-    .select('id, boq_item, category, unit, quantity, rate, planned_cost, actual_cost, status, due_date')
-    .eq('project_id', projectId)
-    .order('category', { nullsFirst: false })
-    .order('boq_item');
-
-  if (projectId !== state.projectId) return;
-  if (error) {
-    $('#boq-table').innerHTML = `<div class="empty-state">Could not load BOQ: ${esc(error.message)}</div>`;
-    return;
-  }
-  state.boq = data;
-  renderBoq();
-}
 
 function statTile(label, value, meta, tone = '') {
   return `
@@ -1148,222 +1179,380 @@ function statTile(label, value, meta, tone = '') {
     </article>`;
 }
 
-function varianceCell(item) {
-  const planned = Number(item.planned_cost);
-  const actual = Number(item.actual_cost);
-  if (!actual) return '<span class="text-slate-500">—</span>';
-  const diff = actual - planned;
-  if (diff > 0) return `<span class="variance-over">+${money.format(diff)} over</span>`;
-  if (diff < 0) return `<span class="variance-under">${money.format(-diff)} under</span>`;
-  return '<span class="text-slate-400">On budget</span>';
+// Dashboard "Spent vs Budget" card.
+function updateCostKpi(c) {
+  const el = $('#kpi-cashflow');
+  el.textContent = money.format(c.spent);
+  el.classList.toggle('negative', c.spent > c.budget && c.budget > 0);
+  $('#kpi-cashflow-meta').textContent = c.budget
+    ? `of ${money.format(c.budget)} budget · work done worth ${money.format(c.earned)}`
+    : 'Add budgets to timetable items';
 }
 
-function renderBoq() {
-  const items = state.boq;
-  const live = items.filter((i) => i.status !== 'cancelled');
-  const planned = sumOf(live, 'planned_cost');
-  const actual = sumOf(live, 'actual_cost');
-  const remaining = planned - actual;
-  const over = live.filter((i) => Number(i.actual_cost) > Number(i.planned_cost)).length;
+function renderCosts() {
+  const today = todayISO();
+  const c = costPosition(state.tasks, state.payments, today);
+  updateCostKpi(c);
 
   $('#cash-summary').innerHTML = [
-    statTile('BOQ budget', money.format(planned), `${live.length} active items`),
-    statTile('Spent to date', money.format(actual), planned ? `${Math.round((actual / planned) * 100)}% of budget` : '—'),
-    statTile('Remaining budget', money.format(remaining), remaining < 0 ? 'Over budget' : 'Budget − spent', remaining < 0 ? 'negative' : ''),
-    statTile('Items over budget', String(over), over ? 'Actual above planned' : 'None', over ? 'negative' : ''),
+    statTile('Budget', money.format(c.budget), `${state.tasks.filter((t) => Number(t.budget)).length} priced items`),
+    statTile('Planned by today', money.format(c.planned), 'Value of work due by now'),
+    statTile('Work done', money.format(c.earned), 'Budget of ticked items',
+      c.earned < c.planned - 0.5 ? 'negative' : ''),
+    statTile('Spent', money.format(c.spent), c.budget ? `${Math.round((c.spent / c.budget) * 100)}% of budget` : '—',
+      c.spent > c.budget && c.budget > 0 ? 'negative' : ''),
   ].join('');
 
-  if (!items.length) {
-    $('#boq-table').innerHTML = '<div class="empty-state">No BOQ items yet — click Add BOQ Item to build the budget.</div>';
-    $('#cashflow-months').innerHTML = '<div class="empty-state">The monthly cash flow appears once BOQ items have due dates.</div>';
+  // Plain-language position: schedule (done vs planned) and cost (spent vs done).
+  const lines = [];
+  if (c.budget) {
+    const behind = c.planned - c.earned;
+    lines.push(behind > 0.5
+      ? `Schedule: work worth ${money.format(behind)} is behind plan.`
+      : 'Schedule: work done is on or ahead of plan.');
+    const over = c.spent - c.earned;
+    lines.push(over > 0.5
+      ? `Cost: ${money.format(over)} more has been paid than the value of work done (advances or overspend).`
+      : `Cost: payments are ${money.format(-over)} below the value of work done.`);
+  }
+  $('#cash-position').textContent = lines.join(' ');
+
+  if (!state.tasks.length) {
+    $('#boq-table').innerHTML = '<div class="empty-state">No items yet — click Add Item. Each timetable item can carry a budget and payments.</div>';
+    $('#cashflow-months').innerHTML = '<div class="empty-state">The monthly cash flow appears once items have budgets or payments.</div>';
     return;
   }
 
   // ---- BOQ table ----
-  const rows = items.map((i) => `
-    <tr class="${i.status === 'cancelled' ? 'is-cancelled' : ''}">
-      <td>
-        <p class="text-white">${esc(i.boq_item)}</p>
-        <p class="text-xs text-slate-500">${esc(i.category || 'Uncategorised')}</p>
-      </td>
-      <td class="num">${i.quantity != null ? qtyFormat.format(i.quantity) : '—'} <span class="text-slate-500">${esc(i.unit || '')}</span></td>
-      <td class="num">${i.rate != null ? money2.format(i.rate) : '—'}</td>
-      <td class="num">${money.format(i.planned_cost)}</td>
-      <td class="num">${money.format(i.actual_cost)}</td>
-      <td class="num">${varianceCell(i)}</td>
-      <td><span class="status-chip ${BOQ_STATUS_CHIP[i.status] ?? 'status-pending'}">${esc(BOQ_STATUSES[i.status] ?? i.status)}</span></td>
-      <td class="whitespace-nowrap">${i.due_date ? esc(formatDate(i.due_date)) : '<span class="text-slate-500">—</span>'}</td>
-      <td class="text-right whitespace-nowrap">
-        <button type="button" class="table-action" data-boq-edit="${esc(i.id)}">Edit</button>
-        <button type="button" class="table-action is-danger" data-boq-delete="${esc(i.id)}">Delete</button>
-      </td>
-    </tr>`).join('');
+  const rows = state.tasks.map((t) => {
+    const budget = Number(t.budget || 0);
+    const paid = paidOn(t.id);
+    const left = budget - paid;
+    const qty = t.quantity != null
+      ? `${qtyFormat.format(t.quantity)} ${esc(t.unit || '')}${t.rate != null ? ` × ${money2.format(t.rate)}` : ''}`
+      : '<span class="text-slate-500">—</span>';
+    return `
+      <tr>
+        <td class="task-name">${esc(t.name)}</td>
+        <td>${t.contractor_id ? esc(contractorName(t.contractor_id)) : '<span class="text-slate-500">—</span>'}</td>
+        <td class="num">${qty}</td>
+        <td class="num">${budget ? money.format(budget) : '—'}</td>
+        <td class="num">${paid ? money.format(paid) : '—'}</td>
+        <td class="num">${!budget ? '—' : left < 0
+          ? `<span class="variance-over">${money.format(-left)} over</span>`
+          : money.format(left)}</td>
+        <td class="whitespace-nowrap">${taskStateChip(t, taskState(t, today))}</td>
+        <td class="text-right whitespace-nowrap">
+          <button type="button" class="table-action" data-task-payments="${esc(t.id)}">Payments</button>
+          <button type="button" class="table-action" data-task-edit="${esc(t.id)}">Edit</button>
+        </td>
+      </tr>`;
+  }).join('');
 
-  const totalDiff = actual - planned;
   $('#boq-table').innerHTML = `
     <table class="data-table">
       <thead>
         <tr>
-          <th>Item</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Planned</th>
-          <th class="num">Actual</th><th class="num">Variance</th><th>Status</th><th>Due</th><th></th>
+          <th>Work item</th><th>Contractor</th><th class="num">Qty × rate</th><th class="num">Budget</th>
+          <th class="num">Paid</th><th class="num">Left to pay</th><th>Status</th><th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
       <tfoot>
         <tr>
-          <td colspan="3">Total <span class="text-slate-500 font-normal">(excl. cancelled)</span></td>
-          <td class="num">${money.format(planned)}</td>
-          <td class="num">${money.format(actual)}</td>
-          <td class="num">${actual ? varianceCell({ planned_cost: planned, actual_cost: actual }) : '—'}</td>
-          <td colspan="3" class="text-slate-500 font-normal">${totalDiff > 0 ? 'Over budget' : ''}</td>
+          <td colspan="3">Total</td>
+          <td class="num">${money.format(c.budget)}</td>
+          <td class="num">${money.format(sumOf(state.payments, 'amount'))}</td>
+          <td class="num">${money.format(c.budget - sumOf(state.payments, 'amount'))}</td>
+          <td colspan="2"></td>
         </tr>
       </tfoot>
     </table>`;
 
   // ---- Monthly cash flow ----
-  const byMonth = new Map();
-  const unscheduled = { planned: 0, actual: 0 };
-  for (const i of live) {
-    const bucket = i.due_date
-      ? (byMonth.get(i.due_date.slice(0, 7)) ?? byMonth.set(i.due_date.slice(0, 7), { planned: 0, actual: 0 }).get(i.due_date.slice(0, 7)))
-      : unscheduled;
-    bucket.planned += Number(i.planned_cost || 0);
-    bucket.actual += Number(i.actual_cost || 0);
-  }
-
-  const months = [...byMonth.keys()].sort();
+  const planned = plannedSpendByMonth(state.tasks);
+  const actual = actualSpendByMonth(state.payments);
+  const months = [...new Set([...planned.keys(), ...actual.keys()])].sort();
   if (!months.length) {
-    $('#cashflow-months').innerHTML = '<div class="empty-state">Add due dates to BOQ items to see the monthly cash flow.</div>';
+    $('#cashflow-months').innerHTML = '<div class="empty-state">Add budgets or payments to items to see the monthly cash flow.</div>';
     return;
   }
 
-  const thisMonth = todayISO().slice(0, 7);
+  const thisMonth = today.slice(0, 7);
   let cumPlanned = 0;
   let cumActual = 0;
   const monthRows = months.map((ym) => {
-    const m = byMonth.get(ym);
-    cumPlanned += m.planned;
-    cumActual += m.actual;
+    const p = planned.get(ym) ?? 0;
+    const a = actual.get(ym) ?? 0;
+    cumPlanned += p;
+    cumActual += a;
     return `
       <tr class="${ym === thisMonth ? 'is-current' : ''}">
         <td>${esc(monthLabel(ym))}${ym === thisMonth ? ' <span class="text-xs text-brand-400">· this month</span>' : ''}</td>
-        <td class="num">${money.format(m.planned)}</td>
-        <td class="num">${money.format(m.actual)}</td>
+        <td class="num">${money.format(p)}</td>
+        <td class="num">${a ? money.format(a) : '—'}</td>
         <td class="num">${money.format(cumPlanned)}</td>
-        <td class="num">${money.format(cumActual)}</td>
+        <td class="num">${ym <= thisMonth ? money.format(cumActual) : '—'}</td>
       </tr>`;
   }).join('');
-
-  const unscheduledRow = unscheduled.planned || unscheduled.actual ? `
-    <tr class="is-muted">
-      <td>No due date</td>
-      <td class="num">${money.format(unscheduled.planned)}</td>
-      <td class="num">${money.format(unscheduled.actual)}</td>
-      <td></td><td></td>
-    </tr>` : '';
 
   $('#cashflow-months').innerHTML = `
     <table class="data-table">
       <thead>
         <tr>
-          <th>Month</th><th class="num">Planned</th><th class="num">Actual</th>
-          <th class="num">Cumulative planned</th><th class="num">Cumulative actual</th>
+          <th>Month</th><th class="num">Planned</th><th class="num">Paid</th>
+          <th class="num">Cumulative planned</th><th class="num">Cumulative paid</th>
         </tr>
       </thead>
-      <tbody>${monthRows}${unscheduledRow}</tbody>
+      <tbody>${monthRows}</tbody>
     </table>`;
 }
 
-function openBoqModal(item) {
-  if (!requireProject()) return;
-  const form = $('#form-boq');
-  const f = form.elements;
-  form.reset();
-  showFormError(form, '');
-  $('#boq-title').textContent = item ? 'Edit BOQ Item' : 'Add BOQ Item';
+// ---------- Payments ----------
+let paymentTaskId = null;
 
-  f.id.value = item?.id ?? '';
-  if (item) {
-    f.boq_item.value = item.boq_item;
-    f.category.value = item.category ?? '';
-    f.due_date.value = item.due_date ?? '';
-    f.quantity.value = item.quantity ?? '';
-    f.unit.value = item.unit ?? '';
-    f.rate.value = item.rate ?? '';
-    f.planned_cost.value = item.planned_cost;
-    f.actual_cost.value = item.actual_cost;
-    f.status.value = item.status;
+function renderPaymentsList() {
+  const task = state.tasks.find((t) => t.id === paymentTaskId);
+  if (!task) {
+    closeModal('modal-payments');
+    return;
   }
-  openModal('modal-boq');
+  const payments = state.payments.filter((p) => p.task_id === task.id);
+  const paid = sumOf(payments, 'amount');
+  const budget = Number(task.budget || 0);
+
+  $('#payments-title').textContent = `Payments — ${task.name}`;
+  $('#payments-summary').textContent = budget
+    ? `Budget ${money.format(budget)} · paid ${money.format(paid)} · ${paid > budget ? `${money.format(paid - budget)} over budget` : `${money.format(budget - paid)} left`}`
+    : `Paid ${money.format(paid)} · no budget set for this item`;
+
+  $('#payments-list').innerHTML = payments.length ? `
+    <table class="data-table">
+      <thead><tr><th>Date</th><th class="num">Amount</th><th>Note</th><th></th></tr></thead>
+      <tbody>
+        ${payments.map((p) => `
+          <tr>
+            <td class="whitespace-nowrap">${esc(formatDate(p.paid_on))}</td>
+            <td class="num">${money2.format(p.amount)}</td>
+            <td>${esc(p.note ?? '')}</td>
+            <td class="text-right">
+              <button type="button" class="table-action is-danger" data-payment-delete="${esc(p.id)}">Delete</button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>` : '<p class="text-sm text-slate-500">No payments yet.</p>';
 }
 
-// Planned cost follows quantity × rate while both are filled in.
-function onBoqInput(e) {
-  if (!['quantity', 'rate'].includes(e.target.name)) return;
-  const f = e.currentTarget.elements;
-  const qty = parseFloat(f.quantity.value);
-  const rate = parseFloat(f.rate.value);
-  if (qty >= 0 && rate >= 0) f.planned_cost.value = (Math.round(qty * rate * 100) / 100).toFixed(2);
+function openPaymentsModal(taskId) {
+  paymentTaskId = taskId;
+  const form = $('#form-payment');
+  form.reset();
+  form.elements.paid_on.value = todayISO();
+  showFormError(form, '');
+  renderPaymentsList();
+  openModal('modal-payments');
+  form.elements.amount.focus();
 }
 
-async function saveBoq(e) {
+async function reloadPayments() {
+  const projectId = state.projectId;
+  const { data, error } = await db
+    .from('task_payments')
+    .select('id, task_id, paid_on, amount, note')
+    .eq('project_id', projectId)
+    .order('paid_on');
+  if (projectId !== state.projectId) return;
+  if (error) {
+    toast(`Could not reload payments: ${error.message}`, 'error');
+    return;
+  }
+  state.payments = data;
+  renderScheduleViews();
+}
+
+async function savePayment(e) {
   e.preventDefault();
   const form = e.currentTarget;
   const btn  = $('[type=submit]', form);
   const fd   = new FormData(form);
-  const numOrNull = (v) => (v === '' || v == null ? null : Number(v));
 
-  const id = fd.get('id');
   const row = {
-    boq_item:     fd.get('boq_item').trim(),
-    category:     fd.get('category').trim() || null,
-    unit:         fd.get('unit') || null,
-    quantity:     numOrNull(fd.get('quantity')),
-    rate:         numOrNull(fd.get('rate')),
-    planned_cost: Number(fd.get('planned_cost') || 0),
-    actual_cost:  Number(fd.get('actual_cost') || 0),
-    status:       fd.get('status'),
-    due_date:     fd.get('due_date') || null,
+    project_id: state.projectId,
+    task_id:    paymentTaskId,
+    paid_on:    fd.get('paid_on'),
+    amount:     Number(fd.get('amount')),
+    note:       fd.get('note').trim() || null,
   };
+  if (!(row.amount > 0)) {
+    showFormError(form, 'Enter an amount above zero.');
+    return;
+  }
 
   showFormError(form, '');
   setBusy(btn, true);
-  const { error } = id
-    ? await db.from('cash_flow').update(row).eq('id', id)
-    : await db.from('cash_flow').insert({ ...row, project_id: state.projectId });
+  const { error } = await db.from('task_payments').insert(row);
   setBusy(btn, false);
-
   if (error) {
     showFormError(form, error.message);
     return;
   }
 
-  closeModal('modal-boq');
-  toast(id ? 'BOQ item updated.' : 'BOQ item added.', 'success');
-  loadBoq(state.projectId);
-  refreshDashboard(state.projectId);
+  form.reset();
+  form.elements.paid_on.value = row.paid_on; // keep the date for the next entry
+  toast('Payment added.', 'success');
+  reloadPayments();
 }
 
-async function onBoqTableClick(e) {
-  const edit = e.target.closest('[data-boq-edit]');
-  if (edit) {
-    openBoqModal(state.boq.find((i) => i.id === edit.dataset.boqEdit));
-    return;
-  }
-
-  const del = e.target.closest('[data-boq-delete]');
+async function onPaymentsClick(e) {
+  const del = e.target.closest('[data-payment-delete]');
   if (!del) return;
-  const item = state.boq.find((i) => i.id === del.dataset.boqDelete);
-  if (!item || !confirm(`Delete BOQ item "${item.boq_item}"?`)) return;
+  const payment = state.payments.find((p) => p.id === del.dataset.paymentDelete);
+  if (!payment || !confirm(`Delete the payment of ${money2.format(payment.amount)} on ${formatDate(payment.paid_on)}?`)) return;
 
-  const { error } = await db.from('cash_flow').delete().eq('id', item.id);
+  const { error } = await db.from('task_payments').delete().eq('id', payment.id);
   if (error) {
-    toast(`Could not delete item: ${error.message}`, 'error');
+    toast(`Could not delete payment: ${error.message}`, 'error');
     return;
   }
-  toast('BOQ item deleted.', 'success');
-  loadBoq(state.projectId);
-  refreshDashboard(state.projectId);
+  toast('Payment deleted.', 'success');
+  reloadPayments();
+}
+
+// =============================================================
+// Contractors (company-wide list; performance shown per project)
+// =============================================================
+async function loadContractors() {
+  const { data, error } = await db
+    .from('contractors')
+    .select('id, name, trade, contact_person, phone, notes')
+    .order('name');
+  if (error) {
+    toast(`Could not load contractors: ${error.message}`, 'error');
+    return;
+  }
+  state.contractors = data;
+  if (state.projectId) renderScheduleViews();
+}
+
+function contractorRating(s) {
+  if (!s || !s.items) return '<span class="text-slate-500">No items here</span>';
+  if (s.overdue) return `<span class="status-chip status-blocked">! ${s.overdue} overdue</span>`;
+  if (s.late) return `<span class="status-chip status-in_progress">Late on ${s.late} · avg ${s.avgDaysLate} d</span>`;
+  if (s.onTime) return '<span class="status-chip status-done">✓ On time</span>';
+  return '<span class="status-chip status-pending">Not finished yet</span>';
+}
+
+function renderContractors() {
+  const perf = contractorPerformance(state.tasks, state.contractorDelays, state.payments, todayISO());
+  const el = $('#contractors-table');
+
+  if (!state.contractors.length) {
+    el.innerHTML = '<div class="empty-state">No contractors yet — click Add Contractor, then pick them on timetable items.</div>';
+    return;
+  }
+
+  // Contractors with work on this project first, then the rest of the list.
+  const list = [...state.contractors].sort((a, b) =>
+    (perf.get(b.id)?.items ?? 0) - (perf.get(a.id)?.items ?? 0) || a.name.localeCompare(b.name));
+
+  const row = (c, s) => `
+    <tr>
+      <td>
+        <p class="text-white font-medium">${esc(c.name)}</p>
+        <p class="text-xs text-slate-500">${esc([c.trade, c.contact_person, c.phone].filter(Boolean).join(' · '))}</p>
+      </td>
+      <td class="num">${s?.items ?? 0}</td>
+      <td class="num">${s?.onTime ?? 0}</td>
+      <td class="num">${s?.late ? `${s.late} <span class="text-slate-500">(avg ${s.avgDaysLate} d)</span>` : 0}</td>
+      <td class="num">${s?.overdue ? `<span class="variance-over">${s.overdue}</span>` : 0}</td>
+      <td class="num">${s?.open ?? 0}</td>
+      <td class="num">${s?.delayHours ? `${s.delayHours} h` : '—'}</td>
+      <td class="num">${s?.budget ? money.format(s.budget) : '—'}</td>
+      <td class="num">${s?.paid ? money.format(s.paid) : '—'}</td>
+      <td class="whitespace-nowrap">${contractorRating(s)}</td>
+      <td class="text-right whitespace-nowrap">
+        ${c.id ? `
+          <button type="button" class="table-action" data-contractor-edit="${esc(c.id)}">Edit</button>
+          <button type="button" class="table-action is-danger" data-contractor-delete="${esc(c.id)}">Delete</button>` : ''}
+      </td>
+    </tr>`;
+
+  const unassigned = perf.get('');
+  el.innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Contractor</th><th class="num">Items</th><th class="num">On time</th><th class="num">Late</th>
+          <th class="num">Overdue now</th><th class="num">Open</th><th class="num">Delays</th>
+          <th class="num">Budget</th><th class="num">Paid</th><th>Performance</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${list.map((c) => row(c, perf.get(c.id))).join('')}
+        ${unassigned?.items ? row({ id: '', name: 'No contractor assigned', trade: '' }, unassigned) : ''}
+      </tbody>
+    </table>`;
+}
+
+function openContractorModal(contractor) {
+  const form = $('#form-contractor');
+  const f = form.elements;
+  form.reset();
+  showFormError(form, '');
+  $('#contractor-title').textContent = contractor ? 'Edit Contractor' : 'Add Contractor';
+  f.id.value = contractor?.id ?? '';
+  for (const key of ['name', 'trade', 'contact_person', 'phone', 'notes']) f[key].value = contractor?.[key] ?? '';
+  openModal('modal-contractor');
+}
+
+async function saveContractor(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn  = $('[type=submit]', form);
+  const fd   = new FormData(form);
+
+  const id = fd.get('id');
+  const row = {
+    name:           fd.get('name').trim(),
+    trade:          fd.get('trade').trim() || null,
+    contact_person: fd.get('contact_person').trim() || null,
+    phone:          fd.get('phone').trim() || null,
+    notes:          fd.get('notes').trim() || null,
+  };
+
+  showFormError(form, '');
+  setBusy(btn, true);
+  const { error } = id
+    ? await db.from('contractors').update(row).eq('id', id)
+    : await db.from('contractors').insert(row);
+  setBusy(btn, false);
+  if (error) {
+    showFormError(form, error.message);
+    return;
+  }
+
+  closeModal('modal-contractor');
+  toast(id ? 'Contractor updated.' : 'Contractor added.', 'success');
+  loadContractors();
+}
+
+async function onContractorsClick(e) {
+  const edit = e.target.closest('[data-contractor-edit]');
+  if (edit) return openContractorModal(state.contractors.find((c) => c.id === edit.dataset.contractorEdit));
+
+  const del = e.target.closest('[data-contractor-delete]');
+  if (!del) return;
+  const contractor = state.contractors.find((c) => c.id === del.dataset.contractorDelete);
+  if (!contractor || !confirm(`Delete contractor "${contractor.name}"?\n\nTheir items and delays on every project stay, marked as no contractor.`)) return;
+
+  const { error } = await db.from('contractors').delete().eq('id', contractor.id);
+  if (error) {
+    toast(`Could not delete contractor: ${error.message}`, 'error');
+    return;
+  }
+  toast(`Deleted ${contractor.name}.`, 'success');
+  await loadContractors();
+  if (state.projectId) loadSchedule(state.projectId);
 }
 
 // =============================================================
@@ -1405,11 +1594,9 @@ function initModals() {
 
   $('#form-daily-log').addEventListener('input', updateManpowerTotal);
 
-  $('#boq-unit').innerHTML = '<option value="">—</option>'
+  $('#task-unit').innerHTML = '<option value="">—</option>'
     + BOQ_UNITS.map((u) => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
-  $('#boq-status').innerHTML = Object.entries(BOQ_STATUSES)
-    .map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join('');
-  $('#boq-categories').innerHTML = BOQ_CATEGORIES.map((c) => `<option value="${esc(c)}"></option>`).join('');
+  $('#contractor-trades').innerHTML = CONTRACTOR_TRADES.map((t) => `<option value="${esc(t)}"></option>`).join('');
 
   const currencyOptions = Object.entries(CURRENCIES)
     .map(([code, label]) => `<option value="${code}">${esc(label)}</option>`).join('');
@@ -1543,6 +1730,7 @@ function openDelayModal() {
     + state.flats.map((f) => `
       <option value="${esc(f.id)}">Block ${esc(f.block)} · Unit ${esc(f.flat_number)} (${esc(floorLabel(f.floor))})</option>
     `).join('');
+  $('#delay-contractor').innerHTML = contractorOptions('');
   showFormError(form, '');
   openModal('modal-delay');
 }
@@ -1562,6 +1750,7 @@ async function saveDelay(e) {
   const row = {
     project_id:     state.projectId,
     flat_id:        fd.get('flat_id') || null,
+    contractor_id:  fd.get('contractor_id') || null,
     delay_cause:    fd.get('delay_cause'),
     duration_hours: duration,
     description:    fd.get('description').trim() || null,
@@ -1580,6 +1769,7 @@ async function saveDelay(e) {
   closeModal('modal-delay');
   toast('Delay recorded.', 'success');
   refreshDashboard(state.projectId);
+  if (row.contractor_id) loadSchedule(state.projectId); // contractor delay hours
 }
 
 // =============================================================
@@ -1630,9 +1820,16 @@ $('#btn-add-unit').addEventListener('click', () => openUnitModal(null));
 $('#form-unit').addEventListener('submit', saveUnit);
 $('#btn-add-task').addEventListener('click', () => openTaskModal(null));
 $('#form-task').addEventListener('submit', saveTask);
-$('#form-task').addEventListener('input', updateTaskDuration);
+$('#form-task').addEventListener('input', onTaskInput);
 $('#schedule-table').addEventListener('change', onScheduleChange);
-$('#schedule-table').addEventListener('click', onScheduleClick);
+$('#schedule-table').addEventListener('click', onTaskTableClick);
+$('#btn-add-item').addEventListener('click', () => openTaskModal(null));
+$('#boq-table').addEventListener('click', onTaskTableClick);
+$('#form-payment').addEventListener('submit', savePayment);
+$('#payments-list').addEventListener('click', onPaymentsClick);
+$('#btn-add-contractor').addEventListener('click', () => openContractorModal(null));
+$('#form-contractor').addEventListener('submit', saveContractor);
+$('#contractors-table').addEventListener('click', onContractorsClick);
 $('#projects-container').addEventListener('click', onProjectsClick);
 $('#btn-new-project').addEventListener('click', openProjectModal);
 $('#form-project').addEventListener('submit', saveProject);
@@ -1640,10 +1837,6 @@ $('#btn-add-units-bulk').addEventListener('click', openBulkUnitsModal);
 $('#btn-parse-log').addEventListener('click', processLogText);
 $('#btn-edit-project').addEventListener('click', openEditProjectModal);
 $('#form-edit-project').addEventListener('submit', saveEditProject);
-$('#btn-add-boq').addEventListener('click', () => openBoqModal(null));
-$('#form-boq').addEventListener('submit', saveBoq);
-$('#form-boq').addEventListener('input', onBoqInput);
-$('#boq-table').addEventListener('click', onBoqTableClick);
 $('#form-flats').addEventListener('submit', saveFlats);
 $('#form-flats').addEventListener('input', updateFlatsPreview);
 $('#btn-export-pdf').addEventListener('click', exportDailyReport);

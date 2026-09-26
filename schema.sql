@@ -195,6 +195,67 @@ drop trigger if exists set_updated_at on public.schedule_tasks;
 create trigger set_updated_at before update on public.schedule_tasks
   for each row execute function public.set_updated_at();
 
+-- Timetable items double as the project's BOQ: budget (optionally quantity × rate)
+-- and dated payments. The older cash_flow table is no longer used by the app.
+alter table public.schedule_tasks
+  add column if not exists quantity numeric(14,3) check (quantity is null or quantity >= 0),
+  add column if not exists unit     text,
+  add column if not exists rate     numeric(14,2) check (rate is null or rate >= 0),
+  add column if not exists budget   numeric(14,2) not null default 0 check (budget >= 0);
+
+create table if not exists public.task_payments (
+  id          uuid primary key default gen_random_uuid(),
+  project_id  uuid not null references public.projects(id) on delete cascade,
+  task_id     uuid not null references public.schedule_tasks(id) on delete cascade,
+  paid_on     date not null default current_date,
+  amount      numeric(14,2) not null check (amount > 0),
+  note        text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists task_payments_project_idx on public.task_payments (project_id, paid_on);
+create index if not exists task_payments_task_idx on public.task_payments (task_id);
+
+drop trigger if exists set_updated_at on public.task_payments;
+create trigger set_updated_at before update on public.task_payments
+  for each row execute function public.set_updated_at();
+
+alter table public.task_payments enable row level security;
+drop policy if exists "authenticated_full_access" on public.task_payments;
+create policy "authenticated_full_access" on public.task_payments
+  for all to authenticated using (true) with check (true);
+
+-- Contractors are company-wide (shared by all projects). Timetable items and
+-- delays can name one, which drives the per-contractor on-time/late summary.
+create table if not exists public.contractors (
+  id              uuid primary key default gen_random_uuid(),
+  name            text not null,
+  trade           text,
+  contact_person  text,
+  phone           text,
+  notes           text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+
+drop trigger if exists set_updated_at on public.contractors;
+create trigger set_updated_at before update on public.contractors
+  for each row execute function public.set_updated_at();
+
+alter table public.contractors enable row level security;
+drop policy if exists "authenticated_full_access" on public.contractors;
+create policy "authenticated_full_access" on public.contractors
+  for all to authenticated using (true) with check (true);
+
+alter table public.schedule_tasks
+  add column if not exists contractor_id uuid references public.contractors(id) on delete set null;
+alter table public.delays
+  add column if not exists contractor_id uuid references public.contractors(id) on delete set null;
+
+create index if not exists schedule_tasks_contractor_idx on public.schedule_tasks (contractor_id);
+create index if not exists delays_contractor_idx on public.delays (contractor_id);
+
 alter table public.schedule_tasks enable row level security;
 drop policy if exists "authenticated_full_access" on public.schedule_tasks;
 create policy "authenticated_full_access" on public.schedule_tasks

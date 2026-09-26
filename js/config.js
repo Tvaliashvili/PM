@@ -55,18 +55,11 @@ export const DELAY_CAUSES = [
   'Other',
 ];
 
-// Bill of quantities
+// Units for a work item's quantity (quantity × rate = budget).
 export const BOQ_UNITS = ['m²', 'm³', 'm', 'kg', 't', 'pcs', 'lump sum', 'day', 'hr'];
 
-export const BOQ_CATEGORIES = [
-  'Preliminaries', 'Substructure', 'Frame', 'Masonry', 'Roofing', 'Plumbing',
-  'Electrical', 'Finishes', 'Doors & windows', 'External works',
+// Suggestions for a contractor's trade (free text is allowed too).
+export const CONTRACTOR_TRADES = [
+  'General contractor', 'Earthworks', 'Concrete', 'Steel / rebar', 'Masonry', 'Roofing',
+  'Facade', 'Windows & doors', 'Plumbing', 'Electrical', 'HVAC', 'Finishes', 'Elevators',
 ];
-
-// Must match the cash_flow.status check constraint in schema.sql.
-export const BOQ_STATUSES = {
-  planned:   'Planned',
-  committed: 'Committed',
-  paid:      'Paid',
-  cancelled: 'Cancelled',
-};
