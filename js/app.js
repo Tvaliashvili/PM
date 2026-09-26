@@ -8,6 +8,7 @@ import {
   BOQ_UNITS, CONTRACTOR_TRADES,
 } from './config.js';
 import { generateDailyReport } from './pdfReport.js';
+import { buildProjectReport, downloadProjectReport } from './projectReport.js';
 import {
   scheduleProgress, taskState, durationDays,
   plannedSpendByMonth, actualSpendByMonth, costPosition, contractorPerformance,
@@ -103,7 +104,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-add-unit', '#btn-add-units-bulk', '#btn-add-task', '#btn-add-contractor',
+  ['#btn-new-log', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-view-report', '#btn-add-unit', '#btn-add-units-bulk', '#btn-add-task', '#btn-add-contractor',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -1856,6 +1857,57 @@ async function saveDelay(e) {
 // =============================================================
 // PDF export
 // =============================================================
+// ---------- Full project report (viewer + PDF) ----------
+let reportPage = null;
+
+async function openProjectReport() {
+  if (!requireProject()) return;
+  const project = currentProject();
+  const root = $('#report-root');
+  const pdfBtn = $('#btn-report-pdf');
+  reportPage = null;
+  pdfBtn.disabled = true;
+  root.innerHTML = '<p class="rpt-loading">Building report…</p>';
+  $('#report-title').textContent = `Project Report — ${project.name}`;
+  openModal('modal-report');
+
+  try {
+    const page = await buildProjectReport({
+      db,
+      project,
+      tasks: state.tasks,
+      payments: state.payments,
+      contractors: state.contractors,
+      roster: state.roster,
+      contractorDelays: state.contractorDelays,
+      units: state.flats,
+      progress: state.progress ?? scheduleProgress([], todayISO()),
+      money,
+      userEmail: state.user?.email,
+    });
+    if (project.id !== state.projectId) return;
+    root.replaceChildren(page);
+    reportPage = page;
+    pdfBtn.disabled = false;
+  } catch (err) {
+    root.innerHTML = `<p class="rpt-loading">${esc(err.message || 'Could not build the report.')}</p>`;
+  }
+}
+
+async function downloadReport() {
+  if (!reportPage) return;
+  const btn = $('#btn-report-pdf');
+  setBusy(btn, true, 'Saving…');
+  try {
+    await downloadProjectReport(reportPage, currentProject());
+    toast('Project report downloaded.', 'success');
+  } catch (err) {
+    toast(err.message || 'Could not save the PDF.', 'error');
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
 let exporting = false;
 
 async function exportDailyReport(e) {
@@ -1922,6 +1974,8 @@ $('#form-flats').addEventListener('submit', saveFlats);
 $('#form-flats').addEventListener('input', updateFlatsPreview);
 $('#btn-export-pdf').addEventListener('click', exportDailyReport);
 $('#btn-report-daily').addEventListener('click', exportDailyReport);
+$('#btn-view-report').addEventListener('click', openProjectReport);
+$('#btn-report-pdf').addEventListener('click', downloadReport);
 
 if (db) {
   $('#form-login').addEventListener('submit', signIn);

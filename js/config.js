@@ -55,6 +55,14 @@ export const DELAY_CAUSES = [
   'Other',
 ];
 
+// Sign-off printed at the end of every generated document.
+export const REPORT_AUTHOR = {
+  name:    'Sandro Tvaliashvili',
+  nameKa:  'სანდრო თვალიაშვილი',
+  title:   'ConTech Project Manager',
+  titleKa: 'ConTech-ის პროექტის მენეჯერი',
+};
+
 // Units for a work item's quantity (quantity × rate = budget).
 export const BOQ_UNITS = ['m²', 'm³', 'm', 'kg', 't', 'pcs', 'lump sum', 'day', 'hr'];
 

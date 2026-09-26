@@ -357,6 +357,14 @@
               </p>
               <button id="btn-report-daily" class="btn btn-primary"><span>Generate Daily Report</span></button>
             </div>
+            <div class="panel">
+              <h2 class="panel-title">Project Report</h2>
+              <p class="text-sm text-slate-400 mb-4">
+                The whole project on one designed page, in Georgian and English: key figures, progress vs plan, timetable,
+                contractors, budget &amp; cash flow, units, recent logs and delays. View it here or download as PDF.
+              </p>
+              <button id="btn-view-report" class="btn btn-primary"><span>View Project Report</span></button>
+            </div>
           </div>
         </section>
 
@@ -446,6 +454,7 @@
         </div>
       </section>
 
+      <div class="pdf-avoid-break" data-signature></div>
       <p class="pdf-footer" data-field="generated"></p>
     </div>
   </template>
@@ -541,6 +550,20 @@
         <button type="submit" class="btn btn-primary">Save</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Project report viewer -->
+  <dialog id="modal-report" class="modal modal-report" aria-labelledby="report-title">
+    <div class="modal-header">
+      <h2 id="report-title">Project Report</h2>
+      <div class="flex items-center gap-2">
+        <button type="button" id="btn-report-pdf" class="btn btn-primary btn-sm" disabled>Download PDF</button>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </div>
+    </div>
+    <div class="report-viewport">
+      <div id="report-root" class="report-paper"></div>
+    </div>
   </dialog>
 
   <!-- Timetable / BOQ item (add / edit) -->

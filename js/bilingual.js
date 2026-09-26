@@ -60,7 +60,20 @@ export const ka = (en) => KA[en] ?? en;
 /** "ქართული / English" — both languages on one line. */
 export const bi = (en) => (KA[en] ? `${KA[en]} / ${en}` : en);
 
-const KA_MONTHS = ['იანვარი', 'თებერვალი', 'მარტი', 'აპრილი', 'მაისი', 'ივნისი',
+/** Bilingual "Prepared by" block for the end of a document (HTML string). */
+export function signatureHtml(author) {
+  const e = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  return `
+    <div class="doc-signature">
+      <p class="doc-signature-label">მოამზადა · Prepared by</p>
+      <p class="doc-signature-name">${e(author.nameKa)} <span>/ ${e(author.name)}</span></p>
+      <p class="doc-signature-title">${e(author.titleKa)} <span>/ ${e(author.title)}</span></p>
+      <div class="doc-signature-line"><span>ხელმოწერა · Signature</span></div>
+    </div>`;
+}
+
+const KA_MONTHS =['იანვარი', 'თებერვალი', 'მარტი', 'აპრილი', 'მაისი', 'ივნისი',
   'ივლისი', 'აგვისტო', 'სექტემბერი', 'ოქტომბერი', 'ნოემბერი', 'დეკემბერი'];
 const KA_WEEKDAYS = ['კვირა', 'ორშაბათი', 'სამშაბათი', 'ოთხშაბათი', 'ხუთშაბათი', 'პარასკევი', 'შაბათი'];
 

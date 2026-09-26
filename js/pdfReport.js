@@ -3,8 +3,8 @@
 // Today's daily_logs + delays → Gemini summary in both languages
 // (via Edge Function) → html2pdf
 // =============================================================
-import { MANPOWER_TRADES } from './config.js';
-import { ka, bi, dateKa, dateEn } from './bilingual.js';
+import { MANPOWER_TRADES, REPORT_AUTHOR } from './config.js';
+import { ka, bi, dateKa, dateEn, signatureHtml } from './bilingual.js';
 
 const SUMMARY_FUNCTION = 'daily-summary';
 
@@ -174,6 +174,7 @@ function buildReport({ project, day, logs, delays, manpower, summary, progress, 
   set('notes-en', joinNotes('notes_en') || 'No site notes recorded.');
   const stamp = new Date().toLocaleString('en-GB');
   set('generated', `${bi('Generated')} ${stamp}${userEmail ? ` · ${userEmail}` : ''}`);
+  page.querySelector('[data-signature]').innerHTML = signatureHtml(REPORT_AUTHOR);
 
   return page;
 }
