@@ -62,7 +62,8 @@ const UNIT_STATUS = [
 const taskKa = (t) => t.name_ka || t.name;
 const taskBi = (t) => biName(t.name, t.name_ka);
 
-const chip = (s, extra = '') => `<span class="rpt-chip rpt-${s.tone}">${esc(s.ka)} / ${esc(s.en)}${extra}</span>`;
+const chip = (s, extraKa = '', extraEn = '') => `<span class="rpt-chip rpt-${s.tone}">`
+  + `${esc(s.ka)}${esc(extraKa)}<br>${esc(s.en)}${esc(extraEn)}</span>`;
 const legendItem = (tone, ka, en) => `<span class="rpt-legend-item"><i class="rpt-sw rpt-sw-${tone}"></i>${L(ka, en)}</span>`;
 
 const tile = (ka, en, value, sub = '', tone = '') => `
@@ -451,10 +452,6 @@ export async function buildProjectReport({
             </tr>`).join('')}
         </tbody>
       </table>
-      <p class="rpt-foot-note">${L(
-    '0% ნიშნავს ან იმას, რომ სამუშაო არ დაწყებულა, ან იმას, რომ პროცენტი არ განახლებულა.',
-    'A 0% means either the work has not begun or the figure has not been updated.',
-  )}</p>
     </section>`;
 
   // ---------- Road to completion ----------
@@ -704,7 +701,8 @@ export async function buildProjectReport({
   const rating = (s) => {
     if (!s?.items) return chip({ ka: 'სამუშაო არ აქვს', en: 'No work yet', tone: 'muted' });
     if (s.overdue) return chip({ ka: 'ვადაგადაცილება', en: 'Overdue', tone: 'bad' });
-    if (s.late) return chip({ ka: 'დაგვიანება', en: 'Late', tone: 'warn' }, ` · ${s.avgDaysLate}დღ / ${s.avgDaysLate}d`);
+    if (s.late) return chip({ ka: 'დაგვიანება', en: 'Late', tone: 'warn' },
+      ` · ${s.avgDaysLate}დღ`, ` · ${s.avgDaysLate}d`);
     if (s.onTime) return chip({ ka: 'ვადაში', en: 'On time', tone: 'ok' });
     return chip({ ka: 'მიმდინარე', en: 'Ongoing', tone: 'info' });
   };
@@ -762,6 +760,39 @@ export async function buildProjectReport({
     const counts = UNIT_STATUS.map(([key, ka, en, tone]) => ({
       ka, en, tone, n: units.filter((u) => (u.status ?? 'not_started') === key).length,
     }));
+    // Every room, grouped block by block and floor by floor, highest floor first
+    // - the colour carries the status, the number is there when you need it.
+    const blocks = new Map();
+    for (const u of units) {
+      const block = u.block ?? '-';
+      if (!blocks.has(block)) blocks.set(block, new Map());
+      const floors = blocks.get(block);
+      const floor = Number(u.floor ?? 0);
+      if (!floors.has(floor)) floors.set(floor, []);
+      floors.get(floor).push(u);
+    }
+    const toneOf = (u) => (UNIT_STATUS.find(([key]) => key === (u.status ?? 'not_started'))?.[3] ?? 'muted');
+    const floorKa = (f) => (f === 0 ? 'პირველი' : f < 0 ? `სარდაფი ${-f}` : `სართული ${f}`);
+    const floorEn = (f) => (f === 0 ? 'Ground' : f < 0 ? `Basement ${-f}` : `Floor ${f}`);
+    const roomGrid = `
+      <div class="rpt-rooms">
+        ${[...blocks].sort((a, b) => String(a[0]).localeCompare(String(b[0]), undefined, { numeric: true }))
+    .map(([block, floors]) => `
+          <div class="rpt-room-block rpt-avoid">
+            ${blocks.size > 1 ? `<p class="rpt-room-block-name">${L(`ბლოკი ${block}`, `Block ${block}`)}</p>` : ''}
+            ${[...floors].sort((a, b) => b[0] - a[0]).map(([floor, list]) => `
+              <div class="rpt-room-floor">
+                <span class="rpt-room-floor-name">${esc(floorKa(floor))}<em>${esc(floorEn(floor))}</em></span>
+                <span class="rpt-room-list">
+                  ${list
+    .sort((a, b) => String(a.flat_number).localeCompare(String(b.flat_number), undefined, { numeric: true }))
+    .map((u) => `<i class="rpt-room rpt-room-${toneOf(u)}" title="${esc(bi(u.unit_type || ''))}">${esc(u.flat_number)}</i>`)
+    .join('')}
+                </span>
+              </div>`).join('')}
+          </div>`).join('')}
+      </div>`;
+
     unitsSection = `
       <section class="rpt-section rpt-avoid">
         ${H('ოთახები', 'Rooms', `${units.length}${area ? ` · ${num.format(area)} m²` : ''}`)}
@@ -773,7 +804,8 @@ export async function buildProjectReport({
           <div class="rpt-type-chips">
             ${[...byType].sort((a, b) => b[1].n - a[1].n).map(([type, e]) => `
               <span class="rpt-type"><b>${e.n}</b> ${esc(bi(type))}${e.area ? ` · ${num.format(e.area)} m²` : ''}</span>`).join('')}
-          </div>` : none}
+          </div>
+          ${roomGrid}` : none}
       </section>`;
   }
 
@@ -866,7 +898,7 @@ export async function buildProjectReport({
                 <td>${x.contractor_id ? esc(nameOf(x.contractor_id)) : '-'}</td>
                 <td class="num">${num.format(delayDaysLost(x, today))}${delayIsOngoing(x) ? '+' : ''}</td>
                 <td>${delayIsOngoing(x)
-    ? `<span class="rpt-chip rpt-bad">${L('მიმდინარე', 'Ongoing')}</span>`
+    ? chip({ ka: 'მიმდინარე', en: 'Ongoing', tone: 'bad' })
     : `${L('დასრულდა', 'Ended')} ${x.resolved_on ? d(x.resolved_on) : ''}`.trim()}</td>
                 <td>${biText(x.description, x.description_en)}</td>
               </tr>`).join('')}
