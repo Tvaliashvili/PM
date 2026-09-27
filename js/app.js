@@ -222,7 +222,7 @@ function showSetupNotice() {
 async function loadProjects() {
   const { data, error } = await db
     .from('projects')
-    .select('id, name, location, client_name, client_name_ka, total_flats, has_rooms, day_rate, created_at, start_date, end_date, currency')
+    .select('id, name, name_ka, location, client_name, client_name_ka, total_flats, has_rooms, day_rate, created_at, start_date, end_date, currency')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -334,6 +334,7 @@ async function renderProjectList() {
       <article class="project-card${p.id === state.projectId ? ' is-active' : ''}">
         <button type="button" class="project-card-open" data-open-project="${esc(p.id)}">
           <p class="pr-8 font-semibold text-white truncate">${esc(p.name)}</p>
+          ${p.name_ka ? `<p class="pr-8 text-sm text-slate-400 truncate">${esc(p.name_ka)}</p>` : ''}
           <p class="text-sm text-slate-500 truncate">${esc(p.location || 'No location set')} · ${esc(p.currency ?? DEFAULT_CURRENCY)}</p>
           ${clientOf(p) ? `<p class="text-xs text-slate-400 truncate">Client: ${esc(clientOf(p))}</p>` : ''}
           <p class="text-xs text-slate-500 mt-1">${p.start_date && p.end_date
@@ -405,6 +406,7 @@ async function saveProject(e) {
     .from('projects')
     .insert({
       name: fd.get('name').trim(),
+      name_ka: fd.get('name_ka').trim() || null,
       location: fd.get('location').trim() || null,
       client_name: fd.get('client_name').trim() || null,
       client_name_ka: fd.get('client_name_ka').trim() || null,
@@ -1224,6 +1226,7 @@ function openEditProjectModal() {
   const form = $('#form-edit-project');
   const f = form.elements;
   f.name.value = project.name;
+  f.name_ka.value = project.name_ka ?? '';
   f.location.value = project.location ?? '';
   f.client_name.value = project.client_name ?? '';
   f.client_name_ka.value = project.client_name_ka ?? '';
@@ -1245,6 +1248,7 @@ async function saveEditProject(e) {
 
   const row = {
     name: fd.get('name').trim(),
+    name_ka: fd.get('name_ka').trim() || null,
     location: fd.get('location').trim() || null,
     client_name: fd.get('client_name').trim() || null,
     client_name_ka: fd.get('client_name_ka').trim() || null,

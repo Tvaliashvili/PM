@@ -15,7 +15,7 @@ const MAX_CONTEXT_CHARS = 400_000; // oldest logs are dropped beyond this
 const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget), contractors, delays (counted in whole days lost, described in Georgian and English), payments to contractors, daily workers (manpower.day_workers, each paid the log's day_rate for that day) and equipment rentals (daily_rate × days).
 
 Rules:
-- Answer in the same language as the question (Georgian or English). Client and contractor names are spelled by hand in both languages (client_name / client_name_ka, name / name_ka): use the Georgian spelling in Georgian answers and the English one in English answers.
+- Answer in the same language as the question (Georgian or English). Project, client and contractor names are spelled by hand in both languages (name / name_ka, client_name / client_name_ka): use the Georgian spelling in Georgian answers and the English one in English answers.
 - Be specific: give dates, figures, names and units. Keep it short; for lists, put each point on its own line starting with "- ".
 - When you add things up (workers, hours, days, money), say what you counted.
 - Use only the data. If it doesn't contain the answer, say so plainly and, if useful, say what information is missing. Never invent facts.
@@ -36,7 +36,7 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
 
   const sb = userClient(req);
   const [project, tasks, contractors, logs, delays, payments, rentals] = await Promise.all([
-    sb.from("projects").select("name, location, client_name, client_name_ka, start_date, end_date, currency, has_rooms").eq("id", projectId).single(),
+    sb.from("projects").select("name, name_ka, location, client_name, client_name_ka, start_date, end_date, currency, has_rooms").eq("id", projectId).single(),
     sb.from("schedule_tasks")
       .select("id, name, planned_start, planned_finish, progress_pct, done_at, contractor_id, budget")
       .eq("project_id", projectId).order("planned_start"),

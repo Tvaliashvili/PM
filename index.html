@@ -562,10 +562,16 @@
         <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
       </div>
       <div class="modal-body space-y-4">
-        <label class="block">
-          <span class="form-label">Project name</span>
-          <input name="name" required maxlength="120" class="input-dark w-full" placeholder="e.g. Riverside Flats">
-        </label>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="form-label">Project name — English</span>
+            <input name="name" required maxlength="120" class="input-dark w-full" placeholder="e.g. Riverside Flats">
+          </label>
+          <label class="block">
+            <span class="form-label">Project name — ქართული</span>
+            <input name="name_ka" maxlength="120" class="input-dark w-full" placeholder="მაგ. რივერსაიდის ბინები">
+          </label>
+        </div>
         <label class="block">
           <span class="form-label">Location</span>
           <input name="location" maxlength="120" class="input-dark w-full" placeholder="e.g. Vake, Tbilisi">
@@ -607,10 +613,14 @@
       <div class="modal-body space-y-4">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block">
-            <span class="form-label">Project name</span>
+            <span class="form-label">Project name — English</span>
             <input name="name" required maxlength="120" class="input-dark w-full">
           </label>
           <label class="block">
+            <span class="form-label">Project name — ქართული</span>
+            <input name="name_ka" maxlength="120" class="input-dark w-full">
+          </label>
+          <label class="block sm:col-span-2">
             <span class="form-label">Location</span>
             <input name="location" maxlength="120" class="input-dark w-full">
           </label>

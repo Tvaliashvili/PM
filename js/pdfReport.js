@@ -153,7 +153,7 @@ function buildReport({ project, day, logs, delays, rentals, manpower, summary, p
   const daysLost = delays.reduce((sum, d) => sum + Number(d.duration_days || 0), 0);
   const weather = [...new Set(logs.map((l) => l.weather).filter(Boolean))].map(bi).join(', ');
 
-  set('project', project.name);
+  set('project', biName(project.name, project.name_ka));
   set('location', project.location || '');
   const client = biName(project.client_name, project.client_name_ka);
   set('client', client ? `დამკვეთი / Client: ${client}` : '');
@@ -244,7 +244,8 @@ export async function generateDailyReport({ db, project, progress, userEmail, mo
   const summary = await fetchSummary(db, {
     date: day.date,
     project: {
-      name: project.name,
+      // spelled by hand in both languages, like the client
+      name: { en: project.name, ka: project.name_ka },
       location: project.location,
       // the company that hired us — the report's main reader; spelled by hand in both languages
       client: { en: project.client_name, ka: project.client_name_ka },

@@ -393,3 +393,10 @@ create policy "authenticated_full_access" on public.equipment_rentals
   for all to authenticated using (true) with check (true);
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 10. Project name in Georgian too (documents are bilingual)
+-- -------------------------------------------------------------
+alter table public.projects add column if not exists name_ka text;
+
+notify pgrst, 'reload schema';
