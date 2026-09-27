@@ -713,6 +713,8 @@ textarea.input-dark { resize: vertical; }
   font-size: 10px;
   font-weight: 600;
   line-height: 1.35;
+  /* Each language stays on its own line: a count must not leave its unit. */
+  white-space: nowrap;
 }
 .rpt th { white-space: normal; }
 .rpt-ok   { background: #d1fae5; color: #047857; }
@@ -1011,6 +1013,9 @@ textarea.input-dark { resize: vertical; }
 .rpt-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .rpt-card { padding: 10px 12px; border: 1px solid #e2e8f0; border-top: 3px solid #0f172a; border-radius: 8px; }
 .rpt-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+/* The name gives way to the chip, which no longer wraps. */
+.rpt-card-head > div:first-child { min-width: 0; }
+.rpt-card-head .rpt-chip { flex-shrink: 0; }
 .rpt-card-head strong { display: block; font-size: 12px; }
 .rpt-card-head .rpt-muted { display: block; font-size: 10px; }
 .rpt-segbar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: #f1f5f9; }
