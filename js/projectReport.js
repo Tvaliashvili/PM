@@ -238,7 +238,7 @@ export async function buildProjectReport({
         </div>
       </div>
       <div class="rpt-tiles rpt-tiles-2">
-        ${tile('ბიუჯეტი', 'Budget', m(cost.budget), `${L('შესრულებული', 'Work done')} ${m(cost.earned)}`)}
+        ${tile('ბიუჯეტი', 'Budget', m(cost.budget))}
         ${tile('დახარჯული', 'Spent', m(cost.spent), spentSub,
           cost.budget && cost.spent > cost.budget ? 'bad' : '')}
         ${tile('ვადაგადაცილებული ამოცანები', 'Overdue items', String(progress.overdue.length),
@@ -254,9 +254,9 @@ export async function buildProjectReport({
 
   // ---------- Needs attention + next 14 days ----------
   const alerts = [];
+  // The ring beside this list already gives both percentages: say only the gap.
   if (progress.count && gap < -5) {
-    alerts.push(['bad', `გეგმას ჩამორჩება: შესრულებულია ${progress.actualPct}%, გეგმით ${progress.plannedPct}%`,
-      `Behind plan: ${progress.actualPct}% done vs ${progress.plannedPct}% planned by today`]);
+    alerts.push(['bad', `გეგმას ჩამორჩება ${Math.abs(gap)}%-ით`, `Behind plan by ${Math.abs(gap)}%`]);
   }
   for (const t of progress.overdue.slice(0, 5)) {
     const who = nameOf(t.contractor_id);
@@ -285,21 +285,14 @@ export async function buildProjectReport({
       `${delays.length} delays in the last 30 days, ${delayDays} days lost; mostly ${topCause} (${topDays} days)`]);
   }
 
-  if (ongoingDelays.length) {
-    alerts.push(['bad',
-      `${ongoingDelays.length} შეფერხება ჯერ მიმდინარეობს (დღემდე ${ongoingDays} დღე)`,
-      `${ongoingDelays.length} ${ongoingDelays.length === 1 ? 'delay is' : 'delays are'} still ongoing - ${ongoingDays} days so far`]);
-  }
-
+  // Open delays get their own note at the head of the delays section; the
+  // list below names every stalled item. Both only need pointing at here.
   const stalled = stalledTasks(tasks, today);
-  // Overdue items already have their own line above - don't say it twice.
-  const overdueIds = new Set(progress.overdue.map((t) => t.id));
-  for (const st of stalled.filter((x) => !overdueIds.has(x.task.id)).slice(0, 3)) {
-    alerts.push(st.kind === 'not_started'
-      ? ['bad', `${taskKa(st.task)} - უნდა დაწყებულიყო ${st.elapsed} დღის წინ (0%)`,
-        `${st.task.name} - due to start ${st.elapsed} days ago, still 0%`]
-      : ['bad', `${taskKa(st.task)} - ${st.actual}%, გეგმით დღეისთვის ${st.expected}%`,
-        `${st.task.name} - ${st.actual}% done, ${st.expected}% expected by today`]);
+  const overdueIds = new Set(progress.overdue.map((t) => t.id)); // counted above already
+  const stalledCount = stalled.filter((x) => !overdueIds.has(x.task.id)).length;
+  if (stalledCount) {
+    alerts.push(['bad', `${stalledCount} ამოცანა არ მოძრაობს`,
+      `${stalledCount} ${stalledCount === 1 ? 'item is' : 'items are'} not moving`]);
   }
 
   const horizon = addDays(today, 14);
@@ -485,16 +478,10 @@ export async function buildProjectReport({
   const roadAhead = !remaining.length ? '' : `
     <section class="rpt-section rpt-avoid">
       ${H('პროექტის დასრულებამდე', 'Road to completion', `${remaining.length} ${L('დარჩენილი ამოცანა', 'items left')}`)}
-      <div class="rpt-tiles">
+      <div class="rpt-tiles rpt-tiles-2">
         ${tile('დარჩენილი სამუშაო', 'Work left', `${remainingPct}%`,
     `${remaining.length} ${L('ამოცანა', 'items')} · ${m(remainingBudget)} ${L('ბიუჯეტით', 'of budget')}`)}
-        ${project.end_date
-    ? tile('დაგეგმილი დასრულება', 'Planned completion', d(project.end_date),
-      dayDiff(today, project.end_date) >= 0
-        ? L(`დარჩა ${dayDiff(today, project.end_date)} დღე`, `${dayDiff(today, project.end_date)} days left`)
-        : L('თარიღი გასულია', 'date has passed'),
-      dayDiff(today, project.end_date) < 0 ? 'bad' : '')
-    : ''}
+        ${/* The planned date and the days left are in the header's time strip. */ ''}
         ${forecast
     ? tile('პროგნოზი ამ ტემპით', 'Forecast at this pace', d(forecast.date),
       lateBy === null
@@ -668,13 +655,12 @@ export async function buildProjectReport({
   const workerDays = labour.reduce((sum, e) => sum + e.workers, 0);
   const siteCostsBlock = labour.length || rentals.length ? `
     <h3 class="rpt-sub-h">${L('ობიექტის სხვა ხარჯები', 'Other site costs')}</h3>
-    <div class="rpt-tiles rpt-tiles-4 rpt-avoid">
-      ${tile('კონტრაქტები', 'Contract payments', m(cost.contracts))}
+    ${/* Contract payments and the total are tiles at the head of this section. */ ''}
+    <div class="rpt-tiles rpt-tiles-2 rpt-avoid">
       ${tile('დღიური მუშები', 'Daily workers', m(cost.labour),
         workerDays ? `${workerDays} ${L('კაც-დღე', 'worker-days')}` : '')}
       ${tile('ტექნიკის ქირა', 'Equipment rentals', m(cost.rental),
         rentals.length ? `${rentals.length} ${L('ქირა', 'rentals')}` : '')}
-      ${tile('სულ დახარჯული', 'Total spent', m(cost.spent))}
     </div>
     ${rentals.length ? `
       <table class="rpt-compact">
@@ -700,11 +686,10 @@ export async function buildProjectReport({
   const costSection = `
     <section class="rpt-section">
       ${H('ბიუჯეტი და ფულადი ნაკადი', 'Budget & Cash Flow')}
-      <div class="rpt-tiles rpt-tiles-4 rpt-avoid">
-        ${tile('ბიუჯეტი', 'Budget', m(cost.budget))}
+      ${/* The budget itself is a tile at a glance, and the line in the chart below. */ ''}
+      <div class="rpt-tiles rpt-tiles-2 rpt-avoid">
         ${tile('გეგმით დღემდე', 'Planned by today', m(cost.planned))}
         ${tile('შესრულებული სამუშაო', 'Work done', m(cost.earned), '', cost.earned < cost.planned - 0.5 ? 'bad' : 'ok')}
-        ${tile('დახარჯული', 'Spent', m(cost.spent), '', cost.contracts > cost.earned + 0.5 ? 'warn' : '')}
       </div>
       ${monthKeys.length ? sCurve + monthTable : none}
       ${itemCosts}
