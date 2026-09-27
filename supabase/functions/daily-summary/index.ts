@@ -15,7 +15,7 @@ const SYSTEM_PROMPT = `You write the executive summary for a daily site report o
 Write exactly three bullets:
 1. Progress - what work was done on site today.
 2. Resources - manpower on site and any weather impact.
-3. Delays and risks - what was lost, why, and the next action needed. Delay durations are whole days (duration_days); delay descriptions are given in Georgian and English (description_ka / description_en).
+3. Delays and risks - what was lost, why, and the next action needed. Delay durations are whole days (duration_days); delay descriptions are given in Georgian and English (description_ka / description_en). A delay with ongoing=true has no end date yet - say plainly that it is still open and that its duration_days is the count so far.
 
 Each bullet is one or two plain sentences with specific figures from the data. Use only the data provided; if something is missing, say so briefly instead of guessing.
 

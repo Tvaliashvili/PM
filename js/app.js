@@ -13,6 +13,7 @@ import {
   scheduleProgress, taskState, durationDays, completionOf,
   plannedSpendByMonth, actualSpendByMonth, costPosition, contractorPerformance,
   labourCosts, rentalCosts, rentalTotal, rentalEnd, siteCostsByMonth,
+  delayIsOngoing, delayDaysLost, delayStart,
 } from './schedule.js';
 import { ka } from './bilingual.js';
 
@@ -646,7 +647,7 @@ async function loadSchedule(projectId) {
       .eq('project_id', projectId)
       .order('paid_on'),
     db.from('delays')
-      .select('contractor_id, duration_days')
+      .select('contractor_id, duration_days, created_at')
       .eq('project_id', projectId),
     db.from('contractors')
       .select('id, name, name_ka, trade, contact_person, phone, email, notes')
@@ -971,7 +972,7 @@ async function refreshDashboard(projectId) {
   // The Spent vs Budget card is updated by renderCosts() from the timetable.
   const [delays, logs] = await Promise.all([
     db.from('delays')
-      .select('id, delay_cause, duration_days, description, description_en, created_at, flat_id, contractor_id, flats(block, flat_number)')
+      .select('id, delay_cause, duration_days, resolved_on, description, description_en, created_at, flat_id, contractor_id, flats(block, flat_number)')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false }),
     db.from('daily_logs')
@@ -989,9 +990,11 @@ async function refreshDashboard(projectId) {
   }
 
   // Delays
-  const days = delays.data.reduce((sum, d) => sum + Number(d.duration_days || 0), 0);
+  const days = delays.data.reduce((sum, d) => sum + delayDaysLost(d), 0);
+  const stillOpen = delays.data.filter(delayIsOngoing).length;
   $('#kpi-delays').textContent = delays.data.length;
-  $('#kpi-delays-meta').textContent = `${days.toLocaleString()} ${days === 1 ? 'day' : 'days'} lost`;
+  $('#kpi-delays-meta').textContent = `${days.toLocaleString()} ${days === 1 ? 'day' : 'days'} lost`
+    + (stillOpen ? ` · ${stillOpen} ongoing` : '');
 
   state.delays = delays.data;
   renderRecentLogs(logs.data);
@@ -1000,8 +1003,8 @@ async function refreshDashboard(projectId) {
 }
 
 // ---------- Delays page ----------
-// Local calendar date of a delay (stored as a timestamp).
-const delayDate = (d) => new Date(d.created_at).toLocaleDateString('en-CA');
+// Local calendar date a delay started (stored as a timestamp).
+const delayDate = delayStart;
 
 // Horizontal bars with the figure written beside each one.
 function barList(entries, unit) {
@@ -1018,15 +1021,17 @@ function barList(entries, unit) {
 function renderDelays() {
   const delays = state.delays;
   const rooms = hasRooms(currentProject());
-  const days = delays.reduce((sum, d) => sum + Number(d.duration_days || 0), 0);
+  const days = delays.reduce((sum, d) => sum + delayDaysLost(d), 0);
   const thisMonth = todayISO().slice(0, 7);
   const monthDays = delays.filter((d) => delayDate(d).startsWith(thisMonth))
-    .reduce((sum, d) => sum + Number(d.duration_days || 0), 0);
+    .reduce((sum, d) => sum + delayDaysLost(d), 0);
+  const ongoing = delays.filter(delayIsOngoing);
+  const ongoingDays = ongoing.reduce((sum, d) => sum + delayDaysLost(d), 0);
 
   const byCause = new Map();
   const byContractor = new Map();
   for (const d of delays) {
-    const n = Number(d.duration_days || 0);
+    const n = delayDaysLost(d);
     const c = byCause.get(d.delay_cause) ?? [0, 0];
     byCause.set(d.delay_cause, [c[0] + n, c[1] + 1]);
     const key = d.contractor_id ? contractorName(d.contractor_id) : 'No contractor named';
@@ -1038,9 +1043,12 @@ function renderDelays() {
   const top = sorted(byCause)[0];
 
   $('#delays-summary').innerHTML = [
-    statTile('Delays', String(delays.length), delays.length ? `latest ${formatDate(delayDate(delays[0]))}` : 'None recorded'),
-    statTile('Days lost', String(days), 'All time', days ? 'negative' : ''),
-    statTile('This month', `${monthDays} ${monthDays === 1 ? 'day' : 'days'}`, 'Days lost this month'),
+    statTile('Delays', String(delays.length),
+      delays.length ? `${monthDays} ${monthDays === 1 ? 'day' : 'days'} lost this month` : 'None recorded'),
+    statTile('Days lost', String(days), ongoingDays ? `incl. ${ongoingDays} still counting` : 'All time', days ? 'negative' : ''),
+    statTile('Ongoing', String(ongoing.length),
+      ongoing.length ? `${ongoingDays} ${ongoingDays === 1 ? 'day' : 'days'} so far` : 'All settled',
+      ongoing.length ? 'negative' : ''),
     statTile('Main cause', top ? top[0] : '-', top ? `${top[1]} days` : ''),
   ].join('');
 
@@ -1051,7 +1059,9 @@ function renderDelays() {
     $('#delays-table').innerHTML = '<div class="empty-state">No delays yet - click Log Delay.</div>';
     return;
   }
-  const rows = delays.map((d) => {
+  // Delays still running come first - they are the ones that need a decision.
+  const ordered = [...delays].sort((a, b) => (delayIsOngoing(b) ? 1 : 0) - (delayIsOngoing(a) ? 1 : 0));
+  const rows = ordered.map((d) => {
     const where = d.flats ? `Block ${d.flats.block} · Room ${d.flats.flat_number}` : 'Site-wide';
     return `
       <tr>
@@ -1059,7 +1069,11 @@ function renderDelays() {
         <td>${esc(d.delay_cause)}</td>
         ${rooms ? `<td>${esc(where)}</td>` : ''}
         <td>${d.contractor_id ? esc(contractorName(d.contractor_id)) : '<span class="text-slate-500">-</span>'}</td>
-        <td class="num font-semibold text-rose-400">${Number(d.duration_days)}</td>
+        <td class="num font-semibold text-rose-400">
+          ${delayIsOngoing(d)
+            ? `${delayDaysLost(d)}<span class="ml-1 rounded-full bg-rose-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-rose-300">ongoing</span>`
+            : delayDaysLost(d)}
+        </td>
         <td class="max-w-md">
           ${d.description_en ? `<p>${esc(d.description_en)}</p>` : ''}
           ${d.description ? `<p class="text-slate-500">${esc(d.description)}</p>` : ''}
@@ -1095,7 +1109,8 @@ async function onDelaysTableClick(e) {
   const del = e.target.closest('[data-delay-delete]');
   if (!del) return;
   const delay = state.delays.find((d) => d.id === del.dataset.delayDelete);
-  if (!delay || !confirm(`Delete the ${delay.delay_cause} delay of ${formatDate(delayDate(delay))} (${delay.duration_days} days)?`)) return;
+  if (!delay || !confirm(`Delete the ${delay.delay_cause} delay of ${formatDate(delayDate(delay))} `
+    + `(${delayDaysLost(delay)} days${delayIsOngoing(delay) ? ', still ongoing' : ''})?`)) return;
   const { error } = await db.from('delays').delete().eq('id', delay.id);
   if (error) {
     toast(`Could not delete: ${error.message}`, 'error');
@@ -1148,7 +1163,9 @@ function renderRecentDelays(delays) {
           <p class="text-white font-medium">${esc(d.delay_cause)}</p>
           <p class="text-slate-500 truncate">${esc(text)}</p>
         </div>
-        <span class="shrink-0 text-xs font-semibold text-rose-400 tabular-nums">${Number(d.duration_days)} d</span>
+        <span class="shrink-0 text-xs font-semibold text-rose-400 tabular-nums">
+          ${delayDaysLost(d)} d${delayIsOngoing(d) ? '+' : ''}
+        </span>
       </div>`;
   }).join('');
 }
@@ -2248,12 +2265,25 @@ function openDelayModal(delay = null) {
   if (delay) {
     f.flat_id.value = delay.flat_id ?? '';
     f.delay_cause.value = delay.delay_cause;
-    f.duration_days.value = delay.duration_days;
+    f.resolved_on.value = delay.resolved_on ?? '';
+    // An ongoing delay opens with the days it has run so far, ready to be corrected
+    // and saved as finished.
+    f.duration_days.value = delayDaysLost(delay);
     f.description.value = delay.description ?? '';
     f.description_en.value = delay.description_en ?? '';
   }
+  f.delay_status.value = delay && delayIsOngoing(delay) ? 'ongoing' : 'finished';
+  syncDelayStatus();
   showFormError(form, '');
   openModal('modal-delay');
+}
+
+// Ongoing delays have no end date and no days lost yet - those fields only
+// make sense once the delay is settled.
+function syncDelayStatus() {
+  const ongoing = $('#delay-status').value === 'ongoing';
+  $('#delay-finished-fields').classList.toggle('hidden', ongoing);
+  $('#delay-ongoing-note').classList.toggle('hidden', !ongoing);
 }
 
 // Fills the delay description in both languages via Gemini. Returns an error message, or '' on success.
@@ -2290,9 +2320,15 @@ async function saveDelay(e) {
   const btn  = $('[type=submit]', form);
   const fd   = new FormData(form);
 
+  const ongoing = fd.get('delay_status') === 'ongoing';
   const days = Number(fd.get('duration_days'));
-  if (!Number.isInteger(days) || days < 1) {
-    showFormError(form, 'Enter the days lost as a whole number - 1 or more.');
+  if (!ongoing && (!Number.isInteger(days) || days < 1)) {
+    showFormError(form, 'Enter the days lost as a whole number - 1 or more, or mark the delay ongoing.');
+    return;
+  }
+  const endedOn = ongoing ? null : (fd.get('resolved_on') || null);
+  if (endedOn && endedOn < fd.get('delay_date')) {
+    showFormError(form, 'The delay cannot end before it started.');
     return;
   }
 
@@ -2311,7 +2347,9 @@ async function saveDelay(e) {
     flat_id:        fd.get('flat_id') || null,
     contractor_id:  fd.get('contractor_id') || null,
     delay_cause:    fd.get('delay_cause'),
-    duration_days:  days,
+    // null days = still running; the days lost are counted up to today instead.
+    duration_days:  ongoing ? null : days,
+    resolved_on:    endedOn,
     description:    f.description.value.trim() || null,
     description_en: f.description_en.value.trim() || null,
     // Stored as a timestamp; midday keeps the chosen calendar day in any time zone offset.
@@ -2429,6 +2467,7 @@ $('#btn-new-delay').addEventListener('click', () => openDelayModal());
 $('#form-daily-log').addEventListener('submit', saveDailyLog);
 $('#form-delay').addEventListener('submit', saveDelay);
 $('#btn-translate-delay').addEventListener('click', onTranslateDelay);
+$('#delay-status').addEventListener('change', syncDelayStatus);
 $('#delays-table').addEventListener('click', onDelaysTableClick);
 $('#btn-add-rental').addEventListener('click', () => openRentalModal());
 $('#form-rental').addEventListener('submit', saveRental);

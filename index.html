@@ -1031,7 +1031,7 @@
       </div>
       <div class="modal-body space-y-4">
         <label class="block">
-          <span class="form-label">Date</span>
+          <span class="form-label">Started on</span>
           <input name="delay_date" type="date" required class="input-dark w-full">
         </label>
         <label id="delay-flat-field" class="block">
@@ -1048,10 +1048,26 @@
             <select id="delay-cause" name="delay_cause" required class="select-dark w-full"></select>
           </label>
           <label class="block">
-            <span class="form-label">Days lost</span>
-            <input name="duration_days" type="number" min="1" step="1" value="1" required class="input-dark w-full">
+            <span class="form-label">Status</span>
+            <select id="delay-status" name="delay_status" class="select-dark w-full">
+              <option value="finished">Finished - days lost known</option>
+              <option value="ongoing">Ongoing - end date not known yet</option>
+            </select>
           </label>
         </div>
+        <div id="delay-finished-fields" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="form-label">Ended on (optional)</span>
+            <input name="resolved_on" type="date" class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Days lost</span>
+            <input name="duration_days" type="number" min="1" step="1" value="1" class="input-dark w-full">
+          </label>
+        </div>
+        <p id="delay-ongoing-note" class="hidden text-xs text-amber-300">
+          Days lost keep counting from the start date until you come back, switch to Finished and write down the end date.
+        </p>
         <label class="block">
           <span class="form-label">Description - ქართული</span>
           <textarea name="description" rows="3" class="input-dark w-full"

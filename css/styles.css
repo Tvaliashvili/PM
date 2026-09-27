@@ -706,6 +706,7 @@ textarea.input-dark { resize: vertical; }
 /* Header */
 .rpt-header { display: block; padding: 20px 22px 16px; }
 .rpt-header-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.rpt-header-date { flex: 0 0 auto; }
 .rpt-header h1 { font-size: 26px; letter-spacing: -0.01em; }
 .rpt-h1-en { margin-top: -2px; font-size: 15px; font-weight: 600; color: #e2e8f0; }
 .rpt-sub { color: #cbd5e1; }
@@ -716,6 +717,7 @@ textarea.input-dark { resize: vertical; }
   border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
 }
 .rpt-verdict-ok { background: #059669; color: #fff; }
 .rpt-verdict-bad { background: #e11d48; color: #fff; }
@@ -814,6 +816,16 @@ textarea.input-dark { resize: vertical; }
 .rpt-alert-bad b { background: #e11d48; }
 .rpt-alert-warn b { background: #f59e0b; }
 .rpt-alert-list em { display: block; margin-left: 0; }
+.rpt-ongoing-note {
+  margin: 6px 0 2px;
+  padding: 7px 10px;
+  border-left: 3px solid #e11d48;
+  border-radius: 4px;
+  background: #fff1f2;
+  color: #be123c;
+  font-size: 10.5px;
+  font-weight: 600;
+}
 .rpt-all-good { padding: 8px 10px; border-radius: 6px; background: #ecfdf5; color: #047857; font-weight: 600; }
 .rpt-all-good em { color: #059669; margin-left: 4px; }
 .rpt-ahead li { display: flex; gap: 8px; padding: 4px 0; border-top: 1px solid #f1f5f9; font-size: 10.5px; }

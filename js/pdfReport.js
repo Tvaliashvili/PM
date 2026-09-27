@@ -4,7 +4,7 @@
 // (via Edge Function) → html2pdf
 // =============================================================
 import { MANPOWER_TRADES, REPORT_AUTHOR, DAY_WORKER_KEY } from './config.js';
-import { rentalEnd } from './schedule.js';
+import { rentalEnd, delayIsOngoing, delayDaysLost } from './schedule.js';
 import { ka, bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
 
 const SUMMARY_FUNCTION = 'daily-summary';
@@ -70,11 +70,13 @@ async function fetchTodayData(db, projectId, day) {
       .select('log_date, weather, manpower, notes, notes_en, day_rate')
       .eq('project_id', projectId)
       .eq('log_date', day.date),
+    // Logged today, plus anything still running from an earlier day - an open
+    // delay is today's problem too.
     db.from('delays')
-      .select('delay_cause, duration_days, description, description_en, created_at, flats(block, floor, flat_number)')
+      .select('delay_cause, duration_days, resolved_on, description, description_en, created_at, flats(block, floor, flat_number)')
       .eq('project_id', projectId)
-      .gte('created_at', day.startISO)
       .lt('created_at', day.endISO)
+      .or(`created_at.gte.${day.startISO},duration_days.is.null`)
       .order('created_at'),
     db.from('equipment_rentals')
       .select('equipment, equipment_ka, supplier, supplier_ka, start_date, days, daily_rate')
@@ -87,7 +89,10 @@ async function fetchTodayData(db, projectId, day) {
   if (failed) throw new Error(`Could not load today's data: ${failed.error.message}`);
   // Equipment on hire today: started on or before today and not yet returned.
   const onHire = rentals.data.filter((r) => rentalEnd(r) >= day.date);
-  return { logs: logs.data, delays: delays.data, rentals: onHire };
+  // Today's figures count today's delays; the ones carried over are listed apart.
+  const today = delays.data.filter((d) => d.created_at >= day.startISO);
+  const carried = delays.data.filter((d) => d.created_at < day.startISO);
+  return { logs: logs.data, delays: today, carriedDelays: carried, rentals: onHire };
 }
 
 // ---------- 2. AI summary (both languages) ----------
@@ -139,7 +144,7 @@ function fillList(list, items) {
   }
 }
 
-function buildReport({ project, day, logs, delays, rentals, manpower, summary, progress, userEmail, money }) {
+function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, manpower, summary, progress, userEmail, money }) {
   const page = document.getElementById('daily-report-template').content.firstElementChild.cloneNode(true);
   const set = (field, value) => { page.querySelector(`[data-field="${field}"]`).textContent = value; };
   const rooms = Boolean(project.has_rooms);
@@ -150,7 +155,7 @@ function buildReport({ project, day, logs, delays, rentals, manpower, summary, p
 
   // Site details
   const workers = manpower.reduce((sum, [, n]) => sum + n, 0);
-  const daysLost = delays.reduce((sum, d) => sum + Number(d.duration_days || 0), 0);
+  const daysLost = delays.reduce((sum, d) => sum + delayDaysLost(d, day.date), 0);
   const weather = [...new Set(logs.map((l) => l.weather).filter(Boolean))].map(bi).join(', ');
 
   set('project', biName(project.name, project.name_ka));
@@ -208,11 +213,15 @@ function buildReport({ project, day, logs, delays, rentals, manpower, summary, p
 
   // Delays (the location column only applies to sites with rooms)
   const delayRows = page.querySelector('[data-rows="delays"]');
-  if (delays.length) {
-    delays.forEach((d) => addRow(delayRows, [
-      { text: bi(d.delay_cause) },
+  const carried = new Set(carriedDelays);
+  if (delays.length || carriedDelays.length) {
+    [...delays, ...carriedDelays].forEach((d) => addRow(delayRows, [
+      { text: bi(d.delay_cause)
+        + (carried.has(d) ? ` (${bi('since')} ${dateEn(d.created_at.slice(0, 10))})` : '') },
       ...(rooms ? [{ text: flatLabelBi(d.flats) }] : []),
-      { text: Number(d.duration_days).toLocaleString('en-GB'), className: 'num' },
+      { text: delayIsOngoing(d)
+        ? `${delayDaysLost(d, day.date).toLocaleString('en-GB')} · ${bi('Ongoing')}`
+        : delayDaysLost(d, day.date).toLocaleString('en-GB'), className: 'num' },
       { text: [d.description, d.description_en].filter(Boolean).join('\n') || '-', className: 'pdf-bi' },
     ]));
   } else {
@@ -237,7 +246,7 @@ function buildReport({ project, day, logs, delays, rentals, manpower, summary, p
  */
 export async function generateDailyReport({ db, project, progress, userEmail, money }) {
   const day = todayRange();
-  const { logs, delays, rentals } = await fetchTodayData(db, project.id, day);
+  const { logs, delays, carriedDelays, rentals } = await fetchTodayData(db, project.id, day);
   const pay = dayWorkerPay(logs);
   const manpower = mergeManpower(logs);
 
@@ -263,16 +272,17 @@ export async function generateDailyReport({ db, project, progress, userEmail, mo
     ...(rentals.length ? {
       equipment_on_hire: rentals.map((r) => ({ equipment: r.equipment, equipment_ka: r.equipment_ka || null, daily_price: Number(r.daily_rate), until: rentalEnd(r) })),
     } : {}),
-    delays: delays.map((d) => ({
+    delays: [...delays, ...carriedDelays].map((d) => ({
       cause: d.delay_cause,
       ...(project.has_rooms ? { location: flatLabel(d.flats) } : {}),
-      duration_days: Number(d.duration_days),
+      duration_days: delayDaysLost(d, day.date),
+      ongoing: delayIsOngoing(d),
       description_ka: d.description,
       description_en: d.description_en,
     })),
   });
 
-  const page = buildReport({ project, day, logs, delays, rentals, manpower, summary, progress, userEmail, money });
+  const page = buildReport({ project, day, logs, delays, carriedDelays, rentals, manpower, summary, progress, userEmail, money });
   const root = document.getElementById('pdf-export-root');
   root.replaceChildren(page);
 

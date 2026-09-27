@@ -12,7 +12,7 @@ import { generateJson, json, serveJson, userClient } from "../_shared/gemini.ts"
 const MAX_QUESTION_CHARS = 1_000;
 const MAX_CONTEXT_CHARS = 400_000; // oldest logs are dropped beyond this
 
-const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget), contractors, delays (counted in whole days lost, described in Georgian and English), payments to contractors, daily workers (manpower.day_workers, each paid the log's day_rate for that day) and equipment rentals (daily_rate × days).
+const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget), contractors, delays (counted in whole days lost, described in Georgian and English; a delay with ongoing=true has not been settled yet - its days_lost is the count so far and keeps growing), payments to contractors, daily workers (manpower.day_workers, each paid the log's day_rate for that day) and equipment rentals (daily_rate × days).
 
 Rules:
 - Answer in the same language as the question (Georgian or English). Project, location, client, contractor, work item and equipment names are spelled by hand in both languages (name / name_ka, location / location_ka, client_name / client_name_ka, item / item_ka, equipment / equipment_ka): use the Georgian spelling in Georgian answers and the English one in English answers.
@@ -45,7 +45,7 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
       .select("log_date, weather, manpower, day_rate, notes, notes_en")
       .eq("project_id", projectId).order("log_date", { ascending: false }).limit(1000),
     sb.from("delays")
-      .select("created_at, delay_cause, duration_days, description, description_en, contractor_id, flats(block, flat_number)")
+      .select("created_at, delay_cause, duration_days, resolved_on, description, description_en, contractor_id, flats(block, flat_number)")
       .eq("project_id", projectId).order("created_at", { ascending: false }).limit(1000),
     sb.from("task_payments").select("task_id, paid_on, amount, note").eq("project_id", projectId).order("paid_on"),
     sb.from("equipment_rentals").select("equipment, equipment_ka, supplier, supplier_ka, start_date, days, daily_rate, note").eq("project_id", projectId).order("start_date"),
@@ -75,7 +75,13 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
     delays: (delays.data ?? []).map((d: any) => ({
       date: String(d.created_at).slice(0, 10),
       cause: d.delay_cause,
-      days_lost: d.duration_days,
+      // No duration written down means the delay is still running: count the
+      // days it has cost so far, up to today.
+      days_lost: d.duration_days ?? Math.max(1, Math.round(
+        (Date.now() - new Date(String(d.created_at).slice(0, 10)).getTime()) / 86_400_000,
+      ) + 1),
+      ongoing: d.duration_days === null,
+      ended_on: d.resolved_on ?? null,
       ...(project.data?.has_rooms ? { room: d.flats ? `${d.flats.block}-${d.flats.flat_number}` : "site-wide" } : {}),
       contractor: contractorName.get(d.contractor_id) ?? null,
       description_ka: d.description,

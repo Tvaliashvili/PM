@@ -12,6 +12,19 @@ const DAY_MS = 86_400_000;
 const toDate = (iso) => new Date(`${iso}T00:00`);
 const dayDiff = (a, b) => Math.round((toDate(b) - toDate(a)) / DAY_MS);
 
+// ---------- Delays ----------
+// A delay with no days lost written down is still running: it costs another day
+// every day until someone records the date it ended.
+export const delayStart = (d) => new Date(d.created_at).toLocaleDateString('en-CA');
+export const delayIsOngoing = (d) => d.duration_days === null || d.duration_days === undefined;
+
+/** Days lost: what was written down once it ended, or the days it has run so far. */
+export const delayDaysLost = (d, today = new Date().toLocaleDateString('en-CA')) => (
+  delayIsOngoing(d)
+    ? Math.max(1, dayDiff(delayStart(d), today) + 1)
+    : Number(d.duration_days || 0)
+);
+
 /** Planned duration in days, inclusive of both ends (a one-day task weighs 1). */
 export const durationDays = (task) => dayDiff(task.planned_start, task.planned_finish) + 1;
 
@@ -193,7 +206,7 @@ export function contractorPerformance(tasks, delays, payments, todayIso) {
       s.open += 1;
     }
   }
-  for (const d of delays) if (d.contractor_id) entry(d.contractor_id).delayDays += Number(d.duration_days || 0);
+  for (const d of delays) if (d.contractor_id) entry(d.contractor_id).delayDays += delayDaysLost(d);
   for (const p of payments) entry(taskContractor.get(p.task_id)).paid += Number(p.amount || 0);
 
   for (const s of stats.values()) {

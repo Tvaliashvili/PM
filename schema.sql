@@ -418,3 +418,13 @@ alter table public.equipment_rentals
   add column if not exists supplier_ka text;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 13. Ongoing delays: a delay can be logged before anyone knows how long
+-- it will last. duration_days null = still running (days lost are counted
+-- from created_at up to today); resolved_on = the day it was settled.
+-- -------------------------------------------------------------
+alter table public.delays add column if not exists resolved_on date;
+alter table public.delays alter column duration_days drop not null;
+
+notify pgrst, 'reload schema';

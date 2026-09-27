@@ -5,7 +5,7 @@
 // =============================================================
 import {
   taskState, completionOf, costPosition, contractorPerformance, plannedSpendByMonth, actualSpendByMonth,
-  siteCostsByMonth, rentalTotal, rentalEnd,
+  siteCostsByMonth, rentalTotal, rentalEnd, delayIsOngoing, delayDaysLost,
 } from './schedule.js';
 import { bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
 import { MANPOWER_TRADES, REPORT_AUTHOR } from './config.js';
@@ -109,9 +109,11 @@ async function fetchExtras(db, projectId, today) {
       .order('log_date', { ascending: false })
       .limit(14),
     db.from('delays')
-      .select('created_at, delay_cause, duration_days, description, description_en, contractor_id, flats(block, flat_number)')
+      .select('created_at, delay_cause, duration_days, resolved_on, description, description_en, contractor_id, flats(block, flat_number)')
       .eq('project_id', projectId)
-      .gte('created_at', since.toISOString())
+      // The last 30 days, plus anything still running from before - an open
+      // delay belongs in the report however old it is.
+      .or(`created_at.gte.${since.toISOString()},duration_days.is.null`)
       .order('created_at', { ascending: false }),
   ]);
   const failed = [logs, delays].find((r) => r.error);
@@ -153,7 +155,9 @@ export async function buildProjectReport({
     cost.budget ? `${pctOf(cost.spent, cost.budget)}% ${L('ბიუჯეტის', 'of budget')}` : '',
     cost.labour || cost.rental ? `${L('მ.შ. დღიური მუშები და ქირა', 'incl. daily workers & rentals')} ${m(cost.labour + cost.rental)}` : '',
   ].filter(Boolean).join('<br>');
-  const delayDays = delays.reduce((s, x) => s + Number(x.duration_days || 0), 0);
+  const delayDays = delays.reduce((s, x) => s + delayDaysLost(x, today), 0);
+  const ongoingDelays = delays.filter(delayIsOngoing);
+  const ongoingDays = ongoingDelays.reduce((s, x) => s + delayDaysLost(x, today), 0);
 
   // ---------- Header: name, client, verdict and the project's time strip ----------
   let timeStrip = '';
@@ -260,10 +264,16 @@ export async function buildProjectReport({
   }
   if (delays.length) {
     const byCause = new Map();
-    for (const x of delays) byCause.set(x.delay_cause, (byCause.get(x.delay_cause) ?? 0) + Number(x.duration_days || 0));
+    for (const x of delays) byCause.set(x.delay_cause, (byCause.get(x.delay_cause) ?? 0) + delayDaysLost(x, today));
     const [topCause, topDays] = [...byCause].sort((a, b) => b[1] - a[1])[0];
     alerts.push(['warn', `ბოლო 30 დღეში ${delays.length} შეფერხება, ${delayDays} დღე; ძირითადად - ${bi(topCause).split(' / ')[0]} (${topDays} დღე)`,
       `${delays.length} delays in the last 30 days, ${delayDays} days lost; mostly ${topCause} (${topDays} days)`]);
+  }
+
+  if (ongoingDelays.length) {
+    alerts.push(['bad',
+      `${ongoingDelays.length} შეფერხება ჯერ არ დასრულებულა - ${ongoingDays} დღე დღემდე`,
+      `${ongoingDelays.length} ${ongoingDelays.length === 1 ? 'delay is' : 'delays are'} still ongoing - ${ongoingDays} days so far`]);
   }
 
   const horizon = addDays(today, 14);
@@ -679,7 +689,7 @@ export async function buildProjectReport({
   const causeDays = new Map();
   for (const x of delays) {
     const e = causeDays.get(x.delay_cause) ?? { days: 0, n: 0 };
-    e.days += Number(x.duration_days || 0);
+    e.days += delayDaysLost(x, today);
     e.n += 1;
     causeDays.set(x.delay_cause, e);
   }
@@ -688,6 +698,11 @@ export async function buildProjectReport({
   const delaysSection = `
     <section class="rpt-section">
       ${H('შეფერხებები (ბოლო 30 დღე)', 'Delays (last 30 days)', delays.length ? `${delayDays} ${L('დღე', 'days')}` : '')}
+      ${ongoingDelays.length ? `
+        <p class="rpt-ongoing-note">${L(
+    `${ongoingDelays.length} შეფერხება მიმდინარეა - დასრულების თარიღი ჯერ უცნობია; ${ongoingDays} დღე დღემდე`,
+    `${ongoingDelays.length} ${ongoingDelays.length === 1 ? 'delay is' : 'delays are'} still ongoing - no end date yet; ${ongoingDays} days so far`,
+  )}</p>` : ''}
       ${delays.length ? `
         <div class="rpt-hbars rpt-avoid">
           ${causes.map(([cause, e]) => `
@@ -701,7 +716,8 @@ export async function buildProjectReport({
           <thead>
             <tr>
               <th>${L('თარიღი', 'Date')}</th><th>${L('მიზეზი', 'Cause')}</th>${rooms ? `<th>${L('ადგილი', 'Location')}</th>` : ''}
-              <th>${L('კონტრაქტორი', 'Contractor')}</th><th class="num">${L('დღე', 'Days')}</th><th>${L('აღწერა', 'Description')}</th>
+              <th>${L('კონტრაქტორი', 'Contractor')}</th><th class="num">${L('დღე', 'Days')}</th>
+              <th>${L('სტატუსი', 'Status')}</th><th>${L('აღწერა', 'Description')}</th>
             </tr>
           </thead>
           <tbody>
@@ -711,7 +727,10 @@ export async function buildProjectReport({
                 <td>${esc(bi(x.delay_cause))}</td>
                 ${rooms ? `<td>${x.flats ? `${esc(x.flats.block)}-${esc(x.flats.flat_number)}` : esc(bi('Site-wide'))}</td>` : ''}
                 <td>${x.contractor_id ? esc(nameOf(x.contractor_id)) : '-'}</td>
-                <td class="num">${num.format(Number(x.duration_days))}</td>
+                <td class="num">${num.format(delayDaysLost(x, today))}${delayIsOngoing(x) ? '+' : ''}</td>
+                <td>${delayIsOngoing(x)
+    ? `<span class="rpt-chip rpt-bad">${L('მიმდინარე', 'Ongoing')}</span>`
+    : `${L('დასრულდა', 'Ended')} ${x.resolved_on ? d(x.resolved_on) : ''}`.trim()}</td>
                 <td>${biText(x.description, x.description_en)}</td>
               </tr>`).join('')}
           </tbody>
