@@ -183,7 +183,7 @@ export async function buildProjectReport({
           <p class="rpt-eyebrow">პროექტის ანგარიში · Project Report</p>
           <h1>${esc(project.name_ka || project.name)}</h1>
           ${project.name_ka ? `<p class="rpt-h1-en">${esc(project.name)}</p>` : ''}
-          <p class="rpt-sub">${esc([project.location, project.currency].filter(Boolean).join(' · '))}</p>
+          <p class="rpt-sub">${esc([biName(project.location, project.location_ka), project.currency].filter(Boolean).join(' · '))}</p>
           ${project.client_name || project.client_name_ka
             ? `<p class="rpt-client">დამკვეთი · Client: <strong>${esc(biName(project.client_name, project.client_name_ka))}</strong></p>`
             : ''}

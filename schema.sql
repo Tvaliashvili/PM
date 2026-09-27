@@ -400,3 +400,10 @@ notify pgrst, 'reload schema';
 alter table public.projects add column if not exists name_ka text;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 11. Location in Georgian too
+-- -------------------------------------------------------------
+alter table public.projects add column if not exists location_ka text;
+
+notify pgrst, 'reload schema';

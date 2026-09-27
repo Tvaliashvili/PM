@@ -222,7 +222,7 @@ function showSetupNotice() {
 async function loadProjects() {
   const { data, error } = await db
     .from('projects')
-    .select('id, name, name_ka, location, client_name, client_name_ka, total_flats, has_rooms, day_rate, created_at, start_date, end_date, currency')
+    .select('id, name, name_ka, location, location_ka, client_name, client_name_ka, total_flats, has_rooms, day_rate, created_at, start_date, end_date, currency')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -269,6 +269,7 @@ async function selectProject(projectId) {
 
 // The UI is English: show the English client name, else the Georgian one.
 const clientOf = (p) => p?.client_name || p?.client_name_ka || '';
+const locationOf = (p) => p?.location || p?.location_ka || '';
 // Sites without rooms (e.g. a stadium) hide the Rooms page and every room field.
 const hasRooms = (p) => Boolean(p?.has_rooms);
 
@@ -280,10 +281,10 @@ function applyProjectHeader(project) {
   navLabel.textContent = project?.name ?? '';
   navLabel.classList.toggle('hidden', !project);
   $('#topbar-project-name').textContent = project?.name ?? '';
-  $('#topbar-project-location').textContent = [project?.location, clientOf(project) && `Client: ${clientOf(project)}`]
+  $('#topbar-project-location').textContent = [locationOf(project), clientOf(project) && `Client: ${clientOf(project)}`]
     .filter(Boolean).join(' · ');
   $('#dashboard-subtitle').textContent = project
-    ? [project.name, project.location, clientOf(project) && `Client: ${clientOf(project)}`].filter(Boolean).join(' · ')
+    ? [project.name, locationOf(project), clientOf(project) && `Client: ${clientOf(project)}`].filter(Boolean).join(' · ')
     : 'Select a project to view its status.';
 
   $('[data-nav="units"]').classList.toggle('hidden', !hasRooms(project));
@@ -335,7 +336,7 @@ async function renderProjectList() {
         <button type="button" class="project-card-open" data-open-project="${esc(p.id)}">
           <p class="pr-8 font-semibold text-white truncate">${esc(p.name)}</p>
           ${p.name_ka ? `<p class="pr-8 text-sm text-slate-400 truncate">${esc(p.name_ka)}</p>` : ''}
-          <p class="text-sm text-slate-500 truncate">${esc(p.location || 'No location set')} · ${esc(p.currency ?? DEFAULT_CURRENCY)}</p>
+          <p class="text-sm text-slate-500 truncate">${esc(locationOf(p) || 'No location set')} · ${esc(p.currency ?? DEFAULT_CURRENCY)}</p>
           ${clientOf(p) ? `<p class="text-xs text-slate-400 truncate">Client: ${esc(clientOf(p))}</p>` : ''}
           <p class="text-xs text-slate-500 mt-1">${p.start_date && p.end_date
             ? `${esc(formatDate(p.start_date))} → ${esc(formatDate(p.end_date))}`
@@ -408,6 +409,7 @@ async function saveProject(e) {
       name: fd.get('name').trim(),
       name_ka: fd.get('name_ka').trim() || null,
       location: fd.get('location').trim() || null,
+      location_ka: fd.get('location_ka').trim() || null,
       client_name: fd.get('client_name').trim() || null,
       client_name_ka: fd.get('client_name_ka').trim() || null,
       currency: fd.get('currency') || DEFAULT_CURRENCY,
@@ -1228,6 +1230,7 @@ function openEditProjectModal() {
   f.name.value = project.name;
   f.name_ka.value = project.name_ka ?? '';
   f.location.value = project.location ?? '';
+  f.location_ka.value = project.location_ka ?? '';
   f.client_name.value = project.client_name ?? '';
   f.client_name_ka.value = project.client_name_ka ?? '';
   f.start_date.value = project.start_date ?? '';
@@ -1250,6 +1253,7 @@ async function saveEditProject(e) {
     name: fd.get('name').trim(),
     name_ka: fd.get('name_ka').trim() || null,
     location: fd.get('location').trim() || null,
+    location_ka: fd.get('location_ka').trim() || null,
     client_name: fd.get('client_name').trim() || null,
     client_name_ka: fd.get('client_name_ka').trim() || null,
     start_date: fd.get('start_date') || null,
@@ -1822,7 +1826,7 @@ function openContractorModal(contractor) {
   f.id.value = contractor?.id ?? '';
   for (const key of CONTRACTOR_FIELDS) f[key].value = contractor?.[key] ?? '';
   openModal('modal-contractor');
-  f.name.focus();
+  f.name_ka.focus();
 }
 
 async function saveContractor(e) {
