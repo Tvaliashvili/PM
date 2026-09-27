@@ -17,7 +17,7 @@ export const KA = {
   // Delay causes
   'Weather': 'ამინდი',
   'Material shortage': 'მასალის დეფიციტი',
-  'Labour shortage': 'სამუშაო ძალის ნაკლებობა',
+  'Labour shortage': 'მუშახელის დეფიციტი',
   'Equipment breakdown': 'ტექნიკის გაუმართაობა',
   'Design change': 'პროექტის ცვლილება',
   'Permit / inspection': 'ნებართვა / ინსპექცია',
@@ -28,11 +28,11 @@ export const KA = {
   // Trades (manpower)
   'Masons': 'კალატოზები',
   'Carpenters': 'დურგლები',
-  'Steel fixers': 'არმატურის მომწყობები',
-  'Concrete workers': 'ბეტონის ჩამსხმელები',
+  'Steel fixers': 'არმატურის მუშები',
+  'Concrete workers': 'მებეტონეები',
   'Electricians': 'ელექტრიკოსები',
   'Plumbers': 'სანტექნიკოსები',
-  'Tilers': 'მომპირკეთებლები',
+  'Tilers': 'მეფილეები',
   'Painters': 'მღებავები',
   'Labourers': 'დამხმარე მუშები',
   'Daily workers': 'დღიური მუშები',
@@ -57,17 +57,17 @@ export const KA = {
   'Steel / rebar': 'ლითონი / არმატურა',
   'Masonry': 'წყობა',
   'Roofing': 'სახურავი',
-  'Facade': 'ფასადი',
+  'Facade': 'ფასადის სამუშაოები',
   'Windows & doors': 'ფანჯრები და კარები',
   'Plumbing': 'სანტექნიკა',
-  'Electrical': 'ელექტროობა',
+  'Electrical': 'ელექტრომონტაჟი',
   'HVAC': 'გათბობა-ვენტილაცია',
   'Finishes': 'მოპირკეთება',
   'Elevators': 'ლიფტები',
 
   // Rental equipment
   'Drill': 'საბურღი',
-  'Concrete mixer': 'ბეტონის მიქსერი',
+  'Concrete mixer': 'ბეტონმზიდი (მიქსერი)',
   'Concrete pump': 'ბეტონის ტუმბო',
   'Excavator': 'ექსკავატორი',
   'Mobile crane': 'ავტოამწე',
@@ -75,7 +75,7 @@ export const KA = {
   'Scaffolding': 'ხარაჩო',
   'Generator': 'გენერატორი',
   'Plate compactor': 'ვიბროფილა',
-  'Jackhammer': 'სანგრევი ჩაქუჩი',
+  'Jackhammer': 'პნევმური ჩაქუჩი',
   'Welding machine': 'შედუღების აპარატი',
   'Truck': 'სატვირთო მანქანა',
   'Forklift': 'ავტოდამტვირთველი',
@@ -84,7 +84,7 @@ export const KA = {
   // Timetable states
   'Done': 'დასრულდა',
   'In progress': 'მიმდინარე',
-  'Overdue': 'ვადაგასული',
+  'Overdue': 'ვადაგადაცილებული',
   'Upcoming': 'დაგეგმილი',
 
   // Report phrases
