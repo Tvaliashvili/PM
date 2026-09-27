@@ -5,7 +5,7 @@
 // =============================================================
 import { MANPOWER_TRADES, REPORT_AUTHOR, DAY_WORKER_KEY } from './config.js';
 import { rentalEnd, delayIsOngoing, delayDaysLost } from './schedule.js';
-import { ka, bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
+import { ka, bi, biName, dateKa, dateEn, signatureHtml, roomLabel, roomLabelBi } from './bilingual.js';
 
 const SUMMARY_FUNCTION = 'daily-summary';
 
@@ -31,11 +31,10 @@ const fileSafe = (name) => (name || 'Project')
 
 const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key.replace(/_/g, ' ');
 
-// English label (sent to Gemini) and bilingual label (printed).
-const flatLabel = (flat) => (flat ? `Block ${flat.block} · Room ${flat.flat_number}` : 'Site-wide');
-const flatLabelBi = (flat) => (flat
-  ? `${ka('Block')}/Block ${flat.block} · ${ka('Room')}/Room ${flat.flat_number}`
-  : bi('Site-wide'));
+// English label (sent to Gemini) and bilingual label (printed). Both leave the
+// block out in a building that has none.
+const flatLabel = roomLabel;
+const flatLabelBi = roomLabelBi;
 
 // Daily workers' pay for the day: headcount × the log's day rate.
 function dayWorkerPay(logs) {

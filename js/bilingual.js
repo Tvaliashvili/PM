@@ -125,6 +125,20 @@ export function signatureHtml(author) {
     </div>`;
 }
 
+/**
+ * Where a room is: "Block A - Room 12", or just "Room 12" in a building with
+ * no blocks (the block is stored empty). Null means the whole site.
+ */
+export const roomLabel = (flat) => (flat
+  ? [flat.block ? `Block ${flat.block}` : '', `Room ${flat.flat_number}`].filter(Boolean).join(' · ')
+  : 'Site-wide');
+
+/** The same, spelled in both languages. */
+export const roomLabelBi = (flat) => (flat
+  ? [flat.block ? `${ka('Block')}/Block ${flat.block}` : '', `${ka('Room')}/Room ${flat.flat_number}`]
+    .filter(Boolean).join(' · ')
+  : bi('Site-wide'));
+
 /** A name spelled in both languages: "ქართული / English", or whichever exists. */
 export const biName = (en, ka) => (en && ka && en !== ka ? `${ka} / ${en}` : (ka || en || ''));
 

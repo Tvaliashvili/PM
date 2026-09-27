@@ -764,7 +764,7 @@ export async function buildProjectReport({
     // - the colour carries the status, the number is there when you need it.
     const blocks = new Map();
     for (const u of units) {
-      const block = u.block ?? '-';
+      const block = u.block || ''; // a building with one entrance has none
       if (!blocks.has(block)) blocks.set(block, new Map());
       const floors = blocks.get(block);
       const floor = Number(u.floor ?? 0);
@@ -779,7 +779,7 @@ export async function buildProjectReport({
         ${[...blocks].sort((a, b) => String(a[0]).localeCompare(String(b[0]), undefined, { numeric: true }))
     .map(([block, floors]) => `
           <div class="rpt-room-block rpt-avoid">
-            ${blocks.size > 1 ? `<p class="rpt-room-block-name">${L(`ბლოკი ${block}`, `Block ${block}`)}</p>` : ''}
+            ${blocks.size > 1 && block ? `<p class="rpt-room-block-name">${L(`ბლოკი ${block}`, `Block ${block}`)}</p>` : ''}
             ${[...floors].sort((a, b) => b[0] - a[0]).map(([floor, list]) => `
               <div class="rpt-room-floor">
                 <span class="rpt-room-floor-name">${esc(floorKa(floor))}<em>${esc(floorEn(floor))}</em></span>
@@ -894,7 +894,7 @@ export async function buildProjectReport({
               <tr>
                 <td>${d(x.created_at)}</td>
                 <td>${esc(bi(x.delay_cause))}</td>
-                ${rooms ? `<td>${x.flats ? `${esc(x.flats.block)}-${esc(x.flats.flat_number)}` : esc(bi('Site-wide'))}</td>` : ''}
+                ${rooms ? `<td>${x.flats ? esc([x.flats.block, x.flats.flat_number].filter(Boolean).join('-')) : esc(bi('Site-wide'))}</td>` : ''}
                 <td>${x.contractor_id ? esc(nameOf(x.contractor_id)) : '-'}</td>
                 <td class="num">${num.format(delayDaysLost(x, today))}${delayIsOngoing(x) ? '+' : ''}</td>
                 <td>${delayIsOngoing(x)

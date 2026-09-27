@@ -15,7 +15,7 @@ import {
   labourCosts, rentalCosts, rentalTotal, rentalEnd, siteCostsByMonth,
   delayIsOngoing, delayDaysLost, delayStart,
 } from './schedule.js';
-import { ka } from './bilingual.js';
+import { ka, roomLabel } from './bilingual.js';
 
 // ---------- Supabase ----------
 const isConfigured = !SUPABASE_URL.includes('YOUR-') && !SUPABASE_KEY.includes('YOUR-');
@@ -535,10 +535,11 @@ function renderUnits() {
     return;
   }
 
+  const anyBlock = units.some((u) => u.block);
   const rows = units.map((u) => `
     <tr>
       <td class="font-medium text-white whitespace-nowrap">${esc(u.flat_number)}</td>
-      <td>${esc(u.block)}</td>
+      ${anyBlock ? `<td>${esc(u.block || '-')}</td>` : ''}
       <td class="whitespace-nowrap">${esc(floorLabel(u.floor))}</td>
       <td>${u.unit_type ? esc(u.unit_type) : '<span class="text-slate-500">-</span>'}</td>
       <td class="num">${u.area_m2 != null ? areaFormat.format(u.area_m2) : '-'}</td>
@@ -554,14 +555,14 @@ function renderUnits() {
     <table class="data-table">
       <thead>
         <tr>
-          <th>Room</th><th>Block</th><th>Floor</th><th>Type</th><th class="num">Area m²</th>
+          <th>Room</th>${anyBlock ? '<th>Block</th>' : ''}<th>Floor</th><th>Type</th><th class="num">Area m²</th>
           <th>Status</th><th>Notes</th><th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
       <tfoot>
         <tr>
-          <td colspan="4">${units.length} rooms</td>
+          <td colspan="${anyBlock ? 4 : 3}">${units.length} rooms</td>
           <td class="num">${areaFormat.format(area)}</td>
           <td colspan="3"></td>
         </tr>
@@ -588,7 +589,7 @@ function openUnitModal(unit) {
     f.notes.value = unit.notes ?? '';
   } else {
     const last = state.flats.at(-1); // continue where the list ends
-    f.block.value = last?.block ?? 'A';
+    f.block.value = last?.block ?? '';
     f.floor.value = last?.floor ?? 1;
     f.status.value = 'not_started';
   }
@@ -622,7 +623,7 @@ async function saveUnit(e) {
 
   if (error) {
     showFormError(form, error.code === '23505'
-      ? `Room ${row.flat_number} already exists in block ${row.block}.`
+      ? `${roomLabel(row)} already exists.`
       : error.message);
     return;
   }
@@ -643,7 +644,7 @@ async function onUnitsTableClick(e) {
   const del = e.target.closest('[data-unit-delete]');
   if (!del) return;
   const unit = state.flats.find((u) => u.id === del.dataset.unitDelete);
-  if (!unit || !confirm(`Delete room ${unit.flat_number} (block ${unit.block})?\n\nDelays linked to it are kept as site-wide.`)) return;
+  if (!unit || !confirm(`Delete ${roomLabel(unit)}?\n\nDelays linked to it are kept as site-wide.`)) return;
 
   const projectId = state.projectId;
   const { error } = await db.from('flats').delete().eq('id', unit.id);
@@ -1136,7 +1137,7 @@ function renderDelays() {
   // Delays still running come first - they are the ones that need a decision.
   const ordered = [...delays].sort((a, b) => (delayIsOngoing(b) ? 1 : 0) - (delayIsOngoing(a) ? 1 : 0));
   const rows = ordered.map((d) => {
-    const where = d.flats ? `Block ${d.flats.block} · Room ${d.flats.flat_number}` : 'Site-wide';
+    const where = roomLabel(d.flats);
     return `
       <tr>
         <td class="whitespace-nowrap">${esc(formatDate(delayDate(d)))}</td>
@@ -1229,7 +1230,7 @@ function renderRecentDelays(delays) {
   el.className = 'divide-y divide-ink-700';
   const rooms = hasRooms(currentProject());
   el.innerHTML = delays.map((d) => {
-    const where = !rooms ? '' : d.flats ? `Block ${d.flats.block} · Room ${d.flats.flat_number}` : 'Site-wide';
+    const where = rooms ? roomLabel(d.flats) : '';
     const text = [where, d.description_en || d.description].filter(Boolean).join(' - ');
     return `
       <div class="py-2.5 flex items-start justify-between gap-3 text-sm">
@@ -2407,7 +2408,7 @@ function openDelayModal(delay = null) {
   f.delay_date.max = todayISO();
   $('#delay-flat').innerHTML = '<option value="">Site-wide (no specific room)</option>'
     + state.flats.map((f) => `
-      <option value="${esc(f.id)}">Block ${esc(f.block)} · Room ${esc(f.flat_number)} (${esc(floorLabel(f.floor))})</option>
+      <option value="${esc(f.id)}">${esc(roomLabel(f))} (${esc(floorLabel(f.floor))})</option>
     `).join('');
   $('#delay-flat-field').classList.toggle('hidden', !hasRooms(currentProject()));
   $('#delay-contractor').innerHTML = contractorOptions(delay?.contractor_id ?? '');
