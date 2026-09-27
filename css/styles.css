@@ -974,9 +974,15 @@ textarea.input-dark { resize: vertical; }
 .rpt-g-active   { background: #bfdbfe; } .rpt-g-active .rpt-g-fill   { background: #2563eb; }
 .rpt-g-overdue  { background: #fecdd3; } .rpt-g-overdue .rpt-g-fill  { background: #e11d48; }
 .rpt-g-upcoming { background: #e2e8f0; } .rpt-g-upcoming .rpt-g-fill { background: #64748b; }
-.rpt-g-pct { flex: 0 0 96px; padding: 5px 8px 5px 4px; text-align: right; }
+.rpt-g-pct { flex: 0 0 108px; padding: 5px 8px 5px 4px; text-align: right; }
 .rpt-g-pct strong { display: block; font-size: 11px; }
 .rpt-g-head .rpt-g-pct em { display: block; margin-left: 0; }
+/* Centred against the bar, so a two-line label never drags the figure up. */
+.rpt-g-row:not(.rpt-g-head) .rpt-g-pct {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
 .rpt-g-state { display: block; font-size: 8px; font-weight: 600; line-height: 1.25; color: #64748b; overflow-wrap: normal; }
 .rpt-g-state-overdue { color: #be123c; }
 .rpt-g-state-done { color: #047857; }

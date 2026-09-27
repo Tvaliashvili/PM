@@ -46,7 +46,7 @@ const biText = (ka, en) => (ka && en
 
 const TASK_STATUS = {
   done:     { ka: 'დასრულდა',         en: 'Done',        tone: 'ok' },
-  overdue:  { ka: 'ვადაგადაცილებული',  en: 'Overdue',     tone: 'bad' },
+  overdue:  { ka: 'ვადაგადაცილება',    en: 'Overdue',     tone: 'bad' },
   active:   { ka: 'მიმდინარე',         en: 'In progress', tone: 'info' },
   upcoming: { ka: 'დაგეგმილი',         en: 'Upcoming',    tone: 'muted' },
 };
@@ -393,7 +393,7 @@ export async function buildProjectReport({
           </div>
           <div class="rpt-g-pct">
             <strong>${done}%</strong>
-            <span class="rpt-g-state rpt-g-state-${s.key}">${esc(TASK_STATUS[s.key].ka)}${s.daysLate ? ` +${s.daysLate}დღ` : ''}<br>${esc(TASK_STATUS[s.key].en)}${s.daysLate ? ` +${s.daysLate}d` : ''}</span>
+            <span class="rpt-g-state rpt-g-state-${s.key}">${esc(TASK_STATUS[s.key].ka)}${s.daysLate ? ` +${s.daysLate}` : ''}<br>${esc(TASK_STATUS[s.key].en)}${s.daysLate ? ` +${s.daysLate}` : ''}</span>
           </div>
         </div>`;
     }).join('');
@@ -402,7 +402,7 @@ export async function buildProjectReport({
       <div class="rpt-legend">
         ${legendItem('ok', 'დასრულდა', 'Done')}
         ${legendItem('info', 'მიმდინარე', 'In progress')}
-        ${legendItem('bad', 'ვადაგადაცილებული', 'Overdue')}
+        ${legendItem('bad', 'ვადაგადაცილება', 'Overdue')}
         ${legendItem('muted', 'დაგეგმილი', 'Upcoming')}
         <span class="rpt-legend-item"><i class="rpt-sw rpt-sw-fill"></i>${L('მუქი ნაწილი = შესრულებული %', 'dark part = % complete')}</span>
         <span class="rpt-legend-item"><i class="rpt-sw-line rpt-sw-today"></i>${L('დღეს', 'Today')}</span>
@@ -714,7 +714,7 @@ export async function buildProjectReport({
   // ---------- Contractors: one card each ----------
   const rating = (s) => {
     if (!s?.items) return chip({ ka: 'სამუშაო არ აქვს', en: 'No work yet', tone: 'muted' });
-    if (s.overdue) return chip({ ka: 'ვადაგადაცილებული', en: 'Overdue', tone: 'bad' });
+    if (s.overdue) return chip({ ka: 'ვადაგადაცილება', en: 'Overdue', tone: 'bad' });
     if (s.late) return chip({ ka: 'დაგვიანება', en: 'Late', tone: 'warn' },
       ` · ${s.avgDaysLate} დღე`, ` · ${s.avgDaysLate}d`);
     if (s.onTime) return chip({ ka: 'ვადაში', en: 'On time', tone: 'ok' });
