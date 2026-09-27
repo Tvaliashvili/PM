@@ -12,7 +12,7 @@ import { generateJson, json, serveJson, userClient } from "../_shared/gemini.ts"
 const MAX_QUESTION_CHARS = 1_000;
 const MAX_CONTEXT_CHARS = 400_000; // oldest logs are dropped beyond this
 
-const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one residential project using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget), contractors, delays (counted in whole days lost, described in Georgian and English) and payments.
+const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget), contractors, delays (counted in whole days lost, described in Georgian and English) and payments.
 
 Rules:
 - Answer in the same language as the question (Georgian or English). Client and contractor names are spelled by hand in both languages (client_name / client_name_ka, name / name_ka): use the Georgian spelling in Georgian answers and the English one in English answers.
@@ -36,7 +36,7 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
 
   const sb = userClient(req);
   const [project, tasks, contractors, logs, delays, payments] = await Promise.all([
-    sb.from("projects").select("name, location, client_name, client_name_ka, start_date, end_date, currency").eq("id", projectId).single(),
+    sb.from("projects").select("name, location, client_name, client_name_ka, start_date, end_date, currency, has_rooms").eq("id", projectId).single(),
     sb.from("schedule_tasks")
       .select("id, name, planned_start, planned_finish, progress_pct, done_at, contractor_id, budget")
       .eq("project_id", projectId).order("planned_start"),
@@ -74,7 +74,7 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
       date: String(d.created_at).slice(0, 10),
       cause: d.delay_cause,
       days_lost: d.duration_days,
-      room: d.flats ? `${d.flats.block}-${d.flats.flat_number}` : "site-wide",
+      ...(project.data?.has_rooms ? { room: d.flats ? `${d.flats.block}-${d.flats.flat_number}` : "site-wide" } : {}),
       contractor: contractorName.get(d.contractor_id) ?? null,
       description_ka: d.description,
       description_en: d.description_en,

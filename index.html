@@ -135,17 +135,6 @@
           <p id="topbar-project-name" class="font-semibold text-white truncate"></p>
           <p id="topbar-project-location" class="text-xs text-slate-500 truncate"></p>
         </div>
-
-        <div class="ml-auto flex items-center gap-2">
-          <button id="btn-new-log" class="btn btn-primary">
-            <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
-            <span class="hidden sm:inline">New Daily Log</span>
-          </button>
-          <button id="btn-export-pdf" class="btn btn-secondary">
-            <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z"/></svg>
-            <span class="hidden sm:inline">Export PDF</span>
-          </button>
-        </div>
       </header>
 
       <!-- ---------- MAIN CONTENT ---------- -->
@@ -386,7 +375,7 @@
               <h2 class="panel-title">Project Report</h2>
               <p class="text-sm text-slate-400 mb-4">
                 The whole project on one designed page, in Georgian and English: key figures, progress vs plan, timetable,
-                contractors, budget &amp; cash flow, units, recent logs and delays. View it here or download as PDF.
+                contractors, budget &amp; cash flow, rooms (for sites that have them), recent logs and delays. View it here or download as PDF.
               </p>
               <button id="btn-view-report" class="btn btn-primary"><span>View Project Report</span></button>
             </div>
@@ -424,7 +413,7 @@
         <div><span>მუშები ობიექტზე<em>Manpower on site</em></span><strong data-field="manpower-total"></strong></div>
         <div><span>შეფერხებები<em>Delays today</em></span><strong data-field="delay-count"></strong></div>
         <div><span>დაკარგული დღეები<em>Days lost</em></span><strong data-field="delay-days"></strong></div>
-        <div><span>ოთახები სულ<em>Total rooms</em></span><strong data-field="total-flats"></strong></div>
+        <div data-rooms-only><span>ოთახები სულ<em>Total rooms</em></span><strong data-field="total-flats"></strong></div>
         <div><span>პროგრესი (გეგმა)<em>Progress (planned)</em></span><strong data-field="progress"></strong></div>
       </div>
 
@@ -457,7 +446,7 @@
           <thead>
             <tr>
               <th>მიზეზი<em>Cause</em></th>
-              <th>ადგილი<em>Location</em></th>
+              <th data-rooms-only>ადგილი<em>Location</em></th>
               <th class="num">დღე<em>Days</em></th>
               <th>აღწერა<em>Description</em></th>
             </tr>
@@ -537,6 +526,10 @@
           <span class="form-label">Currency</span>
           <select name="currency" class="select-dark w-full" data-currency-options></select>
         </label>
+        <label class="check-row">
+          <input name="has_rooms" type="checkbox">
+          <span>This site has rooms<small>Tick for flats, offices, hotels… Leave off for sites like a stadium.</small></span>
+        </label>
         <p class="form-error hidden" data-error></p>
       </div>
       <div class="modal-footer">
@@ -587,6 +580,10 @@
         <p class="text-xs text-slate-500">
           Changing the currency relabels existing amounts — it doesn't convert them.
         </p>
+        <label class="check-row">
+          <input name="has_rooms" type="checkbox">
+          <span>This site has rooms<small>Unticking hides the Rooms page and room details in reports; rooms already added are kept.</small></span>
+        </label>
         <p class="form-error hidden" data-error></p>
       </div>
       <div class="modal-footer">
@@ -866,7 +863,7 @@
         <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
       </div>
       <div class="modal-body space-y-4">
-        <label class="block">
+        <label id="delay-flat-field" class="block">
           <span class="form-label">Affected room</span>
           <select id="delay-flat" name="flat_id" class="select-dark w-full"></select>
         </label>

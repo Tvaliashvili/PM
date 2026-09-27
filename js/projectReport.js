@@ -115,6 +115,7 @@ export async function buildProjectReport({
     </header>`;
 
   // ---------- Key figures ----------
+  const rooms = Boolean(project.has_rooms); // sites like a stadium have no rooms
   const area = units.reduce((s, u) => s + Number(u.area_m2 || 0), 0);
   const delayDays = delays.reduce((s, x) => s + Number(x.duration_days || 0), 0);
   const gap = progress.actualPct - progress.plannedPct;
@@ -129,7 +130,9 @@ export async function buildProjectReport({
         ${tile('დახარჯული', 'Spent', m(cost.spent),
           cost.budget ? `${Math.round((cost.spent / cost.budget) * 100)}% ${L('ბიუჯეტის', 'of budget')}` : '',
           cost.spent > cost.budget && cost.budget ? 'bad' : '')}
-        ${tile('ოთახები', 'Rooms', String(units.length), area ? `${num.format(area)} m²` : '')}
+        ${rooms
+          ? tile('ოთახები', 'Rooms', String(units.length), area ? `${num.format(area)} m²` : '')
+          : tile('კონტრაქტორები', 'Contractors', String(contractors.length), '')}
         ${tile('შეფერხებები (30 დღე)', 'Delays (30 days)', String(delays.length),
           delayDays ? `${num.format(delayDays)} ${L('დღე', 'days')}` : '')}
       </div>
@@ -291,7 +294,7 @@ export async function buildProjectReport({
     e.area += Number(u.area_m2 || 0);
     byType.set(key, e);
   }
-  const unitsSection = `
+  const unitsSection = !rooms ? '' : `
     <section class="rpt-section rpt-avoid">
       ${H('ოთახები', 'Rooms')}
       ${units.length ? `
@@ -347,7 +350,7 @@ export async function buildProjectReport({
         <table>
           <thead>
             <tr>
-              <th>${L('თარიღი', 'Date')}</th><th>${L('მიზეზი', 'Cause')}</th><th>${L('ადგილი', 'Location')}</th>
+              <th>${L('თარიღი', 'Date')}</th><th>${L('მიზეზი', 'Cause')}</th>${rooms ? `<th>${L('ადგილი', 'Location')}</th>` : ''}
               <th>${L('კონტრაქტორი', 'Contractor')}</th><th class="num">${L('დღე', 'Days')}</th><th>${L('აღწერა', 'Description')}</th>
             </tr>
           </thead>
@@ -356,14 +359,14 @@ export async function buildProjectReport({
               <tr>
                 <td>${d(x.created_at)}</td>
                 <td>${esc(bi(x.delay_cause))}</td>
-                <td>${x.flats ? `${esc(x.flats.block)}-${esc(x.flats.flat_number)}` : esc(bi('Site-wide'))}</td>
+                ${rooms ? `<td>${x.flats ? `${esc(x.flats.block)}-${esc(x.flats.flat_number)}` : esc(bi('Site-wide'))}</td>` : ''}
                 <td>${x.contractor_id ? esc(nameOf(x.contractor_id)) : '—'}</td>
                 <td class="num">${num.format(Number(x.duration_days))}</td>
                 <td>${biText(x.description, x.description_en)}</td>
               </tr>`).join('')}
           </tbody>
           <tfoot>
-            <tr><td colspan="4">${L('სულ', 'Total')}</td><td class="num">${num.format(delayDays)}</td><td></td></tr>
+            <tr><td colspan="${rooms ? 4 : 3}">${L('სულ', 'Total')}</td><td class="num">${num.format(delayDays)}</td><td></td></tr>
           </tfoot>
         </table>` : none}
     </section>`;

@@ -103,7 +103,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log', '#btn-new-log-page', '#btn-new-delay', '#btn-export-pdf', '#btn-report-daily', '#btn-view-report', '#btn-add-unit', '#btn-add-task', '#btn-add-contractor',
+  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-view-report', '#btn-add-unit', '#btn-add-task', '#btn-add-contractor',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -126,6 +126,10 @@ function route() {
   if (target !== 'projects' && state.projectsLoaded && !state.projectId) {
     target = 'projects';
     history.replaceState(null, '', '#projects');
+  }
+  if (target === 'units' && state.projectId && !hasRooms(currentProject())) {
+    target = 'dashboard';
+    history.replaceState(null, '', '#dashboard');
   }
 
   const onList = target === 'projects';
@@ -213,7 +217,7 @@ function showSetupNotice() {
 async function loadProjects() {
   const { data, error } = await db
     .from('projects')
-    .select('id, name, location, client_name, client_name_ka, total_flats, created_at, start_date, end_date, currency')
+    .select('id, name, location, client_name, client_name_ka, total_flats, has_rooms, created_at, start_date, end_date, currency')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -256,6 +260,8 @@ async function selectProject(projectId) {
 
 // The UI is English: show the English client name, else the Georgian one.
 const clientOf = (p) => p?.client_name || p?.client_name_ka || '';
+// Sites without rooms (e.g. a stadium) hide the Rooms page and every room field.
+const hasRooms = (p) => Boolean(p?.has_rooms);
 
 const currentProject = () => state.projects.find((p) => p.id === state.projectId);
 
@@ -270,6 +276,9 @@ function applyProjectHeader(project) {
   $('#dashboard-subtitle').textContent = project
     ? [project.name, project.location, clientOf(project) && `Client: ${clientOf(project)}`].filter(Boolean).join(' · ')
     : 'Select a project to view its status.';
+
+  $('[data-nav="units"]').classList.toggle('hidden', !hasRooms(project));
+  if (project && !hasRooms(project) && location.hash === '#units') goTo('dashboard');
 }
 
 function openProject(projectId) {
@@ -328,7 +337,7 @@ async function renderProjectList() {
             <span class="text-xs text-slate-400 tabular-nums">${pct}%</span>
           </div>
           <dl class="project-stats">
-            <div><dt>Rooms</dt><dd>${s.units}</dd></div>
+            ${hasRooms(p) ? `<div><dt>Rooms</dt><dd>${s.units}</dd></div>` : `<div><dt>Items</dt><dd>${prog.count}</dd></div>`}
             <div><dt>Overdue</dt><dd class="${s.overdue ? 'is-alert' : ''}">${s.overdue}</dd></div>
             <div><dt>Delays</dt><dd class="${s.delays ? 'is-alert' : ''}">${s.delays}</dd></div>
           </dl>
@@ -391,6 +400,7 @@ async function saveProject(e) {
       client_name: fd.get('client_name').trim() || null,
       client_name_ka: fd.get('client_name_ka').trim() || null,
       currency: fd.get('currency') || DEFAULT_CURRENCY,
+      has_rooms: fd.has('has_rooms'),
     })
     .select('id')
     .single();
@@ -402,7 +412,7 @@ async function saveProject(e) {
   }
 
   closeModal('modal-project');
-  toast('Project created. Add its timetable, rooms and dates next.', 'success');
+  toast(`Project created. Add its timetable${fd.has('has_rooms') ? ', rooms' : ''} and dates next.`, 'success');
 
   // Open the new project on its Timetable, which drives progress.
   storage.set('cpm.projectId', project.id);
@@ -984,14 +994,15 @@ function renderRecentDelays(delays) {
     return;
   }
   el.className = 'divide-y divide-ink-700';
+  const rooms = hasRooms(currentProject());
   el.innerHTML = delays.map((d) => {
-    const where = d.flats ? `Block ${d.flats.block} · Room ${d.flats.flat_number}` : 'Site-wide';
-    const text = d.description_en || d.description;
+    const where = !rooms ? '' : d.flats ? `Block ${d.flats.block} · Room ${d.flats.flat_number}` : 'Site-wide';
+    const text = [where, d.description_en || d.description].filter(Boolean).join(' — ');
     return `
       <div class="py-2.5 flex items-start justify-between gap-3 text-sm">
         <div class="min-w-0">
           <p class="text-white font-medium">${esc(d.delay_cause)}</p>
-          <p class="text-slate-500 truncate">${esc(where)}${text ? ` — ${esc(text)}` : ''}</p>
+          <p class="text-slate-500 truncate">${esc(text)}</p>
         </div>
         <span class="shrink-0 text-xs font-semibold text-rose-400 tabular-nums">${Number(d.duration_days)} d</span>
       </div>`;
@@ -1089,6 +1100,7 @@ function openEditProjectModal() {
   f.start_date.value = project.start_date ?? '';
   f.end_date.value = project.end_date ?? '';
   f.currency.value = project.currency ?? DEFAULT_CURRENCY;
+  f.has_rooms.checked = hasRooms(project);
   showFormError(form, '');
   openModal('modal-edit-project');
 }
@@ -1108,6 +1120,7 @@ async function saveEditProject(e) {
     start_date: fd.get('start_date') || null,
     end_date: fd.get('end_date') || null,
     currency: fd.get('currency') || DEFAULT_CURRENCY,
+    has_rooms: fd.has('has_rooms'),
   };
   if (row.start_date && row.end_date && row.end_date < row.start_date) {
     showFormError(form, 'Planned completion must be on or after the start date.');
@@ -1759,6 +1772,7 @@ function openDelayModal() {
     + state.flats.map((f) => `
       <option value="${esc(f.id)}">Block ${esc(f.block)} · Room ${esc(f.flat_number)} (${esc(floorLabel(f.floor))})</option>
     `).join('');
+  $('#delay-flat-field').classList.toggle('hidden', !hasRooms(currentProject()));
   $('#delay-contractor').innerHTML = contractorOptions('');
   showFormError(form, '');
   openModal('modal-delay');
@@ -1927,7 +1941,6 @@ initNavigation();
 initModals();
 setProjectActionsEnabled(false);
 
-$('#btn-new-log').addEventListener('click', openDailyLogModal);
 $('#btn-new-delay').addEventListener('click', openDelayModal);
 $('#form-daily-log').addEventListener('submit', saveDailyLog);
 $('#form-delay').addEventListener('submit', saveDelay);
@@ -1955,7 +1968,6 @@ $('#form-ask').addEventListener('submit', askGemini);
 $('#form-ask').addEventListener('click', onAskSuggestion);
 $('#btn-edit-project').addEventListener('click', openEditProjectModal);
 $('#form-edit-project').addEventListener('submit', saveEditProject);
-$('#btn-export-pdf').addEventListener('click', exportDailyReport);
 $('#btn-report-daily').addEventListener('click', exportDailyReport);
 $('#btn-view-report').addEventListener('click', openProjectReport);
 $('#btn-report-pdf').addEventListener('click', downloadReport);

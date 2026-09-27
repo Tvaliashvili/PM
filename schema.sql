@@ -338,3 +338,20 @@ end;
 $$;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 8. Not every site has rooms (e.g. a stadium). Rooms page, room fields
+-- and room figures in reports only show when has_rooms is ticked.
+-- Projects that existed before this column keep their rooms.
+-- -------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'projects' and column_name = 'has_rooms') then
+    alter table public.projects add column has_rooms boolean not null default false;
+    update public.projects set has_rooms = true;
+  end if;
+end;
+$$;
+
+notify pgrst, 'reload schema';

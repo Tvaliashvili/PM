@@ -118,6 +118,11 @@ function fillList(list, items) {
 function buildReport({ project, day, logs, delays, manpower, summary, progress, userEmail }) {
   const page = document.getElementById('daily-report-template').content.firstElementChild.cloneNode(true);
   const set = (field, value) => { page.querySelector(`[data-field="${field}"]`).textContent = value; };
+  const rooms = Boolean(project.has_rooms);
+  if (!rooms) {
+    page.querySelectorAll('[data-rooms-only]').forEach((el) => el.remove());
+    page.querySelector('.pdf-facts').classList.add('pdf-facts-5');
+  }
 
   // Site details
   const workers = manpower.reduce((sum, [, n]) => sum + n, 0);
@@ -134,7 +139,7 @@ function buildReport({ project, day, logs, delays, manpower, summary, progress, 
   set('manpower-total', workers);
   set('delay-count', delays.length);
   set('delay-days', daysLost.toLocaleString('en-GB'));
-  set('total-flats', project.total_flats ?? '—');
+  if (rooms) set('total-flats', project.total_flats ?? '—');
   set('progress', progress?.count
     ? `${progress.actualPct}% (${ka('plan')}/plan ${progress.plannedPct}%)`
     : bi('No timetable'));
@@ -157,17 +162,17 @@ function buildReport({ project, day, logs, delays, manpower, summary, progress, 
     addEmptyRow(mpRows, 2, bi('No manpower recorded.'));
   }
 
-  // Delays
+  // Delays (the location column only applies to sites with rooms)
   const delayRows = page.querySelector('[data-rows="delays"]');
   if (delays.length) {
     delays.forEach((d) => addRow(delayRows, [
       { text: bi(d.delay_cause) },
-      { text: flatLabelBi(d.flats) },
+      ...(rooms ? [{ text: flatLabelBi(d.flats) }] : []),
       { text: Number(d.duration_days).toLocaleString('en-GB'), className: 'num' },
       { text: [d.description, d.description_en].filter(Boolean).join('\n') || '—', className: 'pdf-bi' },
     ]));
   } else {
-    addEmptyRow(delayRows, 4, bi('No delays recorded today.'));
+    addEmptyRow(delayRows, rooms ? 4 : 3, bi('No delays recorded today.'));
   }
 
   // Site notes (Gemini-corrected Georgian + English) + footer
@@ -198,7 +203,7 @@ export async function generateDailyReport({ db, project, progress, userEmail }) 
       location: project.location,
       // the company that hired us — the report's main reader; spelled by hand in both languages
       client: { en: project.client_name, ka: project.client_name_ka },
-      total_rooms: project.total_flats,
+      ...(project.has_rooms ? { total_rooms: project.total_flats } : {}),
     },
     // Timetable position (progress is weighted by planned duration).
     schedule: progress?.count ? {
@@ -210,7 +215,7 @@ export async function generateDailyReport({ db, project, progress, userEmail }) 
     manpower: Object.fromEntries(manpower.map(([trade, n]) => [tradeLabel(trade), n])),
     delays: delays.map((d) => ({
       cause: d.delay_cause,
-      location: flatLabel(d.flats),
+      ...(project.has_rooms ? { location: flatLabel(d.flats) } : {}),
       duration_days: Number(d.duration_days),
       description_ka: d.description,
       description_en: d.description_en,

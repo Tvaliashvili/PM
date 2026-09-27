@@ -13,7 +13,7 @@ const MAX_TEXT_CHARS = 20_000;
 
 type Option = { key: string; label: string; ka?: string };
 
-const SYSTEM_PROMPT = `You process daily site logs from a residential construction project in Georgia. The site manager writes them in Georgian, usually as WhatsApp messages, so the text may contain WhatsApp headers like "[26/09/2026, 18:30] Name:", emojis, abbreviations and spelling or grammar mistakes. The company is international, so every log is kept in Georgian and English.
+const SYSTEM_PROMPT = `You process daily site logs from a construction project in Georgia. The site manager writes them in Georgian, usually as WhatsApp messages, so the text may contain WhatsApp headers like "[26/09/2026, 18:30] Name:", emojis, abbreviations and spelling or grammar mistakes. The company is international, so every log is kept in Georgian and English.
 
 Return:
 - date: the date the log is for, as YYYY-MM-DD. WhatsApp dates are day/month/year. Use "" if the text gives no date.
