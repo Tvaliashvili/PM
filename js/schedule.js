@@ -54,6 +54,55 @@ export function taskState(task, todayIso) {
   return { key: 'upcoming', daysLate: 0 };
 }
 
+// ---------- Work that is not moving ----------
+/**
+ * Items the calendar says should be under way but the figures say are not,
+ * worst first. Two different problems, kept apart because they read differently:
+ *   'not_started' - the start date passed and nothing at all is recorded
+ *   'behind'      - it is running far under the share of its time already spent
+ * `gap` is how many percentage points short of today's expectation it is.
+ */
+export function stalledTasks(tasks, todayIso) {
+  const out = [];
+  for (const task of tasks) {
+    if (task.done || completionOf(task) >= 1) continue;
+    if (todayIso <= task.planned_start) continue;
+
+    const actual = Math.round(completionOf(task) * 100);
+    const expected = Math.round(plannedFraction(task, todayIso) * 100);
+    const elapsed = dayDiff(task.planned_start, todayIso);
+    // A day or two late is not news; a long item deserves a longer grace.
+    const grace = Math.max(3, Math.round(durationDays(task) * 0.2));
+
+    if (actual === 0 && elapsed >= grace) {
+      out.push({ task, kind: 'not_started', elapsed, expected, actual, gap: expected });
+    } else if (actual > 0 && expected - actual > 25) {
+      out.push({ task, kind: 'behind', elapsed, expected, actual, gap: expected - actual });
+    }
+  }
+  return out.sort((a, b) => b.gap - a.gap);
+}
+
+/**
+ * When the work finishes if it carries on at the pace kept so far.
+ * Null while it is too early to mean anything - a fortnight in, or under 5%
+ * done, the arithmetic says more about the start than about the project.
+ */
+export function forecastFinish({ tasks, startDate, todayIso, actualPct }) {
+  if (!tasks.length || actualPct <= 0 || actualPct >= 100) return null;
+  const start = startDate || [...tasks.map((t) => t.planned_start)].sort()[0];
+  if (!start || todayIso <= start) return null;
+
+  const elapsed = dayDiff(start, todayIso);
+  if (elapsed < 14 || actualPct < 5) return null;
+
+  const pctPerDay = actualPct / elapsed;
+  const remainingDays = Math.ceil((100 - actualPct) / pctPerDay);
+  const date = toDate(todayIso);
+  date.setDate(date.getDate() + remainingDays);
+  return { date: date.toLocaleDateString('en-CA'), remainingDays, elapsed, pctPerDay };
+}
+
 // ---------- Money (each item's budget, its payments) ----------
 const budgetOf = (task) => Number(task.budget || 0);
 const monthOf = (iso) => iso.slice(0, 7);

@@ -658,6 +658,12 @@ textarea.input-dark { resize: vertical; }
 .rpt-tile-bad { border-left-color: #e11d48; }
 .rpt-tile-bad strong { color: #be123c; }
 .rpt-tile-warn { border-left-color: #d97706; }
+.rpt-tile-muted { border-left-color: #94a3b8; }
+.rpt-tile-muted strong { color: #64748b; }
+/* A figure that is short of where it should be, and the note under a table. */
+.rpt-late { color: #be123c; font-weight: 700; }
+.rpt-foot-note { margin-top: 6px; color: #64748b; font-size: 10px; }
+.rpt-foot-note em { margin-left: 4px; }
 
 
 .rpt-chip {
