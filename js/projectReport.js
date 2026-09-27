@@ -57,6 +57,10 @@ const UNIT_STATUS = [
   ['handed_over', 'გადაცემული', 'Handed over', 'dark'],
 ];
 
+// Timetable item / rental names typed in both languages.
+const taskKa = (t) => t.name_ka || t.name;
+const taskBi = (t) => biName(t.name, t.name_ka);
+
 const chip = (s, extra = '') => `<span class="rpt-chip rpt-${s.tone}">${esc(s.ka)} / ${esc(s.en)}${extra}</span>`;
 const legendItem = (tone, ka, en) => `<span class="rpt-legend-item"><i class="rpt-sw rpt-sw-${tone}"></i>${L(ka, en)}</span>`;
 
@@ -233,7 +237,7 @@ export async function buildProjectReport({
   }
   for (const t of progress.overdue.slice(0, 5)) {
     const who = nameOf(t.contractor_id);
-    alerts.push(['bad', `${t.name} - ${t.daysLate} დღით გადაცილებული${who ? ` (${who})` : ''}`,
+    alerts.push(['bad', `${taskKa(t)} - ${t.daysLate} დღით გადაცილებული${who ? ` (${who})` : ''}`,
       `${t.name} - ${t.daysLate} days overdue${who ? ` (${who})` : ''}`]);
   }
   if (progress.overdue.length > 5) {
@@ -289,7 +293,7 @@ export async function buildProjectReport({
               <li>
                 <span class="rpt-ahead-date">${dm(date)}</span>
                 <span class="rpt-ahead-what">
-                  <strong>${esc(t.name)}</strong>
+                  <strong>${esc(taskBi(t))}</strong>
                   <em>${kind === 'start'
                     ? `${esc('იწყება')} · Starts`
                     : `${esc('უნდა დასრულდეს')} · Due - ${Math.round(completionOf(t) * 100)}% ${esc('შესრულებული')} / done`}${
@@ -337,7 +341,8 @@ export async function buildProjectReport({
       return `
         <div class="rpt-g-row rpt-avoid">
           <div class="rpt-g-label">
-            <strong>${esc(t.name)}</strong>
+            <strong>${esc(taskKa(t))}</strong>
+            ${t.name_ka && t.name !== t.name_ka ? `<span class="rpt-g-en">${esc(t.name)}</span>` : ''}
             <span>${d(t.planned_start)} → ${d(t.planned_finish)}${who ? ` · ${esc(who)}` : ''}</span>
           </div>
           <div class="rpt-g-track">
@@ -348,7 +353,7 @@ export async function buildProjectReport({
           </div>
           <div class="rpt-g-pct">
             <strong>${done}%</strong>
-            <span class="rpt-g-state rpt-g-state-${s.key}">${esc(TASK_STATUS[s.key].en)}${s.daysLate ? ` +${s.daysLate}d` : ''}</span>
+            <span class="rpt-g-state rpt-g-state-${s.key}">${esc(TASK_STATUS[s.key].ka)}<br>${esc(TASK_STATUS[s.key].en)}${s.daysLate ? ` +${s.daysLate}d` : ''}</span>
           </div>
         </div>`;
     }).join('');
@@ -484,7 +489,7 @@ export async function buildProjectReport({
         const w = (b / maxBudget) * 100;
         return `
           <div class="rpt-hbar rpt-avoid">
-            <span class="rpt-hbar-label">${esc(t.name)}</span>
+            <span class="rpt-hbar-label">${esc(taskBi(t))}</span>
             <div class="rpt-hbar-track">
               <div class="rpt-hbar-budget" style="width:${w.toFixed(2)}%">
                 <div class="rpt-hbar-done" style="width:${Math.round(completionOf(t) * 100)}%"></div>
@@ -521,8 +526,8 @@ export async function buildProjectReport({
         <tbody>
           ${rentals.map((r) => `
             <tr>
-              <td>${esc(r.equipment)}${r.note ? `<br><span class="rpt-muted">${esc(r.note)}</span>` : ''}</td>
-              <td>${esc(r.supplier || '-')}</td>
+              <td>${esc(biName(r.equipment, r.equipment_ka))}</td>
+              <td>${esc(biName(r.supplier, r.supplier_ka) || '-')}</td>
               <td>${d(r.start_date)} → ${d(rentalEnd(r))}</td>
               <td class="num">${r.days} × ${m(r.daily_rate)}</td>
               <td class="num">${m(rentalTotal(r))}</td>
@@ -568,7 +573,7 @@ export async function buildProjectReport({
                 <div class="rpt-card-head">
                   <div>
                     <strong>${esc(biName(c.name, c.name_ka))}</strong>
-                    ${c.trade ? `<span class="rpt-muted">${esc(c.trade)}</span>` : ''}
+                    ${c.trade ? `<span class="rpt-muted">${esc(bi(c.trade))}</span>` : ''}
                   </div>
                   ${rating(s)}
                 </div>
@@ -616,7 +621,7 @@ export async function buildProjectReport({
           </p>
           <div class="rpt-type-chips">
             ${[...byType].sort((a, b) => b[1].n - a[1].n).map(([type, e]) => `
-              <span class="rpt-type"><b>${e.n}</b> ${esc(type)}${e.area ? ` · ${num.format(e.area)} m²` : ''}</span>`).join('')}
+              <span class="rpt-type"><b>${e.n}</b> ${esc(bi(type))}${e.area ? ` · ${num.format(e.area)} m²` : ''}</span>`).join('')}
           </div>` : none}
       </section>`;
   }

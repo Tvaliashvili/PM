@@ -695,12 +695,16 @@
         <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
       </div>
       <div class="modal-body space-y-4">
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <label class="block sm:col-span-2">
-            <span class="form-label">Work item</span>
-            <input name="name" required maxlength="200" class="input-dark w-full" placeholder="e.g. Pouring slab - Block A, floor 3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="form-label">Work item - ქართული</span>
+            <input name="name_ka" maxlength="200" class="input-dark w-full" placeholder="მაგ. ფილის ჩასხმა - ბლოკი A, მე-3 სართული">
           </label>
           <label class="block">
+            <span class="form-label">Work item - English</span>
+            <input name="name" maxlength="200" class="input-dark w-full" placeholder="e.g. Pouring slab - Block A, floor 3">
+          </label>
+          <label class="block sm:col-span-2">
             <span class="form-label">Contractor</span>
             <select id="task-contractor" name="contractor_id" class="select-dark w-full"></select>
           </label>
@@ -950,16 +954,29 @@
         <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
       </div>
       <div class="modal-body space-y-4">
-        <label class="block">
-          <span class="form-label">Equipment</span>
-          <input name="equipment" required maxlength="120" list="equipment-options" class="input-dark w-full"
-                 placeholder="e.g. Drill, Concrete mixer…">
-          <datalist id="equipment-options"></datalist>
-        </label>
-        <label class="block">
-          <span class="form-label">Rented from (optional)</span>
-          <input name="supplier" maxlength="120" class="input-dark w-full" placeholder="Supplier / company">
-        </label>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="form-label">Equipment - ქართული</span>
+            <input name="equipment_ka" maxlength="120" list="equipment-options-ka" class="input-dark w-full"
+                   placeholder="მაგ. ბეტონის მიქსერი">
+            <datalist id="equipment-options-ka"></datalist>
+          </label>
+          <label class="block">
+            <span class="form-label">Equipment - English</span>
+            <input name="equipment" maxlength="120" list="equipment-options" class="input-dark w-full"
+                   placeholder="e.g. Concrete mixer">
+            <datalist id="equipment-options"></datalist>
+          </label>
+          <label class="block">
+            <span class="form-label">Rented from - ქართული (optional)</span>
+            <input name="supplier_ka" maxlength="120" class="input-dark w-full" placeholder="მომწოდებელი / კომპანია">
+          </label>
+          <label class="block">
+            <span class="form-label">Rented from - English (optional)</span>
+            <input name="supplier" maxlength="120" class="input-dark w-full" placeholder="Supplier / company">
+          </label>
+        </div>
+        <p class="text-xs text-slate-500 -mt-2">Pick a suggestion in either language and the other fills in by itself.</p>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <label class="block">
             <span class="form-label">Start date</span>

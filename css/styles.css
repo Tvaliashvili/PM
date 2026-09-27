@@ -829,6 +829,7 @@ textarea.input-dark { resize: vertical; }
 .rpt-g-label { flex: 0 0 196px; padding: 5px 8px; min-width: 0; }
 .rpt-g-label strong { display: block; font-size: 10.5px; line-height: 1.3; }
 .rpt-g-label span { display: block; font-size: 9px; color: #64748b; line-height: 1.3; }
+.rpt-g-label .rpt-g-en { font-size: 9.5px; color: #334155; }
 .rpt-g-head .rpt-g-label em { display: block; margin-left: 0; }
 .rpt-g-track { position: relative; flex: 1; min-height: 34px; }
 .rpt-g-months { min-height: 30px; }
@@ -861,10 +862,10 @@ textarea.input-dark { resize: vertical; }
 .rpt-g-active   { background: #bfdbfe; } .rpt-g-active .rpt-g-fill   { background: #2563eb; }
 .rpt-g-overdue  { background: #fecdd3; } .rpt-g-overdue .rpt-g-fill  { background: #e11d48; }
 .rpt-g-upcoming { background: #e2e8f0; } .rpt-g-upcoming .rpt-g-fill { background: #64748b; }
-.rpt-g-pct { flex: 0 0 62px; padding: 5px 8px 5px 4px; text-align: right; }
+.rpt-g-pct { flex: 0 0 84px; padding: 5px 8px 5px 4px; text-align: right; }
 .rpt-g-pct strong { display: block; font-size: 11px; }
 .rpt-g-head .rpt-g-pct em { display: block; margin-left: 0; }
-.rpt-g-state { display: block; font-size: 8.5px; font-weight: 600; color: #64748b; white-space: nowrap; }
+.rpt-g-state { display: block; font-size: 8px; font-weight: 600; line-height: 1.25; color: #64748b; }
 .rpt-g-state-overdue { color: #be123c; }
 .rpt-g-state-done { color: #047857; }
 .rpt-g-state-active { color: #1d4ed8; }

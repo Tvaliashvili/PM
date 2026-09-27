@@ -637,7 +637,7 @@ const paidOn = (taskId) => sumOf(state.payments.filter((p) => p.task_id === task
 async function loadSchedule(projectId) {
   const [tasks, payments, delays, contractors, siteLogs, rentals] = await Promise.all([
     db.from('schedule_tasks')
-      .select('id, name, planned_start, planned_finish, done, done_at, progress_pct, contractor_id, quantity, unit, rate, budget')
+      .select('id, name, name_ka, planned_start, planned_finish, done, done_at, progress_pct, contractor_id, quantity, unit, rate, budget')
       .eq('project_id', projectId)
       .order('planned_start')
       .order('planned_finish'),
@@ -657,7 +657,7 @@ async function loadSchedule(projectId) {
       .eq('project_id', projectId)
       .order('log_date'),
     db.from('equipment_rentals')
-      .select('id, equipment, supplier, start_date, days, daily_rate, note')
+      .select('id, equipment, equipment_ka, supplier, supplier_ka, start_date, days, daily_rate, note')
       .eq('project_id', projectId)
       .order('start_date', { ascending: false }),
   ]);
@@ -740,7 +740,7 @@ function renderSchedule() {
           </div>
           <div class="task-pct-bar"><div style="width:${Math.round(completionOf(t) * 100)}%"></div></div>
         </td>
-        <td class="task-name">${esc(t.name)}</td>
+        <td class="task-name">${esc(t.name)}${t.name_ka && t.name_ka !== t.name ? `<span class="block text-xs text-slate-500">${esc(t.name_ka)}</span>` : ''}</td>
         <td>
           <select class="select-dark select-inline" data-task-contractor="${esc(t.id)}"
                   aria-label="Contractor for ${esc(t.name)}">${contractorOptions(t.contractor_id ?? '')}</select>
@@ -824,7 +824,8 @@ function openTaskModal(task) {
 
   f.id.value = task?.id ?? '';
   if (task) {
-    f.name.value = task.name;
+    f.name_ka.value = task.name_ka ?? '';
+    f.name.value = task.name_ka && task.name === task.name_ka ? '' : task.name;
     f.planned_start.value = task.planned_start;
     f.planned_finish.value = task.planned_finish;
     f.quantity.value = task.quantity ?? '';
@@ -840,6 +841,7 @@ function openTaskModal(task) {
   }
   updateTaskDuration();
   openModal('modal-task');
+  f.name_ka.focus();
 }
 
 // Dates → duration hint; quantity × rate → budget.
@@ -859,8 +861,16 @@ async function saveTask(e) {
   const fd   = new FormData(form);
 
   const id = fd.get('id');
+  // Either language will do; the English column falls back to the Georgian text.
+  const nameKa = fd.get('name_ka').trim();
+  const nameEn = fd.get('name').trim();
+  if (!nameKa && !nameEn) {
+    showFormError(form, 'Enter the work item in Georgian or English.');
+    return;
+  }
   const row = {
-    name:           fd.get('name').trim(),
+    name:           nameEn || nameKa,
+    name_ka:        nameKa || null,
     contractor_id:  fd.get('contractor_id') || null,
     planned_start:  fd.get('planned_start'),
     planned_finish: fd.get('planned_finish'),
@@ -1367,7 +1377,7 @@ function renderCosts() {
         : '<span class="text-slate-500">-</span>';
       return `
         <tr>
-          <td class="task-name">${esc(t.name)}</td>
+          <td class="task-name">${esc(t.name)}${t.name_ka && t.name_ka !== t.name ? `<span class="block text-xs text-slate-500">${esc(t.name_ka)}</span>` : ''}</td>
           <td>${t.contractor_id ? esc(contractorName(t.contractor_id)) : '<span class="text-slate-500">-</span>'}</td>
           <td class="num">${qty}</td>
           <td class="num">${budget ? money.format(budget) : '-'}</td>
@@ -1530,7 +1540,7 @@ function renderRentals() {
     return `
       <tr>
         <td>
-          <p class="text-white font-medium">${esc(r.equipment)}</p>
+          <p class="text-white font-medium">${esc(r.equipment)}${r.equipment_ka && r.equipment_ka !== r.equipment ? ` <span class="text-slate-400 font-normal">· ${esc(r.equipment_ka)}</span>` : ''}</p>
           <p class="text-xs text-slate-500">${esc([r.supplier, r.note].filter(Boolean).join(' · ') || '-')}</p>
         </td>
         <td class="whitespace-nowrap">${esc(formatDate(r.start_date))} → ${esc(formatDate(end))}
@@ -1561,7 +1571,9 @@ function openRentalModal(rental = null) {
   form.reset();
   $('#rental-title').textContent = rental ? `Edit Rental - ${rental.equipment}` : 'Add Rental';
   f.id.value = rental?.id ?? '';
-  f.equipment.value = rental?.equipment ?? '';
+  f.equipment_ka.value = rental?.equipment_ka ?? '';
+  f.equipment.value = rental?.equipment_ka && rental.equipment === rental.equipment_ka ? '' : (rental?.equipment ?? '');
+  f.supplier_ka.value = rental?.supplier_ka ?? '';
   f.supplier.value = rental?.supplier ?? '';
   f.start_date.value = rental?.start_date ?? todayISO();
   f.days.value = rental?.days ?? 1;
@@ -1570,7 +1582,20 @@ function openRentalModal(rental = null) {
   updateRentalTotal();
   showFormError(form, '');
   openModal('modal-rental');
-  f.equipment.focus();
+  f.equipment_ka.focus();
+}
+
+// Picking a suggested item in one language fills the other one in.
+function onRentalInput(e) {
+  const f = e.currentTarget.elements;
+  if (e.target === f.equipment && !f.equipment_ka.value && EQUIPMENT_SUGGESTIONS.includes(f.equipment.value)) {
+    f.equipment_ka.value = ka(f.equipment.value);
+  }
+  if (e.target === f.equipment_ka && !f.equipment.value) {
+    const en = EQUIPMENT_SUGGESTIONS.find((x) => ka(x) === f.equipment_ka.value);
+    if (en) f.equipment.value = en;
+  }
+  updateRentalTotal();
 }
 
 function updateRentalTotal() {
@@ -1597,10 +1622,18 @@ async function saveRental(e) {
     showFormError(form, 'Enter the daily price.');
     return;
   }
+  const equipmentKa = fd.get('equipment_ka').trim();
+  const equipmentEn = fd.get('equipment').trim();
+  if (!equipmentKa && !equipmentEn) {
+    showFormError(form, 'Enter the equipment in Georgian or English.');
+    return;
+  }
   const id = fd.get('id');
   const row = {
-    equipment: fd.get('equipment').trim(),
-    supplier: fd.get('supplier').trim() || null,
+    equipment: equipmentEn || equipmentKa,
+    equipment_ka: equipmentKa || null,
+    supplier: fd.get('supplier').trim() || fd.get('supplier_ka').trim() || null,
+    supplier_ka: fd.get('supplier_ka').trim() || null,
     start_date: fd.get('start_date'),
     days,
     daily_rate: rate,
@@ -2346,9 +2379,10 @@ $('#btn-translate-delay').addEventListener('click', onTranslateDelay);
 $('#delays-table').addEventListener('click', onDelaysTableClick);
 $('#btn-add-rental').addEventListener('click', () => openRentalModal());
 $('#form-rental').addEventListener('submit', saveRental);
-$('#form-rental').addEventListener('input', updateRentalTotal);
+$('#form-rental').addEventListener('input', onRentalInput);
 $('#rentals-table').addEventListener('click', onRentalsTableClick);
 $('#equipment-options').innerHTML = EQUIPMENT_SUGGESTIONS.map((x) => `<option value="${esc(x)}"></option>`).join('');
+$('#equipment-options-ka').innerHTML = EQUIPMENT_SUGGESTIONS.map((x) => `<option value="${esc(ka(x))}"></option>`).join('');
 $('#units-table').addEventListener('click', onUnitsTableClick);
 $('#btn-add-unit').addEventListener('click', () => openUnitModal(null));
 $('#form-unit').addEventListener('submit', saveUnit);

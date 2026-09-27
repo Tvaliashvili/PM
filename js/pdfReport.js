@@ -77,7 +77,7 @@ async function fetchTodayData(db, projectId, day) {
       .lt('created_at', day.endISO)
       .order('created_at'),
     db.from('equipment_rentals')
-      .select('equipment, supplier, start_date, days, daily_rate')
+      .select('equipment, equipment_ka, supplier, supplier_ka, start_date, days, daily_rate')
       .eq('project_id', projectId)
       .lte('start_date', day.date)
       .order('start_date'),
@@ -197,8 +197,8 @@ function buildReport({ project, day, logs, delays, rentals, manpower, summary, p
   const rentalRows = page.querySelector('[data-rows="rentals"]');
   if (rentals.length) {
     rentals.forEach((r) => addRow(rentalRows, [
-      { text: r.equipment },
-      { text: r.supplier || '-' },
+      { text: biName(r.equipment, r.equipment_ka) },
+      { text: biName(r.supplier, r.supplier_ka) || '-' },
       { text: `${Math.round((new Date(`${day.date}T00:00`) - new Date(`${r.start_date}T00:00`)) / 86_400_000) + 1} / ${r.days}` },
       { text: money.format(r.daily_rate), className: 'num' },
     ]));
@@ -255,13 +255,13 @@ export async function generateDailyReport({ db, project, progress, userEmail, mo
     schedule: progress?.count ? {
       progress_pct: progress.actualPct,
       planned_by_today_pct: progress.plannedPct,
-      overdue_activities: progress.overdue.map((t) => ({ activity: t.name, days_late: t.daysLate })),
+      overdue_activities: progress.overdue.map((t) => ({ activity: t.name, activity_ka: t.name_ka || null, days_late: t.daysLate })),
     } : null,
     daily_logs: logs.map((l) => ({ weather: l.weather, notes_ka: l.notes, notes_en: l.notes_en })),
     manpower: Object.fromEntries(manpower.map(([trade, n]) => [tradeLabel(trade), n])),
     ...(pay.workers ? { daily_workers_pay: { workers: pay.workers, rate: pay.rate, total: pay.pay, currency: project.currency } } : {}),
     ...(rentals.length ? {
-      equipment_on_hire: rentals.map((r) => ({ equipment: r.equipment, daily_price: Number(r.daily_rate), until: rentalEnd(r) })),
+      equipment_on_hire: rentals.map((r) => ({ equipment: r.equipment, equipment_ka: r.equipment_ka || null, daily_price: Number(r.daily_rate), until: rentalEnd(r) })),
     } : {}),
     delays: delays.map((d) => ({
       cause: d.delay_cause,

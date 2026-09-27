@@ -407,3 +407,14 @@ notify pgrst, 'reload schema';
 alter table public.projects add column if not exists location_ka text;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 12. Georgian spelling for timetable items and rentals
+-- (the English column keeps the Georgian text when no English is given)
+-- -------------------------------------------------------------
+alter table public.schedule_tasks add column if not exists name_ka text;
+alter table public.equipment_rentals
+  add column if not exists equipment_ka text,
+  add column if not exists supplier_ka text;
+
+notify pgrst, 'reload schema';

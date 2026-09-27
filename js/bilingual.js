@@ -37,6 +37,56 @@ export const KA = {
   'Labourers': 'დამხმარე მუშები',
   'Daily workers': 'დღიური მუშები',
 
+  // Room types
+  'Studio': 'სტუდიო',
+  '1-bedroom': '1-საძინებლიანი',
+  '2-bedroom': '2-საძინებლიანი',
+  '3-bedroom': '3-საძინებლიანი',
+  '4-bedroom': '4-საძინებლიანი',
+  'Penthouse': 'პენტჰაუსი',
+  'Duplex': 'დუპლექსი',
+  'Commercial': 'კომერციული ფართი',
+  'Office': 'ოფისი',
+  'Parking': 'პარკინგი',
+  'Storage': 'სათავსო',
+
+  // Contractor trades
+  'General contractor': 'გენერალური კონტრაქტორი',
+  'Earthworks': 'მიწის სამუშაოები',
+  'Concrete': 'ბეტონის სამუშაოები',
+  'Steel / rebar': 'ლითონი / არმატურა',
+  'Masonry': 'წყობა',
+  'Roofing': 'სახურავი',
+  'Facade': 'ფასადი',
+  'Windows & doors': 'ფანჯრები და კარები',
+  'Plumbing': 'სანტექნიკა',
+  'Electrical': 'ელექტროობა',
+  'HVAC': 'გათბობა-ვენტილაცია',
+  'Finishes': 'მოპირკეთება',
+  'Elevators': 'ლიფტები',
+
+  // Rental equipment
+  'Drill': 'საბურღი',
+  'Concrete mixer': 'ბეტონის მიქსერი',
+  'Concrete pump': 'ბეტონის ტუმბო',
+  'Excavator': 'ექსკავატორი',
+  'Mobile crane': 'ავტოამწე',
+  'Tower crane': 'ანძური ამწე',
+  'Scaffolding': 'ხარაჩო',
+  'Generator': 'გენერატორი',
+  'Plate compactor': 'ვიბროფილა',
+  'Jackhammer': 'სანგრევი ჩაქუჩი',
+  'Welding machine': 'შედუღების აპარატი',
+  'Truck': 'სატვირთო მანქანა',
+  'Forklift': 'ავტოდამტვირთველი',
+  'Formwork': 'ყალიბი',
+
+  // Timetable states
+  'Done': 'დასრულდა',
+  'In progress': 'მიმდინარე',
+  'Overdue': 'ვადაგადაცილებული',
+  'Upcoming': 'დაგეგმილი',
+
   // Report phrases
   'Site-wide': 'მთელი ობიექტი',
   'Not recorded': 'არ არის ჩაწერილი',

@@ -19,7 +19,7 @@ Write exactly three bullets:
 
 Each bullet is one or two plain sentences with specific figures from the data. Use only the data provided; if something is missing, say so briefly instead of guessing.
 
-Return the same three bullets twice: "ka" in natural, professional Georgian as used in Georgian construction reporting, and "en" in English. The two versions must state the same facts and figures. Start the Georgian bullets with "პროგრესი:", "რესურსები:" and "შეფერხებები და რისკები:", and the English ones with "Progress:", "Resources:" and "Delays and risks:". Site notes may be in either language - translate their content as needed. The project's name, location and client are given in both languages (project.name, project.location, project.client - each with .ka and .en): use the Georgian spelling in the Georgian bullets and the English one in the English bullets, exactly as given.`;
+Return the same three bullets twice: "ka" in natural, professional Georgian as used in Georgian construction reporting, and "en" in English. The two versions must state the same facts and figures. Start the Georgian bullets with "პროგრესი:", "რესურსები:" and "შეფერხებები და რისკები:", and the English ones with "Progress:", "Resources:" and "Delays and risks:". Site notes may be in either language - translate their content as needed. The project's name, location and client are given in both languages (project.name, project.location, project.client - each with .ka and .en), and work items and equipment may have a Georgian spelling (activity_ka, equipment_ka): use the Georgian spelling in the Georgian bullets and the English one in the English bullets, exactly as given.`;
 
 // Gemini structured output (OpenAPI-style schema)
 const SUMMARY_SCHEMA = {

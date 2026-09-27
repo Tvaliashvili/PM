@@ -15,7 +15,7 @@ const MAX_CONTEXT_CHARS = 400_000; // oldest logs are dropped beyond this
 const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget), contractors, delays (counted in whole days lost, described in Georgian and English), payments to contractors, daily workers (manpower.day_workers, each paid the log's day_rate for that day) and equipment rentals (daily_rate × days).
 
 Rules:
-- Answer in the same language as the question (Georgian or English). Project, location, client and contractor names are spelled by hand in both languages (name / name_ka, location / location_ka, client_name / client_name_ka): use the Georgian spelling in Georgian answers and the English one in English answers.
+- Answer in the same language as the question (Georgian or English). Project, location, client, contractor, work item and equipment names are spelled by hand in both languages (name / name_ka, location / location_ka, client_name / client_name_ka, item / item_ka, equipment / equipment_ka): use the Georgian spelling in Georgian answers and the English one in English answers.
 - Be specific: give dates, figures, names and units. Keep it short; for lists, put each point on its own line starting with "- ".
 - When you add things up (workers, hours, days, money), say what you counted.
 - Use only the data. If it doesn't contain the answer, say so plainly and, if useful, say what information is missing. Never invent facts.
@@ -38,7 +38,7 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
   const [project, tasks, contractors, logs, delays, payments, rentals] = await Promise.all([
     sb.from("projects").select("name, name_ka, location, location_ka, client_name, client_name_ka, start_date, end_date, currency, has_rooms").eq("id", projectId).single(),
     sb.from("schedule_tasks")
-      .select("id, name, planned_start, planned_finish, progress_pct, done_at, contractor_id, budget")
+      .select("id, name, name_ka, planned_start, planned_finish, progress_pct, done_at, contractor_id, budget")
       .eq("project_id", projectId).order("planned_start"),
     sb.from("contractors").select("id, name, name_ka, trade").eq("project_id", projectId),
     sb.from("daily_logs")
@@ -48,7 +48,7 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
       .select("created_at, delay_cause, duration_days, description, description_en, contractor_id, flats(block, flat_number)")
       .eq("project_id", projectId).order("created_at", { ascending: false }).limit(1000),
     sb.from("task_payments").select("task_id, paid_on, amount, note").eq("project_id", projectId).order("paid_on"),
-    sb.from("equipment_rentals").select("equipment, supplier, start_date, days, daily_rate, note").eq("project_id", projectId).order("start_date"),
+    sb.from("equipment_rentals").select("equipment, equipment_ka, supplier, supplier_ka, start_date, days, daily_rate, note").eq("project_id", projectId).order("start_date"),
   ]);
 
   const failed = [project, tasks, contractors, logs, delays, payments, rentals].find((r) => r.error);
@@ -63,6 +63,7 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
     project: project.data,
     timetable: (tasks.data ?? []).map((t) => ({
       item: t.name,
+      item_ka: t.name_ka,
       planned_start: t.planned_start,
       planned_finish: t.planned_finish,
       percent_complete: t.progress_pct,
