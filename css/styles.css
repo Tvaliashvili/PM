@@ -296,6 +296,31 @@ html, body { background: var(--ink-950); }
   white-space: pre-wrap;
 }
 .ask-answer .ask-q { margin-bottom: 0.4rem; font-size: 0.75rem; color: #64748b; white-space: normal; }
+/* The question, with the Georgian / English toggle beside it. */
+.ask-answer .ask-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+  white-space: normal; /* the box is pre-wrap for the answer itself */
+}
+.ask-answer .ask-head .ask-q { margin-bottom: 0; }
+.ask-langs { display: flex; flex-shrink: 0; gap: 0.25rem; }
+.ask-lang {
+  padding: 0.15rem 0.55rem;
+  border: 1px solid var(--ink-700);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.ask-lang:hover { border-color: var(--brand-500); color: var(--brand-400); }
+.ask-lang.is-active {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: var(--brand-500);
+  color: var(--brand-400);
+}
 
 .log-card {
   padding: 1rem 1.1rem;

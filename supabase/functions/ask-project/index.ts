@@ -2,6 +2,7 @@
 // Supabase Edge Function: ask-project
 // Answers a free-text question about one project from all of its data -
 // daily logs, timetable, contractors, delays and payments - via Gemini.
+// The answer comes back in Georgian and English, the same facts in both.
 // Data is read as the signed-in caller, so row-level security applies.
 //
 // Deploy:
@@ -17,7 +18,8 @@ const MAX_CONTEXT_CHARS = 1_500_000;
 const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget), contractors, delays (counted in whole days lost, described in Georgian and English; a delay with ongoing=true has not been settled yet - its days_lost is the count so far and keeps growing), payments to contractors, daily workers (manpower.day_workers, each paid the log's day_rate for that day) and equipment rentals (daily_rate × days).
 
 Rules:
-- Answer in the same language as the question (Georgian or English). Project, location, client, contractor, work item and equipment names are spelled by hand in both languages (name / name_ka, location / location_ka, client_name / client_name_ka, item / item_ka, equipment / equipment_ka): use the Georgian spelling in Georgian answers and the English one in English answers.
+- Answer twice, whatever language the question is in: "ka" in natural, professional Georgian as used in Georgian construction reporting, and "en" in English. The two must state the same facts and figures - neither leaves out something the other says. Write each as it would be written in that language, not word for word from the other.
+- Project, location, client, contractor, work item and equipment names are spelled by hand in both languages (name / name_ka, location / location_ka, client_name / client_name_ka, item / item_ka, equipment / equipment_ka): use the Georgian spelling in the Georgian answer and the English one in the English answer, exactly as given.
 - Be specific: give dates, figures, names and units. Keep it short; for lists, put each point on its own line starting with "- ".
 - When you add things up (workers, hours, days, money), say what you counted.
 - Use only the data. If it doesn't contain the answer, say so plainly and, if useful, say what information is missing. Never invent facts.
@@ -25,9 +27,13 @@ Rules:
 
 const SCHEMA = {
   type: "OBJECT",
-  properties: { answer: { type: "STRING" } },
-  required: ["answer"],
+  properties: { ka: { type: "STRING" }, en: { type: "STRING" } },
+  required: ["ka", "en"],
 };
+
+// A question with a Georgian letter in it is a Georgian question, so that
+// version of the answer is the one shown first.
+const isGeorgian = (text: string) => /[Ⴀ-ჿ]/.test(text);
 
 serveJson(async (payload: { project_id?: string; question?: string; today?: string }, req) => {
   const question = String(payload.question ?? "").trim();
@@ -121,7 +127,13 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
     temperature: 0.2,
   });
 
-  const answer = String(result.answer ?? "").trim();
-  if (!answer) return json({ error: "Gemini returned an empty answer" }, 502);
-  return json({ answer, logs_used: context.daily_logs.length, logs_found: logsFound, model });
+  const ka = String(result.ka ?? "").trim();
+  const en = String(result.en ?? "").trim();
+  if (!ka || !en) return json({ error: "Gemini returned an empty answer" }, 502);
+  // asked: the question's own language, shown first; answer: that version alone.
+  const asked = isGeorgian(question) ? "ka" : "en";
+  return json({
+    ka, en, asked, answer: asked === "ka" ? ka : en,
+    logs_used: context.daily_logs.length, logs_found: logsFound, model,
+  });
 });

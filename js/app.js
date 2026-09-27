@@ -2189,8 +2189,33 @@ async function askGemini(e) {
   const coverage = read
     ? `Read ${read} daily log${read === 1 ? '' : 's'}${read < found ? ` of ${found} - the ${found - read} oldest did not fit` : ''}.`
     : '';
-  out.innerHTML = `<p class="ask-q">${esc(question)}</p>${esc(data.answer)}`
+  // Gemini answers in both languages; the question's own is shown and the
+  // toggle switches to the other, so either can be copied into a message.
+  const shown = data.asked === 'ka' ? 'ka' : 'en';
+  const both = data.ka && data.en;
+  // The box keeps the answer's own line breaks (pre-wrap), so the markup
+  // around it carries no newlines of its own.
+  const langBtn = (lang) =>
+    `<button type="button" class="ask-lang${lang === shown ? ' is-active' : ''}" `
+    + `data-ask-lang="${lang}">${lang === 'ka' ? 'ქართული' : 'English'}</button>`;
+  const answerText = (lang) =>
+    `<div class="ask-text${lang === shown ? '' : ' hidden'}" data-ask-text="${lang}">${esc(data[lang])}</div>`;
+
+  out.innerHTML = `<div class="ask-head"><p class="ask-q">${esc(question)}</p>`
+    + (both ? `<div class="ask-langs">${langBtn('ka')}${langBtn('en')}</div>` : '')
+    + '</div>'
+    + (both ? answerText('ka') + answerText('en') : esc(data.answer ?? ''))
     + (coverage ? `<p class="mt-2 text-xs text-slate-500">${esc(coverage)}</p>` : '');
+}
+
+// The answer is already on the page in both languages: only which one is
+// visible changes, so switching never asks Gemini again.
+function onAskLangToggle(e) {
+  const btn = e.target.closest('[data-ask-lang]');
+  if (!btn) return;
+  const out = $('#ask-answer');
+  $$('[data-ask-lang]', out).forEach((b) => b.classList.toggle('is-active', b === btn));
+  $$('[data-ask-text]', out).forEach((t) => t.classList.toggle('hidden', t.dataset.askText !== btn.dataset.askLang));
 }
 
 function onAskSuggestion(e) {
@@ -2652,6 +2677,7 @@ $('#daily-logs-container').addEventListener('click', (e) => {
 });
 $('#form-ask').addEventListener('submit', askGemini);
 $('#form-ask').addEventListener('click', onAskSuggestion);
+$('#ask-answer').addEventListener('click', onAskLangToggle);
 $('#btn-edit-project').addEventListener('click', openEditProjectModal);
 $('#form-edit-project').addEventListener('submit', saveEditProject);
 $('#form-delete-project').addEventListener('submit', confirmDeleteProject);
