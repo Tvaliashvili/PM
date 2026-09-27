@@ -1,6 +1,7 @@
 // =============================================================
 // Full project report — bilingual (Georgian / English), print-ready.
 // Built from the open project's data; shown in the app and saved as PDF.
+// Charts are plain HTML/CSS (plus one inline SVG) so html2pdf renders them as-is.
 // =============================================================
 import {
   taskState, completionOf, costPosition, contractorPerformance, plannedSpendByMonth, actualSpendByMonth,
@@ -12,14 +13,29 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ));
 
-// Language-neutral dates for tables: 26.09.2026
-const d = (iso) => (iso ? iso.slice(0, 10).split('-').reverse().join('.') : '—');
-const ym = (key) => key.split('-').reverse().join('.');           // 2026-09 → 09.2026
-const num = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 2 });
+const DAY_MS = 86_400_000;
+const toDate = (iso) => new Date(`${iso.slice(0, 10)}T00:00`);
+const iso = (date) => date.toLocaleDateString('en-CA');
+const addDays = (isoDate, n) => { const x = toDate(isoDate); x.setDate(x.getDate() + n); return iso(x); };
+const dayDiff = (a, b) => Math.round((toDate(b) - toDate(a)) / DAY_MS);
 
-// Georgian label with the English beneath / beside it.
+// Language-neutral dates: 26.09.2026 / 26.09
+const d = (v) => (v ? v.slice(0, 10).split('-').reverse().join('.') : '—');
+const dm = (v) => v.slice(5, 10).split('-').reverse().join('.');
+const num = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 2 });
+const pctOf = (part, whole) => (whole ? Math.round((part / whole) * 100) : 0);
+const clamp = (v, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, v));
+
+const MONTHS_KA = ['იან', 'თებ', 'მარ', 'აპრ', 'მაი', 'ივნ', 'ივლ', 'აგვ', 'სექ', 'ოქტ', 'ნოე', 'დეკ'];
+const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// Georgian label with the English beside / beneath it.
 const L = (ka, en) => `${esc(ka)}<em>${esc(en)}</em>`;
-const H = (ka, en) => `<h2>${esc(ka)} <em>${esc(en)}</em></h2>`;
+const H = (ka, en, note = '') => `
+  <div class="rpt-h">
+    <h2>${esc(ka)} <em>${esc(en)}</em></h2>
+    ${note ? `<span class="rpt-h-note">${note}</span>` : ''}
+  </div>`;
 const none = `<p class="rpt-none">${L('მონაცემები არ არის', 'No data yet')}</p>`;
 // Free text kept in both languages: Georgian first, English muted below.
 const biText = (ka, en) => (ka && en
@@ -27,28 +43,21 @@ const biText = (ka, en) => (ka && en
   : esc(ka || en || '—'));
 
 const TASK_STATUS = {
-  done:     { ka: 'დასრულდა',          en: 'Done',        tone: 'ok' },
-  overdue:  { ka: 'ვადაგადაცილებული',  en: 'Overdue',     tone: 'bad' },
-  active:   { ka: 'მიმდინარე',          en: 'In progress', tone: 'warn' },
-  upcoming: { ka: 'დაგეგმილი',          en: 'Upcoming',    tone: 'muted' },
+  done:     { ka: 'დასრულდა',         en: 'Done',        tone: 'ok' },
+  overdue:  { ka: 'ვადაგადაცილებული', en: 'Overdue',     tone: 'bad' },
+  active:   { ka: 'მიმდინარე',         en: 'In progress', tone: 'info' },
+  upcoming: { ka: 'დაგეგმილი',         en: 'Upcoming',    tone: 'muted' },
 };
 
-const UNIT_STATUS = {
-  not_started: ['არ დაწყებულა', 'Not started'],
-  in_progress: ['მიმდინარე', 'In progress'],
-  finished:    ['დასრულებული', 'Finished'],
-  handed_over: ['გადაცემული', 'Handed over'],
-};
+const UNIT_STATUS = [
+  ['not_started', 'არ დაწყებულა', 'Not started', 'muted'],
+  ['in_progress', 'მიმდინარე', 'In progress', 'info'],
+  ['finished', 'დასრულებული', 'Finished', 'ok'],
+  ['handed_over', 'გადაცემული', 'Handed over', 'dark'],
+];
 
 const chip = (s, extra = '') => `<span class="rpt-chip rpt-${s.tone}">${esc(s.ka)} / ${esc(s.en)}${extra}</span>`;
-
-function bar(ka, en, pct, tone) {
-  return `
-    <div class="rpt-bar">
-      <div class="rpt-bar-label"><span>${L(ka, en)}</span><strong>${pct}%</strong></div>
-      <div class="rpt-bar-track"><div class="rpt-bar-fill rpt-fill-${tone}" style="width:${Math.min(100, pct)}%"></div></div>
-    </div>`;
-}
+const legendItem = (tone, ka, en) => `<span class="rpt-legend-item"><i class="rpt-sw rpt-sw-${tone}"></i>${L(ka, en)}</span>`;
 
 const tile = (ka, en, value, sub = '', tone = '') => `
   <div class="rpt-tile ${tone ? `rpt-tile-${tone}` : ''}">
@@ -57,16 +66,43 @@ const tile = (ka, en, value, sub = '', tone = '') => `
     ${sub ? `<small>${sub}</small>` : ''}
   </div>`;
 
+// Where the project stands against its plan, in words (never colour alone).
+function verdict(gap, count) {
+  if (!count) return { ka: 'გრაფიკი არ არის', en: 'No timetable', tone: 'muted' };
+  if (gap < -5) return { ka: 'გეგმას ჩამორჩება', en: 'Behind plan', tone: 'bad' };
+  if (gap > 5) return { ka: 'გეგმას უსწრებს', en: 'Ahead of plan', tone: 'ok' };
+  return { ka: 'გეგმის მიხედვით', en: 'On track', tone: 'ok' };
+}
+
+// Progress ring: outer = work complete, inner = planned by today.
+function ring(actual, planned) {
+  const arc = (r, pct) => {
+    const c = 2 * Math.PI * r;
+    return `stroke-dasharray="${((clamp(pct) / 100) * c).toFixed(1)} ${c.toFixed(1)}"`;
+  };
+  return `
+    <svg class="rpt-ring" viewBox="0 0 120 120" width="116" height="116" aria-hidden="true">
+      <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="12"/>
+      <circle cx="60" cy="60" r="50" fill="none" stroke="#059669" stroke-width="12" stroke-linecap="round"
+              ${arc(50, actual)} transform="rotate(-90 60 60)"/>
+      <circle cx="60" cy="60" r="35" fill="none" stroke="#f1f5f9" stroke-width="6"/>
+      <circle cx="60" cy="60" r="35" fill="none" stroke="#64748b" stroke-width="6" stroke-linecap="round"
+              ${arc(35, planned)} transform="rotate(-90 60 60)"/>
+      <text x="60" y="64" text-anchor="middle" font-size="22" font-weight="700" fill="#0f172a"
+            font-family="Inter, sans-serif">${actual}%</text>
+    </svg>`;
+}
+
 // Recent logs and delays aren't kept in app state, so fetch them here.
 async function fetchExtras(db, projectId, today) {
-  const since = new Date(`${today}T00:00`);
+  const since = toDate(today);
   since.setDate(since.getDate() - 30);
   const [logs, delays] = await Promise.all([
     db.from('daily_logs')
       .select('log_date, weather, manpower, notes, notes_en')
       .eq('project_id', projectId)
       .order('log_date', { ascending: false })
-      .limit(7),
+      .limit(14),
     db.from('delays')
       .select('created_at, delay_cause, duration_days, description, description_en, contractor_id, flats(block, flat_number)')
       .eq('project_id', projectId)
@@ -85,245 +121,485 @@ async function fetchExtras(db, projectId, today) {
 export async function buildProjectReport({
   db, project, tasks, payments, contractors, contractorDelays, units, progress, money, userEmail,
 }) {
-  const today = new Date().toLocaleDateString('en-CA');
+  const today = iso(new Date());
   const { logs, delays } = await fetchExtras(db, project.id, today);
   const cost = costPosition(tasks, payments, today);
   const perf = contractorPerformance(tasks, contractorDelays, payments, today); // all-time delays
+  const rooms = Boolean(project.has_rooms); // sites like a stadium have no rooms
+  const contractorById = new Map(contractors.map((c) => [c.id, c]));
   const nameOf = (id) => {
-    const c = contractors.find((x) => x.id === id);
-    return c ? biName(c.name, c.name_ka) : '—';
+    const c = contractorById.get(id);
+    return c ? biName(c.name, c.name_ka) : '';
   };
   const paidOn = (taskId) => payments.filter((p) => p.task_id === taskId).reduce((s, p) => s + Number(p.amount), 0);
   const m = (n) => money.format(n);
+  const symbol = money.formatToParts(0).find((p) => p.type === 'currency')?.value ?? '';
+  const compact = new Intl.NumberFormat('en-GB', { notation: 'compact', maximumFractionDigits: 1 });
+  const mc = (n) => `${symbol}${compact.format(n)}`;
 
-  // ---------- Header ----------
+  const gap = progress.actualPct - progress.plannedPct;
+  const status = verdict(gap, progress.count);
+  const delayDays = delays.reduce((s, x) => s + Number(x.duration_days || 0), 0);
+
+  // ---------- Header: name, client, verdict and the project's time strip ----------
+  let timeStrip = '';
+  if (project.start_date && project.end_date) {
+    const total = Math.max(1, dayDiff(project.start_date, project.end_date));
+    const elapsed = clamp(dayDiff(project.start_date, today), 0, total);
+    const timePct = pctOf(elapsed, total);
+    const left = dayDiff(today, project.end_date);
+    timeStrip = `
+      <div class="rpt-strip">
+        <div class="rpt-strip-ends">
+          <span>${L('დაწყება', 'Start')} <strong>${d(project.start_date)}</strong></span>
+          <span>${left >= 0
+            ? `${L('დარჩა', 'Left')} <strong>${left} ${L('დღე', 'days')}</strong>`
+            : `<strong class="rpt-strip-late">${-left} ${L('დღით გადაცილებული', 'days past completion date')}</strong>`}</span>
+          <span>${L('დასრულება', 'Completion')} <strong>${d(project.end_date)}</strong></span>
+        </div>
+        <div class="rpt-strip-track">
+          <div class="rpt-strip-time" style="width:${timePct}%"></div>
+          <div class="rpt-strip-work" style="width:${clamp(progress.actualPct)}%"></div>
+          <div class="rpt-strip-today" style="left:${timePct}%"><span>${L('დღეს', 'Today')}</span></div>
+        </div>
+        <div class="rpt-strip-legend">
+          ${L('გასული დრო', 'Time elapsed')} <strong>${timePct}%</strong>
+          <span class="rpt-dot">·</span>
+          ${L('შესრულებული სამუშაო', 'Work complete')} <strong>${progress.actualPct}%</strong>
+        </div>
+      </div>`;
+  }
+
   const header = `
     <header class="rpt-header">
-      <div>
-        <p class="rpt-eyebrow">პროექტის ანგარიში · Project Report</p>
-        <h1>${esc(project.name)}</h1>
-        <p class="rpt-muted">${esc([project.location, project.currency].filter(Boolean).join(' · '))}</p>
-        ${project.client_name || project.client_name_ka
-          ? `<p class="rpt-client">დამკვეთი · Client: <strong>${esc(biName(project.client_name, project.client_name_ka))}</strong></p>`
-          : ''}
+      <div class="rpt-header-top">
+        <div>
+          <p class="rpt-eyebrow">პროექტის ანგარიში · Project Report</p>
+          <h1>${esc(project.name)}</h1>
+          <p class="rpt-sub">${esc([project.location, project.currency].filter(Boolean).join(' · '))}</p>
+          ${project.client_name || project.client_name_ka
+            ? `<p class="rpt-client">დამკვეთი · Client: <strong>${esc(biName(project.client_name, project.client_name_ka))}</strong></p>`
+            : ''}
+        </div>
+        <div class="rpt-header-date">
+          <p class="rpt-eyebrow">თარიღი · Date</p>
+          <p class="rpt-strong">${esc(dateKa(today))}</p>
+          <p class="rpt-sub">${esc(dateEn(today))}</p>
+          <p class="rpt-verdict rpt-verdict-${status.tone}">${esc(status.ka)} · ${esc(status.en)}</p>
+        </div>
       </div>
-      <div class="rpt-header-date">
-        <p class="rpt-eyebrow">თარიღი · Date</p>
-        <p class="rpt-strong">${esc(dateKa(today))}</p>
-        <p class="rpt-muted">${esc(dateEn(today))}</p>
-      </div>
+      ${timeStrip}
     </header>`;
 
-  // ---------- Key figures ----------
-  const rooms = Boolean(project.has_rooms); // sites like a stadium have no rooms
+  // ---------- At a glance: ring + key figures ----------
   const area = units.reduce((s, u) => s + Number(u.area_m2 || 0), 0);
-  const delayDays = delays.reduce((s, x) => s + Number(x.duration_days || 0), 0);
-  const gap = progress.actualPct - progress.plannedPct;
-  const keyFigures = `
-    <section class="rpt-section rpt-avoid">
-      <div class="rpt-tiles">
-        ${tile('პროგრესი', 'Progress', `${progress.actualPct}%`,
-          `${L('გეგმა', 'Plan')} ${progress.plannedPct}%`, gap < -5 ? 'bad' : 'ok')}
-        ${tile('ვადაგადაცილებული', 'Overdue items', String(progress.overdue.length),
-          `${progress.count} ${L('პუნქტიდან', 'items in total')}`, progress.overdue.length ? 'bad' : '')}
+  const glance = `
+    <section class="rpt-section rpt-glance rpt-avoid">
+      <div class="rpt-ring-box">
+        ${ring(progress.actualPct, progress.plannedPct)}
+        <div class="rpt-ring-legend">
+          <p><i class="rpt-sw rpt-sw-ok"></i><span>${L('შესრულებული', 'Work complete')}</span> <strong>${progress.actualPct}%</strong></p>
+          <p><i class="rpt-sw rpt-sw-plan"></i><span>${L('გეგმით დღემდე', 'Planned by today')}</span> <strong>${progress.plannedPct}%</strong></p>
+          <p class="rpt-gap">${progress.count
+            ? `${gap >= 0 ? '+' : ''}${gap}% ${L('გეგმასთან შედარებით', 'vs plan')}`
+            : L('დაამატეთ გრაფიკი', 'Add a timetable')}</p>
+        </div>
+      </div>
+      <div class="rpt-tiles rpt-tiles-2">
         ${tile('ბიუჯეტი', 'Budget', m(cost.budget), `${L('შესრულებული', 'Work done')} ${m(cost.earned)}`)}
         ${tile('დახარჯული', 'Spent', m(cost.spent),
-          cost.budget ? `${Math.round((cost.spent / cost.budget) * 100)}% ${L('ბიუჯეტის', 'of budget')}` : '',
-          cost.spent > cost.budget && cost.budget ? 'bad' : '')}
+          cost.budget ? `${pctOf(cost.spent, cost.budget)}% ${L('ბიუჯეტის', 'of budget')}` : '',
+          cost.budget && cost.spent > cost.budget ? 'bad' : '')}
+        ${tile('ვადაგადაცილებული', 'Overdue items', String(progress.overdue.length),
+          `${progress.count} ${L('პუნქტიდან', 'items in total')}`, progress.overdue.length ? 'bad' : 'ok')}
         ${rooms
           ? tile('ოთახები', 'Rooms', String(units.length), area ? `${num.format(area)} m²` : '')
-          : tile('კონტრაქტორები', 'Contractors', String(contractors.length), '')}
-        ${tile('შეფერხებები (30 დღე)', 'Delays (30 days)', String(delays.length),
-          delayDays ? `${num.format(delayDays)} ${L('დღე', 'days')}` : '')}
+          : tile('შეფერხებები (30 დღე)', 'Delays (30 days)', String(delays.length),
+            delayDays ? `${delayDays} ${L('დღე დაკარგული', 'days lost')}` : '', delays.length ? 'warn' : '')}
       </div>
     </section>`;
 
-  // ---------- Progress & time ----------
-  let timeBar = '';
-  let timeLine = '';
-  if (project.start_date && project.end_date) {
-    const start = new Date(`${project.start_date}T00:00`);
-    const end = new Date(`${project.end_date}T00:00`);
-    const now = new Date(`${today}T00:00`);
-    const total = Math.max(1, Math.round((end - start) / 86_400_000));
-    const elapsed = Math.min(total, Math.max(0, Math.round((now - start) / 86_400_000)));
-    timeBar = bar('გასული დრო', 'Time elapsed', Math.round((elapsed / total) * 100), 'time');
-    timeLine = `<p class="rpt-muted">${d(project.start_date)} → ${d(project.end_date)} · ${total} ${L('დღე', 'days')}</p>`;
+  // ---------- Needs attention + next 14 days ----------
+  const alerts = [];
+  if (progress.count && gap < -5) {
+    alerts.push(['bad', `გეგმას ჩამორჩება: შესრულებულია ${progress.actualPct}%, გეგმით ${progress.plannedPct}%`,
+      `Behind plan: ${progress.actualPct}% done vs ${progress.plannedPct}% planned by today`]);
   }
-  const progressSection = `
-    <section class="rpt-section rpt-avoid">
-      ${H('პროგრესი და ვადები', 'Progress & Schedule')}
-      ${timeLine}
-      <div class="rpt-bars">
-        ${timeBar}
-        ${bar('გეგმით დღემდე', 'Planned by today', progress.plannedPct, 'plan')}
-        ${bar('შესრულებული', 'Work complete', progress.actualPct, 'done')}
+  for (const t of progress.overdue.slice(0, 5)) {
+    const who = nameOf(t.contractor_id);
+    alerts.push(['bad', `${t.name} — ${t.daysLate} დღით გადაცილებული${who ? ` (${who})` : ''}`,
+      `${t.name} — ${t.daysLate} days overdue${who ? ` (${who})` : ''}`]);
+  }
+  if (progress.overdue.length > 5) {
+    alerts.push(['bad', `და კიდევ ${progress.overdue.length - 5} ვადაგადაცილებული პუნქტი`,
+      `and ${progress.overdue.length - 5} more overdue items`]);
+  }
+  if (project.end_date && today > project.end_date && progress.actualPct < 100) {
+    alerts.push(['bad', 'დასრულების დაგეგმილი თარიღი გავიდა', 'Planned completion date has passed']);
+  }
+  if (cost.budget && cost.spent > cost.budget) {
+    alerts.push(['bad', `ბიუჯეტი გადაჭარბებულია ${m(cost.spent - cost.budget)}-ით`,
+      `Over budget by ${m(cost.spent - cost.budget)}`]);
+  } else if (cost.spent > cost.earned + 0.5) {
+    alerts.push(['warn', `გადახდილია შესრულებულ სამუშაოზე ${m(cost.spent - cost.earned)}-ით მეტი`,
+      `Paid ${m(cost.spent - cost.earned)} ahead of work done`]);
+  }
+  if (delays.length) {
+    const byCause = new Map();
+    for (const x of delays) byCause.set(x.delay_cause, (byCause.get(x.delay_cause) ?? 0) + Number(x.duration_days || 0));
+    const [topCause, topDays] = [...byCause].sort((a, b) => b[1] - a[1])[0];
+    alerts.push(['warn', `ბოლო 30 დღეში ${delays.length} შეფერხება, ${delayDays} დღე; ძირითადად — ${bi(topCause).split(' / ')[0]} (${topDays} დღე)`,
+      `${delays.length} delays in the last 30 days, ${delayDays} days lost; mostly ${topCause} (${topDays} days)`]);
+  }
+
+  const horizon = addDays(today, 14);
+  const lookAhead = tasks
+    .filter((t) => !t.done && completionOf(t) < 1)
+    .flatMap((t) => {
+      const out = [];
+      if (t.planned_start > today && t.planned_start <= horizon) out.push({ t, date: t.planned_start, kind: 'start' });
+      if (t.planned_finish >= today && t.planned_finish <= horizon) out.push({ t, date: t.planned_finish, kind: 'finish' });
+      return out;
+    })
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 8);
+
+  const attention = `
+    <section class="rpt-section rpt-two rpt-avoid">
+      <div class="rpt-panel">
+        <h3>${L('ყურადღება მიაქციეთ', 'Needs attention')}</h3>
+        ${alerts.length ? `
+          <ul class="rpt-alert-list">
+            ${alerts.map(([tone, ka, en]) => `
+              <li class="rpt-alert-${tone}"><b>${tone === 'bad' ? '!' : '•'}</b><span>${esc(ka)}<em>${esc(en)}</em></span></li>`).join('')}
+          </ul>`
+          : `<p class="rpt-all-good">✓ ${L('ყველაფერი გეგმის მიხედვით მიდის', 'Everything is going to plan')}</p>`}
       </div>
-      ${progress.overdue.length ? `
-        <ul class="rpt-alerts">
-          ${progress.overdue.map((t) => `
-            <li>! ${esc(t.name)} — ${t.daysLate} ${L('დღით გადაცილებული', 'days overdue')}</li>`).join('')}
-        </ul>` : ''}
+      <div class="rpt-panel">
+        <h3>${L('მომდევნო 14 დღე', 'Next 14 days')}</h3>
+        ${lookAhead.length ? `
+          <ul class="rpt-ahead">
+            ${lookAhead.map(({ t, date, kind }) => `
+              <li>
+                <span class="rpt-ahead-date">${dm(date)}</span>
+                <span class="rpt-ahead-what">
+                  <strong>${esc(t.name)}</strong>
+                  <em>${kind === 'start'
+                    ? `${esc('იწყება')} · Starts`
+                    : `${esc('უნდა დასრულდეს')} · Due — ${Math.round(completionOf(t) * 100)}% ${esc('შესრულებული')} / done`}${
+                    t.contractor_id ? ` · ${esc(nameOf(t.contractor_id))}` : ''}</em>
+                </span>
+              </li>`).join('')}
+          </ul>`
+          : `<p class="rpt-none">${L('ორ კვირაში დაწყება ან დასრულება არ იგეგმება', 'Nothing starts or is due in the next two weeks')}</p>`}
+      </div>
     </section>`;
 
-  // ---------- Timetable ----------
-  const timetable = `
+  // ---------- Timeline (Gantt) ----------
+  let gantt = none;
+  if (tasks.length) {
+    const starts = tasks.map((t) => t.planned_start).concat(project.start_date ? [project.start_date] : []);
+    const ends = tasks.map((t) => t.planned_finish).concat(project.end_date ? [project.end_date] : []);
+    const first = toDate(starts.sort()[0]);
+    const rangeStart = iso(new Date(first.getFullYear(), first.getMonth(), 1));
+    const last = toDate(ends.sort().at(-1));
+    const rangeEnd = iso(new Date(last.getFullYear(), last.getMonth() + 1, 1)); // exclusive
+    const span = Math.max(1, dayDiff(rangeStart, rangeEnd));
+    const x = (v) => (dayDiff(rangeStart, v) / span) * 100;
+
+    const months = [];
+    for (let c = toDate(rangeStart); c < toDate(rangeEnd); c.setMonth(c.getMonth() + 1)) months.push(new Date(c));
+    const every = Math.ceil(months.length / 12); // keep month labels readable
+    const grid = months.map((mo, i) => `<i class="rpt-g-line" style="left:${x(iso(mo)).toFixed(2)}%"></i>`).join('')
+      + (today >= rangeStart && today < rangeEnd ? `<i class="rpt-g-today" style="left:${x(today).toFixed(2)}%"></i>` : '')
+      + (project.end_date ? `<i class="rpt-g-end" style="left:${x(addDays(project.end_date, 1)).toFixed(2)}%"></i>` : '');
+
+    const monthHead = months.map((mo, i) => {
+      const w = (dayDiff(iso(mo), iso(new Date(mo.getFullYear(), mo.getMonth() + 1, 1))) / span) * 100;
+      const show = i % every === 0;
+      const year = i === 0 || mo.getMonth() === 0 ? ` ’${String(mo.getFullYear()).slice(2)}` : '';
+      return `<span class="rpt-g-month" style="left:${x(iso(mo)).toFixed(2)}%;width:${w.toFixed(2)}%">${show
+        ? `${MONTHS_KA[mo.getMonth()]}<em>${MONTHS_EN[mo.getMonth()]}${year}</em>` : ''}</span>`;
+    }).join('');
+
+    const rows = tasks.map((t) => {
+      const s = taskState(t, today);
+      const done = Math.round(completionOf(t) * 100);
+      const left = x(t.planned_start);
+      const width = Math.max(0.8, x(addDays(t.planned_finish, 1)) - left);
+      const who = nameOf(t.contractor_id);
+      return `
+        <div class="rpt-g-row rpt-avoid">
+          <div class="rpt-g-label">
+            <strong>${esc(t.name)}</strong>
+            <span>${d(t.planned_start)} → ${d(t.planned_finish)}${who ? ` · ${esc(who)}` : ''}</span>
+          </div>
+          <div class="rpt-g-track">
+            ${grid}
+            <div class="rpt-g-bar rpt-g-${s.key}" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%">
+              <div class="rpt-g-fill" style="width:${done}%"></div>
+            </div>
+          </div>
+          <div class="rpt-g-pct">
+            <strong>${done}%</strong>
+            <span class="rpt-g-state rpt-g-state-${s.key}">${esc(TASK_STATUS[s.key].en)}${s.daysLate ? ` +${s.daysLate}d` : ''}</span>
+          </div>
+        </div>`;
+    }).join('');
+
+    gantt = `
+      <div class="rpt-legend">
+        ${legendItem('ok', 'დასრულდა', 'Done')}
+        ${legendItem('info', 'მიმდინარე', 'In progress')}
+        ${legendItem('bad', 'ვადაგადაცილებული', 'Overdue')}
+        ${legendItem('muted', 'დაგეგმილი', 'Upcoming')}
+        <span class="rpt-legend-item"><i class="rpt-sw rpt-sw-fill"></i>${L('მუქი ნაწილი = შესრულებული %', 'dark part = % complete')}</span>
+        <span class="rpt-legend-item"><i class="rpt-sw-line rpt-sw-today"></i>${L('დღეს', 'Today')}</span>
+        ${project.end_date ? `<span class="rpt-legend-item"><i class="rpt-sw-line rpt-sw-end"></i>${L('დასრულების თარიღი', 'Completion date')}</span>` : ''}
+      </div>
+      <div class="rpt-gantt">
+        <div class="rpt-g-row rpt-g-head">
+          <div class="rpt-g-label">${L('სამუშაო', 'Work item')}</div>
+          <div class="rpt-g-track rpt-g-months">${monthHead}</div>
+          <div class="rpt-g-pct">${L('შესრ.', 'Done')}</div>
+        </div>
+        ${rows}
+      </div>`;
+  }
+  const timeline = `
     <section class="rpt-section">
-      ${H('სამუშაო გრაფიკი', 'Timetable')}
-      ${tasks.length ? `
-        <table>
-          <thead>
-            <tr>
-              <th>${L('სამუშაო', 'Work item')}</th><th>${L('კონტრაქტორი', 'Contractor')}</th>
-              <th>${L('დაწყება', 'Start')}</th><th>${L('დასრულება', 'Finish')}</th>
-              <th class="num">${L('ბიუჯეტი', 'Budget')}</th><th class="num">${L('გადახდილი', 'Paid')}</th>
-              <th class="num">${L('შესრულება', 'Done')}</th><th>${L('სტატუსი', 'Status')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${tasks.map((t) => {
-              const s = taskState(t, today);
-              const late = s.daysLate ? ` · ${s.daysLate}d` : '';
-              return `
-                <tr>
-                  <td>${esc(t.name)}</td>
-                  <td>${t.contractor_id ? esc(nameOf(t.contractor_id)) : '—'}</td>
-                  <td>${d(t.planned_start)}</td>
-                  <td>${d(t.planned_finish)}</td>
-                  <td class="num">${Number(t.budget) ? m(t.budget) : '—'}</td>
-                  <td class="num">${paidOn(t.id) ? m(paidOn(t.id)) : '—'}</td>
-                  <td class="num">${Math.round(completionOf(t) * 100)}%</td>
-                  <td>${chip(TASK_STATUS[s.key], late)}</td>
-                </tr>`;
-            }).join('')}
-          </tbody>
-        </table>` : none}
+      ${H('სამუშაო გრაფიკი', 'Timeline', `${progress.count} ${L('პუნქტი', 'items')}`)}
+      ${gantt}
     </section>`;
 
-  // ---------- Contractors ----------
-  const onProject = contractors; // already this project's contractors
-  const rating = (s) => {
-    if (!s?.items) return '—';
-    if (s.overdue) return chip({ ka: 'ვადაგადაცილება', en: 'Overdue', tone: 'bad' });
-    if (s.late) return chip({ ka: 'დაგვიანება', en: 'Late', tone: 'warn' }, ` · ${s.avgDaysLate}d`);
-    if (s.onTime) return chip({ ka: 'ვადაში', en: 'On time', tone: 'ok' });
-    return chip({ ka: 'მიმდინარე', en: 'Ongoing', tone: 'muted' });
-  };
-  const contractorsSection = `
-    <section class="rpt-section">
-      ${H('კონტრაქტორები', 'Contractors')}
-      ${onProject.length ? `
-        <table>
-          <thead>
-            <tr>
-              <th>${L('კონტრაქტორი', 'Contractor')}</th><th class="num">${L('სამუშაო', 'Jobs')}</th>
-              <th class="num">${L('ვადაში', 'On time')}</th><th class="num">${L('დაგვიანებით', 'Late')}</th>
-              <th class="num">${L('გადაცილებული', 'Overdue')}</th><th class="num">${L('შეფერხება, დღე', 'Delay days')}</th>
-              <th class="num">${L('გადახდილი', 'Paid')}</th><th>${L('შეფასება', 'Rating')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${onProject.map((c) => {
-              const s = perf.get(c.id);
-              return `
-                <tr>
-                  <td><strong>${esc(biName(c.name, c.name_ka))}</strong>${c.trade ? `<br><span class="rpt-muted">${esc(c.trade)}</span>` : ''}</td>
-                  <td class="num">${s?.items ?? 0}</td>
-                  <td class="num">${s?.onTime ?? 0}</td>
-                  <td class="num">${s?.late ?? 0}</td>
-                  <td class="num">${s?.overdue ?? 0}</td>
-                  <td class="num">${s?.delayDays ? num.format(s.delayDays) : '—'}</td>
-                  <td class="num">${s?.paid ? m(s.paid) : '—'}</td>
-                  <td>${rating(s)}</td>
-                </tr>`;
-            }).join('')}
-          </tbody>
-        </table>` : none}
-    </section>`;
-
-  // ---------- Cost & cash flow ----------
+  // ---------- Money: S-curve, monthly table, cost per item ----------
   const planned = plannedSpendByMonth(tasks);
   const actual = actualSpendByMonth(payments);
-  const months = [...new Set([...planned.keys(), ...actual.keys()])].sort();
-  let cumP = 0;
-  let cumA = 0;
+  const monthKeys = [...new Set([...planned.keys(), ...actual.keys()])].sort();
   const thisMonth = today.slice(0, 7);
+
+  let sCurve = '';
+  if (monthKeys.length) {
+    let cp = 0;
+    let ca = 0;
+    const pts = monthKeys.map((k) => {
+      cp += planned.get(k) ?? 0;
+      ca += actual.get(k) ?? 0;
+      return { k, cp, ca };
+    });
+    const W = 718; const Hh = 190; const padL = 52; const padR = 16; const padT = 14; const padB = 26;
+    const max = Math.max(1, cost.budget, ...pts.map((p) => Math.max(p.cp, p.ca)));
+    const px = (i) => padL + (pts.length === 1 ? (W - padL - padR) / 2 : (i / (pts.length - 1)) * (W - padL - padR));
+    const py = (v) => padT + (1 - v / max) * (Hh - padT - padB);
+    const line = (arr) => arr.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+    const planPath = line(pts.map((p, i) => [px(i), py(p.cp)]));
+    const paidPts = pts.map((p, i) => ({ ...p, i })).filter((p) => p.k <= thisMonth);
+    const paidPath = paidPts.length ? line(paidPts.map((p) => [px(p.i), py(p.ca)])) : '';
+    const nowIdx = pts.findIndex((p) => p.k === thisMonth);
+    const every = Math.ceil(pts.length / 10);
+    const ticks = [0, 0.5, 1].map((f) => `
+      <line x1="${padL}" x2="${W - padR}" y1="${py(max * f)}" y2="${py(max * f)}" stroke="#e2e8f0"/>
+      <text x="${padL - 6}" y="${py(max * f) + 3}" text-anchor="end" font-size="9" fill="#64748b">${esc(mc(max * f))}</text>`).join('');
+    const xLabels = pts.map((p, i) => (i % every === 0 || i === pts.length - 1 ? `
+      <text x="${px(i)}" y="${Hh - 8}" text-anchor="middle" font-size="9" fill="${p.k === thisMonth ? '#0f172a' : '#64748b'}"
+            font-weight="${p.k === thisMonth ? 700 : 400}">${p.k.slice(5)}.${p.k.slice(2, 4)}</text>` : '')).join('');
+    const lastPaid = paidPts.at(-1);
+    sCurve = `
+      <div class="rpt-chart rpt-avoid">
+        <div class="rpt-legend">
+          <span class="rpt-legend-item"><i class="rpt-sw-line rpt-sw-plan-line"></i>${L('გეგმა (ჯამური)', 'Planned (cumulative)')}</span>
+          <span class="rpt-legend-item"><i class="rpt-sw-line rpt-sw-paid-line"></i>${L('გადახდილი (ჯამური)', 'Paid (cumulative)')}</span>
+          <span class="rpt-legend-item"><i class="rpt-sw rpt-sw-ok rpt-sw-round"></i>${L('შესრულებული სამუშაო დღეს', 'Work done today')}</span>
+        </div>
+        <svg viewBox="0 0 ${W} ${Hh}" width="${W}" height="${Hh}" aria-hidden="true">
+          ${ticks}
+          ${nowIdx >= 0 ? `<line x1="${px(nowIdx)}" x2="${px(nowIdx)}" y1="${padT}" y2="${Hh - padB}" stroke="#e11d48" stroke-dasharray="3 3"/>` : ''}
+          <path d="${planPath} L${px(pts.length - 1)},${py(0)} L${px(0)},${py(0)} Z" fill="#64748b" fill-opacity="0.08"/>
+          <path d="${planPath}" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="5 4"/>
+          ${paidPath ? `<path d="${paidPath}" fill="none" stroke="#f59e0b" stroke-width="2.5"/>` : ''}
+          ${paidPts.map((p) => `<circle cx="${px(p.i)}" cy="${py(p.ca)}" r="2.5" fill="#f59e0b"/>`).join('')}
+          ${nowIdx >= 0 ? `<circle cx="${px(nowIdx)}" cy="${py(cost.earned)}" r="5" fill="#059669" stroke="#fff" stroke-width="1.5"/>` : ''}
+          ${lastPaid ? `<text x="${px(lastPaid.i) + 7}" y="${py(lastPaid.ca) - 6}" font-size="10" font-weight="700" fill="#b45309">${esc(mc(lastPaid.ca))}</text>` : ''}
+          <text x="${px(pts.length - 1) - 2}" y="${py(pts.at(-1).cp) - 6}" text-anchor="end" font-size="10" font-weight="700" fill="#475569">${esc(mc(pts.at(-1).cp))}</text>
+          ${xLabels}
+        </svg>
+      </div>`;
+  }
+
+  let cp = 0;
+  let ca = 0;
+  const monthTable = monthKeys.length ? `
+    <table class="rpt-compact">
+      <thead>
+        <tr>
+          <th>${L('თვე', 'Month')}</th><th class="num">${L('გეგმა', 'Planned')}</th>
+          <th class="num">${L('გადახდილი', 'Paid')}</th><th class="num">${L('ჯამური გეგმა', 'Cumulative plan')}</th>
+          <th class="num">${L('ჯამური გადახდა', 'Cumulative paid')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${monthKeys.map((k) => {
+          const p = planned.get(k) ?? 0;
+          const a = actual.get(k) ?? 0;
+          cp += p;
+          ca += a;
+          return `
+            <tr class="${k === thisMonth ? 'rpt-current' : ''}">
+              <td>${MONTHS_KA[Number(k.slice(5)) - 1]} / ${MONTHS_EN[Number(k.slice(5)) - 1]} ${k.slice(0, 4)}</td>
+              <td class="num">${m(p)}</td>
+              <td class="num">${a ? m(a) : '—'}</td>
+              <td class="num">${m(cp)}</td>
+              <td class="num">${k <= thisMonth ? m(ca) : '—'}</td>
+            </tr>`;
+        }).join('')}
+      </tbody>
+    </table>` : '';
+
+  const budgeted = tasks.filter((t) => Number(t.budget) > 0).sort((a, b) => Number(b.budget) - Number(a.budget));
+  const maxBudget = Math.max(1, ...budgeted.map((t) => Number(t.budget)));
+  const itemCosts = budgeted.length ? `
+    <h3 class="rpt-sub-h">${L('ღირებულება პუნქტების მიხედვით', 'Cost by item')}</h3>
+    <div class="rpt-legend">
+      <span class="rpt-legend-item"><i class="rpt-sw rpt-sw-plan-light"></i>${L('ბიუჯეტი', 'Budget')}</span>
+      <span class="rpt-legend-item"><i class="rpt-sw rpt-sw-ok"></i>${L('შესრულებული', 'Work done')}</span>
+      <span class="rpt-legend-item"><i class="rpt-sw-line rpt-sw-paid-line"></i>${L('გადახდილი', 'Paid')}</span>
+    </div>
+    <div class="rpt-hbars">
+      ${budgeted.map((t) => {
+        const b = Number(t.budget);
+        const paid = paidOn(t.id);
+        const w = (b / maxBudget) * 100;
+        return `
+          <div class="rpt-hbar rpt-avoid">
+            <span class="rpt-hbar-label">${esc(t.name)}</span>
+            <div class="rpt-hbar-track">
+              <div class="rpt-hbar-budget" style="width:${w.toFixed(2)}%">
+                <div class="rpt-hbar-done" style="width:${Math.round(completionOf(t) * 100)}%"></div>
+                <i class="rpt-hbar-paid" style="left:${clamp((paid / b) * 100, 0, 100).toFixed(2)}%"></i>
+              </div>
+            </div>
+            <span class="rpt-hbar-value">${m(b)}<em>${paid ? `${L('გადახდ.', 'paid')} ${m(paid)}` : L('გადაუხდელი', 'unpaid')}</em></span>
+          </div>`;
+      }).join('')}
+    </div>` : '';
+
   const costSection = `
     <section class="rpt-section">
       ${H('ბიუჯეტი და ფულადი ნაკადი', 'Budget & Cash Flow')}
       <div class="rpt-tiles rpt-tiles-4 rpt-avoid">
         ${tile('ბიუჯეტი', 'Budget', m(cost.budget))}
         ${tile('გეგმით დღემდე', 'Planned by today', m(cost.planned))}
-        ${tile('შესრულებული სამუშაო', 'Work done', m(cost.earned), '', cost.earned < cost.planned - 0.5 ? 'bad' : '')}
+        ${tile('შესრულებული სამუშაო', 'Work done', m(cost.earned), '', cost.earned < cost.planned - 0.5 ? 'bad' : 'ok')}
         ${tile('დახარჯული', 'Spent', m(cost.spent), '', cost.spent > cost.earned + 0.5 ? 'warn' : '')}
       </div>
-      ${months.length ? `
-        <table>
-          <thead>
-            <tr>
-              <th>${L('თვე', 'Month')}</th><th class="num">${L('გეგმა', 'Planned')}</th>
-              <th class="num">${L('გადახდილი', 'Paid')}</th><th class="num">${L('ჯამური გეგმა', 'Cumulative plan')}</th>
-              <th class="num">${L('ჯამური გადახდა', 'Cumulative paid')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${months.map((k) => {
-              const p = planned.get(k) ?? 0;
-              const a = actual.get(k) ?? 0;
-              cumP += p;
-              cumA += a;
-              return `
-                <tr class="${k === thisMonth ? 'rpt-current' : ''}">
-                  <td>${ym(k)}</td>
-                  <td class="num">${m(p)}</td>
-                  <td class="num">${a ? m(a) : '—'}</td>
-                  <td class="num">${m(cumP)}</td>
-                  <td class="num">${k <= thisMonth ? m(cumA) : '—'}</td>
-                </tr>`;
-            }).join('')}
-          </tbody>
-        </table>` : none}
+      ${monthKeys.length ? sCurve + monthTable : none}
+      ${itemCosts}
     </section>`;
 
-  // ---------- Units ----------
-  const byType = new Map();
-  for (const u of units) {
-    const key = u.unit_type || '—';
-    const e = byType.get(key) ?? { n: 0, area: 0 };
-    e.n += 1;
-    e.area += Number(u.area_m2 || 0);
-    byType.set(key, e);
-  }
-  const unitsSection = !rooms ? '' : `
-    <section class="rpt-section rpt-avoid">
-      ${H('ოთახები', 'Rooms')}
-      ${units.length ? `
-        <div class="rpt-two">
-          <table>
-            <thead><tr><th>${L('სტატუსი', 'Status')}</th><th class="num">${L('რაოდენობა', 'Count')}</th></tr></thead>
-            <tbody>
-              ${Object.entries(UNIT_STATUS).map(([key, [ka, en]]) => `
-                <tr><td>${esc(ka)} / ${esc(en)}</td><td class="num">${units.filter((u) => (u.status ?? 'not_started') === key).length}</td></tr>`).join('')}
-            </tbody>
-          </table>
-          <table>
-            <thead><tr><th>${L('ტიპი', 'Type')}</th><th class="num">${L('რაოდენობა', 'Count')}</th><th class="num">m²</th></tr></thead>
-            <tbody>
-              ${[...byType].sort((a, b) => b[1].n - a[1].n).map(([type, e]) => `
-                <tr><td>${esc(type)}</td><td class="num">${e.n}</td><td class="num">${e.area ? num.format(e.area) : '—'}</td></tr>`).join('')}
-            </tbody>
-          </table>
+  // ---------- Contractors: one card each ----------
+  const rating = (s) => {
+    if (!s?.items) return chip({ ka: 'სამუშაო არ აქვს', en: 'No work yet', tone: 'muted' });
+    if (s.overdue) return chip({ ka: 'ვადაგადაცილება', en: 'Overdue', tone: 'bad' });
+    if (s.late) return chip({ ka: 'დაგვიანება', en: 'Late', tone: 'warn' }, ` · ${s.avgDaysLate}d`);
+    if (s.onTime) return chip({ ka: 'ვადაში', en: 'On time', tone: 'ok' });
+    return chip({ ka: 'მიმდინარე', en: 'Ongoing', tone: 'info' });
+  };
+  const seg = (n, total, tone) => (n ? `<i class="rpt-seg rpt-seg-${tone}" style="width:${(n / total) * 100}%"></i>` : '');
+  const contractorsSection = `
+    <section class="rpt-section">
+      ${H('კონტრაქტორები', 'Contractors', `${contractors.length}`)}
+      ${contractors.length ? `
+        <div class="rpt-cards">
+          ${contractors.map((c) => {
+            const s = perf.get(c.id);
+            const items = s?.items ?? 0;
+            const budget = s?.budget ?? 0;
+            const paid = s?.paid ?? 0;
+            return `
+              <article class="rpt-card rpt-avoid">
+                <div class="rpt-card-head">
+                  <div>
+                    <strong>${esc(biName(c.name, c.name_ka))}</strong>
+                    ${c.trade ? `<span class="rpt-muted">${esc(c.trade)}</span>` : ''}
+                  </div>
+                  ${rating(s)}
+                </div>
+                ${items ? `
+                  <div class="rpt-segbar">${seg(s.onTime, items, 'ok')}${seg(s.late, items, 'warn')}${seg(s.overdue, items, 'bad')}${seg(s.open, items, 'muted')}</div>
+                  <p class="rpt-card-stats">
+                    <span><b>${items}</b> ${L('სამუშაო', 'items')}</span>
+                    <span><i class="rpt-sw rpt-sw-ok"></i>${s.onTime} ${L('ვადაში', 'on time')}</span>
+                    <span><i class="rpt-sw rpt-sw-warn"></i>${s.late} ${L('დაგვიანებით', 'late')}</span>
+                    <span><i class="rpt-sw rpt-sw-bad"></i>${s.overdue} ${L('გადაცილებული', 'overdue')}</span>
+                    <span><i class="rpt-sw rpt-sw-muted"></i>${s.open} ${L('ღია', 'open')}</span>
+                  </p>` : ''}
+                <div class="rpt-card-money">
+                  <span>${L('გადახდილი', 'Paid')} <b>${m(paid)}</b>${budget ? ` / ${m(budget)}` : ''}</span>
+                  <span>${L('შეფერხება', 'Delays')} <b>${s?.delayDays ?? 0}</b> ${L('დღე', 'days')}</span>
+                </div>
+                ${budget ? `<div class="rpt-minibar"><i style="width:${clamp(pctOf(paid, budget))}%"></i></div>` : ''}
+                ${c.phone || c.email ? `<p class="rpt-card-contact">${esc([c.contact_person, c.phone, c.email].filter(Boolean).join(' · '))}</p>` : ''}
+              </article>`;
+          }).join('')}
         </div>` : none}
     </section>`;
 
-  // ---------- Recent daily logs ----------
+  // ---------- Rooms (only for sites that have them) ----------
+  let unitsSection = '';
+  if (rooms) {
+    const byType = new Map();
+    for (const u of units) {
+      const key = u.unit_type || '—';
+      const e = byType.get(key) ?? { n: 0, area: 0 };
+      e.n += 1;
+      e.area += Number(u.area_m2 || 0);
+      byType.set(key, e);
+    }
+    const counts = UNIT_STATUS.map(([key, ka, en, tone]) => ({
+      ka, en, tone, n: units.filter((u) => (u.status ?? 'not_started') === key).length,
+    }));
+    unitsSection = `
+      <section class="rpt-section rpt-avoid">
+        ${H('ოთახები', 'Rooms', `${units.length}${area ? ` · ${num.format(area)} m²` : ''}`)}
+        ${units.length ? `
+          <div class="rpt-segbar rpt-segbar-lg">${counts.map((c) => seg(c.n, units.length, c.tone)).join('')}</div>
+          <p class="rpt-card-stats">
+            ${counts.map((c) => `<span><i class="rpt-sw rpt-sw-${c.tone}"></i><b>${c.n}</b> ${L(c.ka, c.en)}</span>`).join('')}
+          </p>
+          <div class="rpt-type-chips">
+            ${[...byType].sort((a, b) => b[1].n - a[1].n).map(([type, e]) => `
+              <span class="rpt-type"><b>${e.n}</b> ${esc(type)}${e.area ? ` · ${num.format(e.area)} m²` : ''}</span>`).join('')}
+          </div>` : none}
+      </section>`;
+  }
+
+  // ---------- Site activity: manpower chart + latest logs ----------
   const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key;
+  const workersOf = (l) => Object.values(l.manpower || {}).reduce((s, n) => s + Number(n || 0), 0);
+  const series = [...logs].reverse(); // oldest → newest
+  const peak = Math.max(1, ...series.map(workersOf));
+  const avg = series.length ? Math.round(series.reduce((s, l) => s + workersOf(l), 0) / series.length) : 0;
+  const manpowerChart = series.length ? `
+    <div class="rpt-columns rpt-avoid">
+      ${series.map((l) => {
+        const n = workersOf(l);
+        return `
+          <div class="rpt-col">
+            <span class="rpt-col-value">${n}</span>
+            <div class="rpt-col-bar" style="height:${Math.max(2, (n / peak) * 82)}%"></div>
+            <span class="rpt-col-label">${dm(l.log_date)}</span>
+          </div>`;
+      }).join('')}
+    </div>
+    <p class="rpt-muted rpt-col-note">${L('საშუალოდ', 'Average')} <b>${avg}</b> · ${L('მაქსიმუმი', 'Peak')} <b>${peak}</b> ${L('მუშა ობიექტზე', 'workers on site')}</p>` : '';
+
   const logsSection = `
     <section class="rpt-section">
-      ${H('ბოლო დღიური ჩანაწერები', 'Recent Daily Logs')}
-      ${logs.length ? logs.map((l) => {
+      ${H('ობიექტზე აქტივობა', 'Site Activity', series.length ? `${series.length} ${L('ჩანაწერი', 'logs')}` : '')}
+      ${manpowerChart}
+      ${logs.length ? logs.slice(0, 5).map((l) => {
         const crew = Object.entries(l.manpower || {}).filter(([, n]) => n > 0);
-        const total = crew.reduce((s, [, n]) => s + Number(n), 0);
+        const total = workersOf(l);
         return `
           <article class="rpt-log rpt-avoid">
             <div class="rpt-log-head">
@@ -336,18 +612,35 @@ export async function buildProjectReport({
             ${crew.length ? `<p class="rpt-muted rpt-crew">${crew.map(([k, n]) => `${esc(bi(tradeLabel(k)))} ${n}`).join(' · ')}</p>` : ''}
             <div class="rpt-two">
               <p class="rpt-notes">${esc(l.notes || '—')}</p>
-              <p class="rpt-notes">${esc(l.notes_en || '—')}</p>
+              <p class="rpt-notes rpt-notes-en">${esc(l.notes_en || '—')}</p>
             </div>
           </article>`;
       }).join('') : none}
     </section>`;
 
-  // ---------- Delays ----------
+  // ---------- Delays: by cause, then the list ----------
+  const causeDays = new Map();
+  for (const x of delays) {
+    const e = causeDays.get(x.delay_cause) ?? { days: 0, n: 0 };
+    e.days += Number(x.duration_days || 0);
+    e.n += 1;
+    causeDays.set(x.delay_cause, e);
+  }
+  const causes = [...causeDays].sort((a, b) => b[1].days - a[1].days);
+  const maxCause = Math.max(1, ...causes.map(([, e]) => e.days));
   const delaysSection = `
     <section class="rpt-section">
-      ${H('შეფერხებები (ბოლო 30 დღე)', 'Delays (last 30 days)')}
+      ${H('შეფერხებები (ბოლო 30 დღე)', 'Delays (last 30 days)', delays.length ? `${delayDays} ${L('დღე', 'days')}` : '')}
       ${delays.length ? `
-        <table>
+        <div class="rpt-hbars rpt-avoid">
+          ${causes.map(([cause, e]) => `
+            <div class="rpt-hbar">
+              <span class="rpt-hbar-label">${esc(bi(cause))}</span>
+              <div class="rpt-hbar-track"><div class="rpt-hbar-cause" style="width:${((e.days / maxCause) * 100).toFixed(2)}%"></div></div>
+              <span class="rpt-hbar-value">${e.days} ${L('დღე', 'days')}<em>${e.n}× </em></span>
+            </div>`).join('')}
+        </div>
+        <table class="rpt-compact">
           <thead>
             <tr>
               <th>${L('თარიღი', 'Date')}</th><th>${L('მიზეზი', 'Cause')}</th>${rooms ? `<th>${L('ადგილი', 'Location')}</th>` : ''}
@@ -365,10 +658,7 @@ export async function buildProjectReport({
                 <td>${biText(x.description, x.description_en)}</td>
               </tr>`).join('')}
           </tbody>
-          <tfoot>
-            <tr><td colspan="${rooms ? 4 : 3}">${L('სულ', 'Total')}</td><td class="num">${num.format(delayDays)}</td><td></td></tr>
-          </tfoot>
-        </table>` : none}
+        </table>` : `<p class="rpt-all-good">✓ ${L('ბოლო 30 დღეში შეფერხება არ ყოფილა', 'No delays in the last 30 days')}</p>`}
     </section>`;
 
   const footer = `
@@ -377,8 +667,8 @@ export async function buildProjectReport({
 
   const page = document.createElement('div');
   page.className = 'pdf-page rpt';
-  page.innerHTML = header + keyFigures + progressSection + timetable + contractorsSection
-    + costSection + unitsSection + logsSection + delaysSection + footer;
+  page.innerHTML = header + glance + attention + timeline + costSection + contractorsSection
+    + unitsSection + logsSection + delaysSection + footer;
   return page;
 }
 
@@ -391,7 +681,7 @@ const fileSafe = (name) => (name || 'Project')
 /** Saves a page built by buildProjectReport() as Project_Report_<name>_<date>.pdf. */
 export async function downloadProjectReport(page, project) {
   await document.fonts?.ready; // Georgian font must be loaded before rendering
-  const today = new Date().toLocaleDateString('en-CA');
+  const today = iso(new Date());
   await window.html2pdf()
     .set({
       margin: [10, 10, 12, 10],
@@ -399,7 +689,7 @@ export async function downloadProjectReport(page, project) {
       image: { type: 'jpeg', quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.rpt-avoid', 'h2'] },
+      pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.rpt-avoid', 'h2', '.rpt-h'] },
     })
     .from(page)
     .save();
