@@ -139,7 +139,11 @@ export async function buildProjectReport({
   };
   const paidOn = (taskId) => payments.filter((p) => p.task_id === taskId).reduce((s, p) => s + Number(p.amount), 0);
   const m = (n) => money.format(n);
-  const symbol = money.formatToParts(0).find((p) => p.type === 'currency')?.value ?? '';
+  // `money` is a plain { format } wrapper (see app.js), not a full Intl.NumberFormat,
+  // so the currency symbol for the compact axis labels is derived separately.
+  const symbol = new Intl.NumberFormat(undefined, {
+    style: 'currency', currency: project.currency || 'USD', currencyDisplay: 'narrowSymbol',
+  }).formatToParts(0).find((p) => p.type === 'currency')?.value ?? '';
   const compact = new Intl.NumberFormat('en-GB', { notation: 'compact', maximumFractionDigits: 1 });
   const mc = (n) => `${symbol}${compact.format(n)}`;
 
