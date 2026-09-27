@@ -625,6 +625,11 @@ textarea.input-dark { resize: vertical; }
 .rpt-header-date { text-align: right; }
 .rpt-client { margin-top: 4px; color: #fde68a; font-size: 11px; }
 .rpt-client strong { color: #fff; }
+/* The English spelling sits under the Georgian one, so a long client name
+   breaks between languages instead of mid-word. */
+.rpt-client-en { display: block; color: #fff; font-weight: 600; }
+.rpt-currency { margin-top: 3px; color: #cbd5e1; font-size: 10.5px; }
+.rpt-currency em { color: #94a3b8; margin-left: 4px; }
 .pdf-client { margin-top: 2px; font-weight: 600; color: #334155; }
 .pdf-client:empty { display: none; }
 .rpt-eyebrow {
@@ -706,6 +711,7 @@ textarea.input-dark { resize: vertical; }
 /* Header */
 .rpt-header { display: block; padding: 20px 22px 16px; }
 .rpt-header-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.rpt-header-top > div:first-child { flex: 1 1 auto; min-width: 0; }
 .rpt-header-date { flex: 0 0 auto; }
 .rpt-header h1 { font-size: 26px; letter-spacing: -0.01em; }
 .rpt-h1-en { margin-top: -2px; font-size: 15px; font-weight: 600; color: #e2e8f0; }

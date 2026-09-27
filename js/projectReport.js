@@ -71,6 +71,10 @@ const tile = (ka, en, value, sub = '', tone = '') => `
     ${sub ? `<small>${sub}</small>` : ''}
   </div>`;
 
+// "All amounts in GEL", said the Georgian way.
+const CURRENCY_KA = { GEL: 'ლარშია', USD: 'დოლარშია' };
+const currencyKa = (code) => `ყველა თანხა ${CURRENCY_KA[code] ?? `${code}-შია`}`;
+
 // Where the project stands against its plan, in words (never colour alone).
 function verdict(gap, count) {
   if (!count) return { ka: 'გრაფიკი არ არის', en: 'No timetable', tone: 'muted' };
@@ -188,6 +192,9 @@ export async function buildProjectReport({
       </div>`;
   }
 
+  const clientKa = project.client_name_ka || project.client_name || '';
+  const clientEn = project.client_name || '';
+
   const header = `
     <header class="rpt-header">
       <div class="rpt-header-top">
@@ -195,9 +202,13 @@ export async function buildProjectReport({
           <p class="rpt-eyebrow">პროექტის ანგარიში · Project Report</p>
           <h1>${esc(project.name_ka || project.name)}</h1>
           ${project.name_ka ? `<p class="rpt-h1-en">${esc(project.name)}</p>` : ''}
-          <p class="rpt-sub">${esc([biName(project.location, project.location_ka), project.currency].filter(Boolean).join(' · '))}</p>
-          ${project.client_name || project.client_name_ka
-            ? `<p class="rpt-client">დამკვეთი · Client: <strong>${esc(biName(project.client_name, project.client_name_ka))}</strong></p>`
+          <p class="rpt-sub">${esc(biName(project.location, project.location_ka))}</p>
+          ${clientKa
+            ? `<p class="rpt-client">დამკვეთი · Client: <strong>${esc(clientKa)}</strong>
+                 ${clientEn && clientEn !== clientKa ? `<span class="rpt-client-en">${esc(clientEn)}</span>` : ''}</p>`
+            : ''}
+          ${project.currency
+            ? `<p class="rpt-currency">${L(currencyKa(project.currency), `All amounts in ${project.currency}`)}</p>`
             : ''}
         </div>
         <div class="rpt-header-date">

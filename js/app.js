@@ -1031,13 +1031,22 @@ function renderDelays() {
 
   const byCause = new Map();
   const byContractor = new Map();
+  let noContractorDays = 0;
+  let noContractorCount = 0;
   for (const d of delays) {
     const n = delayDaysLost(d);
     const c = byCause.get(d.delay_cause) ?? [0, 0];
     byCause.set(d.delay_cause, [c[0] + n, c[1] + 1]);
-    const key = d.contractor_id ? contractorName(d.contractor_id) : 'No contractor named';
-    const k = byContractor.get(key) ?? [0, 0];
-    byContractor.set(key, [k[0] + n, k[1] + 1]);
+    // Leaving the contractor blank means nobody was held responsible - that is
+    // not a contractor to rank, so it stays out of the chart.
+    if (d.contractor_id) {
+      const key = contractorName(d.contractor_id);
+      const k = byContractor.get(key) ?? [0, 0];
+      byContractor.set(key, [k[0] + n, k[1] + 1]);
+    } else {
+      noContractorDays += n;
+      noContractorCount += 1;
+    }
   }
   const sorted = (m) => [...m].sort((a, b) => b[1][0] - a[1][0])
     .map(([label, [v, count]]) => [label, v, `· ${count}×`]);
@@ -1054,7 +1063,14 @@ function renderDelays() {
   ].join('');
 
   $('#delays-by-cause').innerHTML = barList(sorted(byCause), 'd');
-  $('#delays-by-contractor').innerHTML = barList(sorted(byContractor), 'd');
+  // Delays nobody was blamed for are counted under the chart, not inside it.
+  const unattributed = noContractorDays
+    ? `<p class="mt-3 text-xs text-slate-500">${noContractorCount} delay${noContractorCount === 1 ? '' : 's'}`
+      + ` (${noContractorDays} day${noContractorDays === 1 ? '' : 's'}) with no contractor at fault.</p>`
+    : '';
+  $('#delays-by-contractor').innerHTML = (byContractor.size
+    ? barList(sorted(byContractor), 'd')
+    : '<div class="empty-state">No delay has been blamed on a contractor.</div>') + unattributed;
 
   if (!delays.length) {
     $('#delays-table').innerHTML = '<div class="empty-state">No delays yet - click Log Delay.</div>';
