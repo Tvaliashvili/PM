@@ -3,7 +3,8 @@
 // Today's daily_logs + delays → Gemini summary in both languages
 // (via Edge Function) → html2pdf
 // =============================================================
-import { MANPOWER_TRADES, REPORT_AUTHOR } from './config.js';
+import { MANPOWER_TRADES, REPORT_AUTHOR, DAY_WORKER_KEY } from './config.js';
+import { rentalEnd } from './schedule.js';
 import { ka, bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
 
 const SUMMARY_FUNCTION = 'daily-summary';
@@ -36,6 +37,22 @@ const flatLabelBi = (flat) => (flat
   ? `${ka('Block')}/Block ${flat.block} · ${ka('Room')}/Room ${flat.flat_number}`
   : bi('Site-wide'));
 
+// Daily workers' pay for the day: headcount × the log's day rate.
+function dayWorkerPay(logs) {
+  let workers = 0;
+  let pay = 0;
+  let rate = null;
+  for (const l of logs) {
+    const n = Number(l.manpower?.[DAY_WORKER_KEY] || 0);
+    workers += n;
+    if (l.day_rate != null) {
+      rate = Number(l.day_rate);
+      pay += n * rate;
+    }
+  }
+  return { workers, rate, pay };
+}
+
 function mergeManpower(logs) {
   const totals = {};
   for (const log of logs) {
@@ -48,9 +65,9 @@ function mergeManpower(logs) {
 
 // ---------- 1. Query today's data ----------
 async function fetchTodayData(db, projectId, day) {
-  const [logs, delays] = await Promise.all([
+  const [logs, delays, rentals] = await Promise.all([
     db.from('daily_logs')
-      .select('log_date, weather, manpower, notes, notes_en')
+      .select('log_date, weather, manpower, notes, notes_en, day_rate')
       .eq('project_id', projectId)
       .eq('log_date', day.date),
     db.from('delays')
@@ -59,11 +76,18 @@ async function fetchTodayData(db, projectId, day) {
       .gte('created_at', day.startISO)
       .lt('created_at', day.endISO)
       .order('created_at'),
+    db.from('equipment_rentals')
+      .select('equipment, supplier, start_date, days, daily_rate')
+      .eq('project_id', projectId)
+      .lte('start_date', day.date)
+      .order('start_date'),
   ]);
 
-  const failed = [logs, delays].find((r) => r.error);
+  const failed = [logs, delays, rentals].find((r) => r.error);
   if (failed) throw new Error(`Could not load today's data: ${failed.error.message}`);
-  return { logs: logs.data, delays: delays.data };
+  // Equipment on hire today: started on or before today and not yet returned.
+  const onHire = rentals.data.filter((r) => rentalEnd(r) >= day.date);
+  return { logs: logs.data, delays: delays.data, rentals: onHire };
 }
 
 // ---------- 2. AI summary (both languages) ----------
@@ -115,7 +139,7 @@ function fillList(list, items) {
   }
 }
 
-function buildReport({ project, day, logs, delays, manpower, summary, progress, userEmail }) {
+function buildReport({ project, day, logs, delays, rentals, manpower, summary, progress, userEmail, money }) {
   const page = document.getElementById('daily-report-template').content.firstElementChild.cloneNode(true);
   const set = (field, value) => { page.querySelector(`[data-field="${field}"]`).textContent = value; };
   const rooms = Boolean(project.has_rooms);
@@ -158,8 +182,28 @@ function buildReport({ project, day, logs, delays, manpower, summary, progress, 
   if (manpower.length) {
     manpower.forEach(([trade, n]) => addRow(mpRows, [{ text: bi(tradeLabel(trade)) }, { text: n, className: 'num' }]));
     addRow(mpRows, [{ text: bi('Total'), className: 'pdf-strong' }, { text: workers, className: 'num pdf-strong' }]);
+    const dw = dayWorkerPay(logs);
+    if (dw.workers && dw.rate != null) {
+      addRow(mpRows, [
+        { text: 'დღიური მუშების ანაზღაურება / Daily workers’ pay' },
+        { text: `${dw.workers} × ${money.format(dw.rate)} = ${money.format(dw.pay)}`, className: 'num' },
+      ]);
+    }
   } else {
     addEmptyRow(mpRows, 2, bi('No manpower recorded.'));
+  }
+
+  // Equipment on hire today (section hidden when there is none)
+  const rentalRows = page.querySelector('[data-rows="rentals"]');
+  if (rentals.length) {
+    rentals.forEach((r) => addRow(rentalRows, [
+      { text: r.equipment },
+      { text: r.supplier || '—' },
+      { text: `${Math.round((new Date(`${day.date}T00:00`) - new Date(`${r.start_date}T00:00`)) / 86_400_000) + 1} / ${r.days}` },
+      { text: money.format(r.daily_rate), className: 'num' },
+    ]));
+  } else {
+    page.querySelector('[data-section="rentals"]').remove();
   }
 
   // Delays (the location column only applies to sites with rooms)
@@ -191,9 +235,10 @@ function buildReport({ project, day, logs, delays, manpower, summary, progress, 
  * Builds today's bilingual report for `project` and downloads Daily_Report_[YYYY-MM-DD].pdf.
  * Returns { aiNote } — set when the PDF was saved without an AI summary.
  */
-export async function generateDailyReport({ db, project, progress, userEmail }) {
+export async function generateDailyReport({ db, project, progress, userEmail, money }) {
   const day = todayRange();
-  const { logs, delays } = await fetchTodayData(db, project.id, day);
+  const { logs, delays, rentals } = await fetchTodayData(db, project.id, day);
+  const pay = dayWorkerPay(logs);
   const manpower = mergeManpower(logs);
 
   const summary = await fetchSummary(db, {
@@ -213,6 +258,10 @@ export async function generateDailyReport({ db, project, progress, userEmail }) 
     } : null,
     daily_logs: logs.map((l) => ({ weather: l.weather, notes_ka: l.notes, notes_en: l.notes_en })),
     manpower: Object.fromEntries(manpower.map(([trade, n]) => [tradeLabel(trade), n])),
+    ...(pay.workers ? { daily_workers_pay: { workers: pay.workers, rate: pay.rate, total: pay.pay, currency: project.currency } } : {}),
+    ...(rentals.length ? {
+      equipment_on_hire: rentals.map((r) => ({ equipment: r.equipment, daily_price: Number(r.daily_rate), until: rentalEnd(r) })),
+    } : {}),
     delays: delays.map((d) => ({
       cause: d.delay_cause,
       ...(project.has_rooms ? { location: flatLabel(d.flats) } : {}),
@@ -222,7 +271,7 @@ export async function generateDailyReport({ db, project, progress, userEmail }) 
     })),
   });
 
-  const page = buildReport({ project, day, logs, delays, manpower, summary, progress, userEmail });
+  const page = buildReport({ project, day, logs, delays, rentals, manpower, summary, progress, userEmail, money });
   const root = document.getElementById('pdf-export-root');
   root.replaceChildren(page);
 

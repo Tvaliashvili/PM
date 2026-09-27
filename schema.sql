@@ -355,3 +355,41 @@ end;
 $$;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 9. Site costs outside the BOQ
+-- Daily workers (დღიური მუშა) are counted in daily_logs.manpower.day_workers
+-- and paid a fixed rate per day: cost = headcount × day_rate on that log.
+-- projects.day_rate is the default rate the log form starts from.
+-- Equipment rentals cost daily_rate × days, spread day by day from start_date.
+-- -------------------------------------------------------------
+alter table public.projects
+  add column if not exists day_rate numeric(10,2) check (day_rate is null or day_rate >= 0);
+alter table public.daily_logs
+  add column if not exists day_rate numeric(10,2) check (day_rate is null or day_rate >= 0);
+
+create table if not exists public.equipment_rentals (
+  id          uuid primary key default gen_random_uuid(),
+  project_id  uuid not null references public.projects(id) on delete cascade,
+  equipment   text not null,
+  supplier    text,
+  start_date  date not null default current_date,
+  days        integer not null default 1 check (days >= 1),
+  daily_rate  numeric(12,2) not null default 0 check (daily_rate >= 0),
+  note        text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists equipment_rentals_project_idx on public.equipment_rentals (project_id, start_date);
+
+drop trigger if exists set_updated_at on public.equipment_rentals;
+create trigger set_updated_at before update on public.equipment_rentals
+  for each row execute function public.set_updated_at();
+
+alter table public.equipment_rentals enable row level security;
+drop policy if exists "authenticated_full_access" on public.equipment_rentals;
+create policy "authenticated_full_access" on public.equipment_rentals
+  for all to authenticated using (true) with check (true);
+
+notify pgrst, 'reload schema';

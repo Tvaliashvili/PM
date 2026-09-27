@@ -12,7 +12,7 @@ import { generateJson, json, serveJson, userClient } from "../_shared/gemini.ts"
 const MAX_QUESTION_CHARS = 1_000;
 const MAX_CONTEXT_CHARS = 400_000; // oldest logs are dropped beyond this
 
-const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget), contractors, delays (counted in whole days lost, described in Georgian and English) and payments.
+const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget), contractors, delays (counted in whole days lost, described in Georgian and English), payments to contractors, daily workers (manpower.day_workers, each paid the log's day_rate for that day) and equipment rentals (daily_rate × days).
 
 Rules:
 - Answer in the same language as the question (Georgian or English). Client and contractor names are spelled by hand in both languages (client_name / client_name_ka, name / name_ka): use the Georgian spelling in Georgian answers and the English one in English answers.
@@ -35,22 +35,23 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
   if (!projectId) return json({ error: "No project selected" }, 400);
 
   const sb = userClient(req);
-  const [project, tasks, contractors, logs, delays, payments] = await Promise.all([
+  const [project, tasks, contractors, logs, delays, payments, rentals] = await Promise.all([
     sb.from("projects").select("name, location, client_name, client_name_ka, start_date, end_date, currency, has_rooms").eq("id", projectId).single(),
     sb.from("schedule_tasks")
       .select("id, name, planned_start, planned_finish, progress_pct, done_at, contractor_id, budget")
       .eq("project_id", projectId).order("planned_start"),
     sb.from("contractors").select("id, name, name_ka, trade").eq("project_id", projectId),
     sb.from("daily_logs")
-      .select("log_date, weather, manpower, notes, notes_en")
+      .select("log_date, weather, manpower, day_rate, notes, notes_en")
       .eq("project_id", projectId).order("log_date", { ascending: false }).limit(1000),
     sb.from("delays")
       .select("created_at, delay_cause, duration_days, description, description_en, contractor_id, flats(block, flat_number)")
       .eq("project_id", projectId).order("created_at", { ascending: false }).limit(1000),
     sb.from("task_payments").select("task_id, paid_on, amount, note").eq("project_id", projectId).order("paid_on"),
+    sb.from("equipment_rentals").select("equipment, supplier, start_date, days, daily_rate, note").eq("project_id", projectId).order("start_date"),
   ]);
 
-  const failed = [project, tasks, contractors, logs, delays, payments].find((r) => r.error);
+  const failed = [project, tasks, contractors, logs, delays, payments, rentals].find((r) => r.error);
   if (failed) {
     console.error(failed.error);
     return json({ error: "Could not read the project data" }, 500);
@@ -82,7 +83,9 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
     payments: (payments.data ?? []).map((p) => ({
       item: taskName.get(p.task_id) ?? null, paid_on: p.paid_on, amount: p.amount, note: p.note,
     })),
-    daily_logs: logs.data ?? [], // newest first
+    // Equipment hire: cost = daily_rate × days, from start_date.
+    equipment_rentals: rentals.data ?? [],
+    daily_logs: logs.data ?? [], // newest first; manpower.day_workers are paid day_rate each per day
   };
 
   // Keep within the budget by dropping the oldest logs.

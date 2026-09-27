@@ -73,14 +73,69 @@ export function actualSpendByMonth(payments) {
   return months;
 }
 
+// ---------- Site costs outside the BOQ: daily workers and equipment rentals ----------
+// Both become dated entries { date, amount, kind: 'labour' | 'rental' } so they
+// can be added to spending and to the monthly cash flow.
+
+/** Daily-worker pay per log: headcount × that log's day rate. */
+export function labourCosts(logs, dayWorkerKey = 'day_workers') {
+  return logs
+    .map((l) => {
+      const workers = Number(l.manpower?.[dayWorkerKey] || 0);
+      return { date: l.log_date, amount: workers * Number(l.day_rate || 0), workers, kind: 'labour' };
+    })
+    .filter((e) => e.workers > 0);
+}
+
+/** Total hire cost of one rental (daily rate × days). */
+export const rentalTotal = (r) => Number(r.daily_rate || 0) * Number(r.days || 0);
+
+/** Last day of a rental (inclusive). */
+export function rentalEnd(r) {
+  const d = toDate(r.start_date);
+  d.setDate(d.getDate() + Number(r.days || 1) - 1);
+  return d.toLocaleDateString('en-CA');
+}
+
+/** A rental's cost accrues day by day from its start date. */
+export function rentalCosts(rentals) {
+  const out = [];
+  for (const r of rentals) {
+    const rate = Number(r.daily_rate || 0);
+    if (!rate) continue;
+    const d = toDate(r.start_date);
+    for (let i = 0; i < Number(r.days || 0); i += 1) {
+      out.push({ date: d.toLocaleDateString('en-CA'), amount: rate, kind: 'rental', rentalId: r.id });
+      d.setDate(d.getDate() + 1);
+    }
+  }
+  return out;
+}
+
+/** Site costs per month up to `todayIso` (YYYY-MM → { labour, rental }). */
+export function siteCostsByMonth(entries, todayIso) {
+  const months = new Map();
+  for (const e of entries) {
+    if (e.date > todayIso) continue;
+    const key = monthOf(e.date);
+    const m = months.get(key) ?? { labour: 0, rental: 0 };
+    m[e.kind] += e.amount;
+    months.set(key, m);
+  }
+  return months;
+}
+
 /**
  * Cost position on `todayIso`:
- *   budget  — total of all item budgets
- *   planned — value of work that should be done by today (budget × planned share)
- *   earned  — value of work actually done (budget × % complete)
- *   spent   — sum of payments made up to today
+ *   budget    — total of all item budgets
+ *   planned   — value of work that should be done by today (budget × planned share)
+ *   earned    — value of work actually done (budget × % complete)
+ *   contracts — payments against timetable items made up to today
+ *   labour    — daily-worker pay up to today
+ *   rental    — equipment hire accrued up to today
+ *   spent     — all of the above money: contracts + labour + rental
  */
-export function costPosition(tasks, payments, todayIso) {
+export function costPosition(tasks, payments, todayIso, siteCosts = []) {
   let budget = 0;
   let planned = 0;
   let earned = 0;
@@ -90,10 +145,15 @@ export function costPosition(tasks, payments, todayIso) {
     planned += b * plannedFraction(task, todayIso);
     earned += b * completionOf(task);
   }
-  const spent = payments
+  const contracts = payments
     .filter((p) => p.paid_on <= todayIso)
     .reduce((sum, p) => sum + Number(p.amount || 0), 0);
-  return { budget, planned, earned, spent };
+  const upToToday = (kind) => siteCosts
+    .filter((e) => e.kind === kind && e.date <= todayIso)
+    .reduce((sum, e) => sum + e.amount, 0);
+  const labour = upToToday('labour');
+  const rental = upToToday('rental');
+  return { budget, planned, earned, contracts, labour, rental, spent: contracts + labour + rental };
 }
 
 /**

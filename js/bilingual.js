@@ -29,11 +29,13 @@ export const KA = {
   'Masons': 'კალატოზები',
   'Carpenters': 'დურგლები',
   'Steel fixers': 'არმატურის მომწყობები',
+  'Concrete workers': 'ბეტონის ჩამსხმელები',
   'Electricians': 'ელექტრიკოსები',
   'Plumbers': 'სანტექნიკოსები',
   'Tilers': 'მომპირკეთებლები',
   'Painters': 'მღებავები',
   'Labourers': 'დამხმარე მუშები',
+  'Daily workers': 'დღიური მუშები',
 
   // Report phrases
   'Site-wide': 'მთელი ობიექტი',

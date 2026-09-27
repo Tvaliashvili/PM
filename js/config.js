@@ -34,11 +34,22 @@ export const MANPOWER_TRADES = [
   { key: 'masons',       label: 'Masons' },
   { key: 'carpenters',   label: 'Carpenters' },
   { key: 'steel_fixers', label: 'Steel fixers' },
+  { key: 'concrete_workers', label: 'Concrete workers' },
   { key: 'electricians', label: 'Electricians' },
   { key: 'plumbers',     label: 'Plumbers' },
   { key: 'tilers',       label: 'Tilers' },
   { key: 'painters',     label: 'Painters' },
   { key: 'labourers',    label: 'Labourers' },
+  { key: 'day_workers',  label: 'Daily workers' }, // paid a fixed rate per day (see DAY_WORKER_KEY)
+];
+
+// Manpower trade whose headcount is paid per day (projects/daily_logs.day_rate).
+export const DAY_WORKER_KEY = 'day_workers';
+
+// Suggestions for the equipment-rental form (free text is allowed too).
+export const EQUIPMENT_SUGGESTIONS = [
+  'Drill', 'Concrete mixer', 'Concrete pump', 'Excavator', 'Mobile crane', 'Tower crane', 'Scaffolding',
+  'Generator', 'Plate compactor', 'Jackhammer', 'Welding machine', 'Truck', 'Forklift', 'Formwork',
 ];
 
 export const WEATHER_OPTIONS = ['Sunny', 'Cloudy', 'Rain', 'Heavy rain', 'Windy', 'Snow', 'Extreme heat'];
