@@ -1818,7 +1818,9 @@ function renderContractors() {
           <p class="text-white font-medium">${esc(c.name)}${c.name_ka ? ` <span class="text-slate-400 font-normal">· ${esc(c.name_ka)}</span>` : ''}</p>
           <p class="text-xs text-slate-500">${contact(c)}</p>
         </td>
-        <td class="num">${s?.items ?? 0}</td>
+        <td class="num">${s?.items
+          ? `<button type="button" class="link-count" data-contractor-jobs="${esc(c.id)}" title="See the jobs assigned">${s.items}</button>`
+          : 0}</td>
         <td class="num">${s?.onTime ?? 0}</td>
         <td class="num">${s?.late ? `${s.late} <span class="text-slate-500">(avg ${s.avgDaysLate} d)</span>` : 0}</td>
         <td class="num">${s?.overdue ? `<span class="variance-over">${s.overdue}</span>` : 0}</td>
@@ -1828,6 +1830,7 @@ function renderContractors() {
         <td class="num">${s?.paid ? money.format(s.paid) : '-'}</td>
         <td class="whitespace-nowrap">${contractorRating(s)}</td>
         <td class="text-right whitespace-nowrap">
+          <button type="button" class="table-action" data-contractor-jobs="${esc(c.id)}">Jobs</button>
           <button type="button" class="table-action" data-contractor-edit="${esc(c.id)}">Edit</button>
           <button type="button" class="table-action is-danger" data-contractor-delete="${esc(c.id)}">Delete</button>
         </td>
@@ -1902,7 +1905,57 @@ async function deleteContractor(contractorId) {
   loadSchedule(state.projectId);
 }
 
+// Pop-up with every timetable item assigned to one contractor.
+function openContractorJobs(contractorId) {
+  const c = state.contractors.find((x) => x.id === contractorId);
+  if (!c) return;
+  const today = todayISO();
+  const jobs = state.tasks
+    .filter((t) => t.contractor_id === c.id)
+    .sort((a, b) => a.planned_start.localeCompare(b.planned_start));
+  const s = contractorPerformance(state.tasks, state.contractorDelays, state.payments, today).get(c.id);
+
+  $('#contractor-jobs-title').textContent = `Jobs - ${c.name}`;
+  $('#contractor-jobs-sub').textContent = [c.name_ka, c.trade].filter(Boolean).join(' · ');
+  $('#contractor-jobs-summary').innerHTML = [
+    statTile('Jobs', String(jobs.length), s ? `${s.onTime} on time · ${s.late} late` : ''),
+    statTile('Overdue', String(s?.overdue ?? 0), 'Past planned finish', s?.overdue ? 'negative' : ''),
+    statTile('Budget', money.format(s?.budget ?? 0), 'Their items'),
+    statTile('Paid', money.format(s?.paid ?? 0),
+      s?.budget ? `${Math.round(((s.paid ?? 0) / s.budget) * 100)}% of budget` : ''),
+  ].join('');
+
+  $('#contractor-jobs-list').innerHTML = jobs.length ? `
+    <table class="data-table">
+      <thead>
+        <tr><th>Work item</th><th>Dates</th><th class="num">Done</th><th class="num">Budget</th><th class="num">Paid</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        ${jobs.map((t) => {
+          const pct = Math.round(completionOf(t) * 100);
+          return `
+            <tr>
+              <td class="task-name">${esc(t.name)}${t.name_ka && t.name_ka !== t.name ? `<span class="block text-xs text-slate-500">${esc(t.name_ka)}</span>` : ''}</td>
+              <td class="whitespace-nowrap">${esc(formatDate(t.planned_start))} → ${esc(formatDate(t.planned_finish))}</td>
+              <td class="num">
+                ${pct}%
+                <div class="task-pct-bar"><div style="width:${pct}%"></div></div>
+              </td>
+              <td class="num">${Number(t.budget) ? money.format(t.budget) : '-'}</td>
+              <td class="num">${paidOn(t.id) ? money.format(paidOn(t.id)) : '-'}</td>
+              <td class="whitespace-nowrap">${taskStateChip(t, taskState(t, today))}</td>
+            </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`
+    : '<div class="empty-state">No jobs assigned yet - pick this contractor in the Contractor column on the Timetable.</div>';
+  openModal('modal-contractor-jobs');
+}
+
 function onContractorsClick(e) {
+  const jobs = e.target.closest('[data-contractor-jobs]');
+  if (jobs) return openContractorJobs(jobs.dataset.contractorJobs);
+
   const edit = e.target.closest('[data-contractor-edit]');
   if (edit) return openContractorModal(state.contractors.find((c) => c.id === edit.dataset.contractorEdit));
 

@@ -753,6 +753,22 @@
   </dialog>
 
   <!-- Payments for one item -->
+  <!-- A contractor's assigned jobs -->
+  <dialog id="modal-contractor-jobs" class="modal" aria-labelledby="contractor-jobs-title">
+    <div class="modal-header">
+      <div class="min-w-0">
+        <h2 id="contractor-jobs-title">Jobs</h2>
+        <p id="contractor-jobs-sub" class="text-xs text-slate-500"></p>
+      </div>
+      <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body space-y-4">
+      <div id="contractor-jobs-summary" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+      <div id="contractor-jobs-list" class="overflow-x-auto"></div>
+      <p class="text-xs text-slate-500">Assign or change jobs with the Contractor column on the Timetable.</p>
+    </div>
+  </dialog>
+
   <dialog id="modal-payments" class="modal" aria-labelledby="payments-title">
     <div class="modal-header">
       <h2 id="payments-title">Payments</h2>
