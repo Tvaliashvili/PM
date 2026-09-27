@@ -49,42 +49,66 @@ export class GeminiError extends Error {
 
 /** Calls Gemini with a response schema and returns the parsed JSON. Throws GeminiError. */
 export async function generateJson(
-  { systemPrompt, userText, schema, temperature = 0.3 }:
-  { systemPrompt: string; userText: string; schema: unknown; temperature?: number },
-): Promise<{ result: any; model: string }> {
+  { systemPrompt, userText, schema, temperature = 0.3, quick = false }:
+  { systemPrompt: string; userText: string; schema: unknown; temperature?: number; quick?: boolean },
+): Promise<{ result: any; model: string; skipped: string[] }> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey) {
     console.error("GEMINI_API_KEY secret is not set");
     throw new GeminiError("AI service is not configured", 500);
   }
 
-  const body = JSON.stringify({
+  // quick: simple tasks (e.g. translating a sentence) skip the model's long "thinking" step.
+  const request = (lowThinking: boolean) => JSON.stringify({
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: [{ role: "user", parts: [{ text: userText }] }],
-    generationConfig: { temperature, responseMimeType: "application/json", responseSchema: schema },
+    generationConfig: {
+      temperature,
+      responseMimeType: "application/json",
+      responseSchema: schema,
+      ...(lowThinking ? { thinkingConfig: { thinkingLevel: "low" } } : {}),
+    },
   });
+  let body = request(quick);
 
   let res!: Response;
   let data: any = {};
   let model = GEMINI_MODELS[0];
+  const skipped: string[] = []; // "model status (ms)" for each failed attempt
 
   // Two passes over the model list; Gemini's "high demand" 503s are usually brief.
   attempts: for (let pass = 0; pass < 2; pass++) {
     if (pass > 0) await new Promise((r) => setTimeout(r, 2000));
     for (model of GEMINI_MODELS) {
+      const started = Date.now();
       res = await fetch(geminiUrl(model), {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
         body,
       });
       data = await res.json().catch(() => ({}));
+      if (res.status === 400 && body !== request(false)) {
+        // This model doesn't take the thinking setting: ask it again without.
+        skipped.push(`${model} 400 thinkingConfig (${Date.now() - started}ms)`);
+        body = request(false);
+        res = await fetch(geminiUrl(model), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+          body,
+        });
+        data = await res.json().catch(() => ({}));
+      }
       if (!RETRYABLE.has(res.status)) break attempts;
       console.warn(`Gemini ${model} returned ${res.status}, trying next model`);
+      skipped.push(`${model} ${res.status} (${Date.now() - started}ms)`);
     }
   }
 
   if (!res.ok) {
     console.error(`Gemini API error ${res.status}:`, data?.error?.message);
+    if (res.status === 429) {
+      throw new GeminiError("Gemini usage limit reached for now — try again later (the free Gemini plan has a daily limit)", 429);
+    }
     if (RETRYABLE.has(res.status)) throw new GeminiError("Gemini is busy — try again in a minute", 503);
     if (res.status === 400 || res.status === 403) throw new GeminiError("AI service is not configured correctly", 500);
     throw new GeminiError(`Gemini API error (${res.status})`, 502);
@@ -97,7 +121,7 @@ export async function generateJson(
 
   const text = (candidate?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("");
   try {
-    return { result: JSON.parse(text), model };
+    return { result: JSON.parse(text), model, skipped };
   } catch {
     throw new GeminiError("Gemini returned an unreadable answer", 502);
   }

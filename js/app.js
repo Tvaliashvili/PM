@@ -33,6 +33,7 @@ const state = {
   contractors: [],      // this project's contractors
   siteLogs: [],         // every daily log's date, manpower and day rate (daily-worker pay)
   rentals: [],          // equipment_rentals
+  delays: [],           // every delay on the project, newest first
   siteCosts: [],        // labourCosts() + rentalCosts() entries
   progress: null,       // scheduleProgress() result
 };
@@ -249,6 +250,7 @@ async function selectProject(projectId) {
   state.siteLogs = [];
   state.rentals = [];
   state.siteCosts = [];
+  state.delays = [];
   setProjectActionsEnabled(Boolean(state.projectId));
 
   const project = currentProject();
@@ -676,6 +678,7 @@ function renderScheduleViews() {
   renderSchedule();
   renderCosts();
   renderContractors();
+  renderDelays(); // contractor names are known now
   if (!$('#modal-payments').open) return;
   renderPaymentsList();
 }
@@ -954,7 +957,7 @@ async function refreshDashboard(projectId) {
   // The Spent vs Budget card is updated by renderCosts() from the timetable.
   const [delays, logs] = await Promise.all([
     db.from('delays')
-      .select('id, delay_cause, duration_days, description, description_en, created_at, flats(block, flat_number)')
+      .select('id, delay_cause, duration_days, description, description_en, created_at, flat_id, contractor_id, flats(block, flat_number)')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false }),
     db.from('daily_logs')
@@ -976,8 +979,117 @@ async function refreshDashboard(projectId) {
   $('#kpi-delays').textContent = delays.data.length;
   $('#kpi-delays-meta').textContent = `${days.toLocaleString()} ${days === 1 ? 'day' : 'days'} lost`;
 
+  state.delays = delays.data;
   renderRecentLogs(logs.data);
   renderRecentDelays(delays.data.slice(0, 5));
+  renderDelays();
+}
+
+// ---------- Delays page ----------
+// Local calendar date of a delay (stored as a timestamp).
+const delayDate = (d) => new Date(d.created_at).toLocaleDateString('en-CA');
+
+// Horizontal bars with the figure written beside each one.
+function barList(entries, unit) {
+  if (!entries.length) return '<div class="empty-state">Nothing recorded.</div>';
+  const max = Math.max(...entries.map(([, v]) => v));
+  return `<div class="bar-list">${entries.map(([label, v, sub]) => `
+    <div class="bar-list-row">
+      <span class="bar-list-label">${esc(label)}${sub ? ` <span class="text-slate-500">${esc(sub)}</span>` : ''}</span>
+      <span class="bar-list-track"><span class="bar-list-fill" style="width:${(v / max) * 100}%"></span></span>
+      <span class="bar-list-value">${v} ${unit}</span>
+    </div>`).join('')}</div>`;
+}
+
+function renderDelays() {
+  const delays = state.delays;
+  const rooms = hasRooms(currentProject());
+  const days = delays.reduce((sum, d) => sum + Number(d.duration_days || 0), 0);
+  const thisMonth = todayISO().slice(0, 7);
+  const monthDays = delays.filter((d) => delayDate(d).startsWith(thisMonth))
+    .reduce((sum, d) => sum + Number(d.duration_days || 0), 0);
+
+  const byCause = new Map();
+  const byContractor = new Map();
+  for (const d of delays) {
+    const n = Number(d.duration_days || 0);
+    const c = byCause.get(d.delay_cause) ?? [0, 0];
+    byCause.set(d.delay_cause, [c[0] + n, c[1] + 1]);
+    const key = d.contractor_id ? contractorName(d.contractor_id) : 'No contractor named';
+    const k = byContractor.get(key) ?? [0, 0];
+    byContractor.set(key, [k[0] + n, k[1] + 1]);
+  }
+  const sorted = (m) => [...m].sort((a, b) => b[1][0] - a[1][0])
+    .map(([label, [v, count]]) => [label, v, `· ${count}×`]);
+  const top = sorted(byCause)[0];
+
+  $('#delays-summary').innerHTML = [
+    statTile('Delays', String(delays.length), delays.length ? `latest ${formatDate(delayDate(delays[0]))}` : 'None recorded'),
+    statTile('Days lost', String(days), 'All time', days ? 'negative' : ''),
+    statTile('This month', `${monthDays} ${monthDays === 1 ? 'day' : 'days'}`, 'Days lost this month'),
+    statTile('Main cause', top ? top[0] : '—', top ? `${top[1]} days` : ''),
+  ].join('');
+
+  $('#delays-by-cause').innerHTML = barList(sorted(byCause), 'd');
+  $('#delays-by-contractor').innerHTML = barList(sorted(byContractor), 'd');
+
+  if (!delays.length) {
+    $('#delays-table').innerHTML = '<div class="empty-state">No delays yet — click Log Delay.</div>';
+    return;
+  }
+  const rows = delays.map((d) => {
+    const where = d.flats ? `Block ${d.flats.block} · Room ${d.flats.flat_number}` : 'Site-wide';
+    return `
+      <tr>
+        <td class="whitespace-nowrap">${esc(formatDate(delayDate(d)))}</td>
+        <td>${esc(d.delay_cause)}</td>
+        ${rooms ? `<td>${esc(where)}</td>` : ''}
+        <td>${d.contractor_id ? esc(contractorName(d.contractor_id)) : '<span class="text-slate-500">—</span>'}</td>
+        <td class="num font-semibold text-rose-400">${Number(d.duration_days)}</td>
+        <td class="max-w-md">
+          ${d.description_en ? `<p>${esc(d.description_en)}</p>` : ''}
+          ${d.description ? `<p class="text-slate-500">${esc(d.description)}</p>` : ''}
+          ${!d.description && !d.description_en ? '<span class="text-slate-500">—</span>' : ''}
+        </td>
+        <td class="text-right whitespace-nowrap">
+          <button type="button" class="table-action" data-delay-edit="${esc(d.id)}">Edit</button>
+          <button type="button" class="table-action is-danger" data-delay-delete="${esc(d.id)}">Delete</button>
+        </td>
+      </tr>`;
+  }).join('');
+  $('#delays-table').innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Date</th><th>Cause</th>${rooms ? '<th>Room</th>' : ''}<th>Contractor</th>
+          <th class="num">Days</th><th>Description</th><th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr><td colspan="${rooms ? 4 : 3}">Total</td><td class="num">${days}</td><td colspan="2"></td></tr>
+      </tfoot>
+    </table>`;
+}
+
+async function onDelaysTableClick(e) {
+  const edit = e.target.closest('[data-delay-edit]');
+  if (edit) {
+    openDelayModal(state.delays.find((d) => d.id === edit.dataset.delayEdit));
+    return;
+  }
+  const del = e.target.closest('[data-delay-delete]');
+  if (!del) return;
+  const delay = state.delays.find((d) => d.id === del.dataset.delayDelete);
+  if (!delay || !confirm(`Delete the ${delay.delay_cause} delay of ${formatDate(delayDate(delay))} (${delay.duration_days} days)?`)) return;
+  const { error } = await db.from('delays').delete().eq('id', delay.id);
+  if (error) {
+    toast(`Could not delete: ${error.message}`, 'error');
+    return;
+  }
+  toast('Delay deleted.', 'success');
+  refreshDashboard(state.projectId);
+  if (delay.contractor_id) loadSchedule(state.projectId);
 }
 
 function renderRecentLogs(logs) {
@@ -2024,16 +2136,28 @@ async function saveDailyLog(e) {
 }
 
 // ---------- Delay ----------
-function openDelayModal() {
+function openDelayModal(delay = null) {
   if (!requireProject()) return;
   const form = $('#form-delay');
+  const f = form.elements;
   form.reset();
+  $('#delay-title').textContent = delay ? 'Edit Delay' : 'Log Delay';
+  f.id.value = delay?.id ?? '';
+  f.delay_date.value = delay ? delayDate(delay) : todayISO();
+  f.delay_date.max = todayISO();
   $('#delay-flat').innerHTML = '<option value="">Site-wide (no specific room)</option>'
     + state.flats.map((f) => `
       <option value="${esc(f.id)}">Block ${esc(f.block)} · Room ${esc(f.flat_number)} (${esc(floorLabel(f.floor))})</option>
     `).join('');
   $('#delay-flat-field').classList.toggle('hidden', !hasRooms(currentProject()));
-  $('#delay-contractor').innerHTML = contractorOptions('');
+  $('#delay-contractor').innerHTML = contractorOptions(delay?.contractor_id ?? '');
+  if (delay) {
+    f.flat_id.value = delay.flat_id ?? '';
+    f.delay_cause.value = delay.delay_cause;
+    f.duration_days.value = delay.duration_days;
+    f.description.value = delay.description ?? '';
+    f.description_en.value = delay.description_en ?? '';
+  }
   showFormError(form, '');
   openModal('modal-delay');
 }
@@ -2088,17 +2212,21 @@ async function saveDelay(e) {
     if (err) toast(`Saved without translation — ${err}`, 'error');
   }
 
+  const id = fd.get('id');
   const row = {
-    project_id:     state.projectId,
     flat_id:        fd.get('flat_id') || null,
     contractor_id:  fd.get('contractor_id') || null,
     delay_cause:    fd.get('delay_cause'),
     duration_days:  days,
     description:    f.description.value.trim() || null,
     description_en: f.description_en.value.trim() || null,
+    // Stored as a timestamp; midday keeps the chosen calendar day in any time zone offset.
+    created_at:     new Date(`${fd.get('delay_date')}T12:00`).toISOString(),
   };
 
-  const { error } = await db.from('delays').insert(row);
+  const { error } = id
+    ? await db.from('delays').update(row).eq('id', id)
+    : await db.from('delays').insert({ ...row, project_id: state.projectId });
   setBusy(btn, false);
 
   if (error) {
@@ -2107,9 +2235,9 @@ async function saveDelay(e) {
   }
 
   closeModal('modal-delay');
-  toast('Delay recorded.', 'success');
+  toast(id ? 'Delay updated.' : 'Delay recorded.', 'success');
   refreshDashboard(state.projectId);
-  if (row.contractor_id) loadSchedule(state.projectId); // contractor delay days
+  loadSchedule(state.projectId); // contractor delay days
 }
 
 // =============================================================
@@ -2203,10 +2331,11 @@ initNavigation();
 initModals();
 setProjectActionsEnabled(false);
 
-$('#btn-new-delay').addEventListener('click', openDelayModal);
+$('#btn-new-delay').addEventListener('click', () => openDelayModal());
 $('#form-daily-log').addEventListener('submit', saveDailyLog);
 $('#form-delay').addEventListener('submit', saveDelay);
 $('#btn-translate-delay').addEventListener('click', onTranslateDelay);
+$('#delays-table').addEventListener('click', onDelaysTableClick);
 $('#btn-add-rental').addEventListener('click', () => openRentalModal());
 $('#form-rental').addEventListener('submit', saveRental);
 $('#form-rental').addEventListener('input', updateRentalTotal);

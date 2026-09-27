@@ -371,14 +371,30 @@
           <div class="module-header">
             <div>
               <h1 class="text-xl font-semibold text-white">Delays</h1>
-              <p class="text-sm text-slate-500">Causes, durations and affected rooms.</p>
+              <p class="text-sm text-slate-500">Every delay on this project — what caused it, who, and how many days were lost.</p>
             </div>
             <button id="btn-new-delay" class="btn btn-primary">
               <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
               Log Delay
             </button>
           </div>
-          <div id="delays-container" class="panel empty-state">Delay register will appear here.</div>
+          <div class="space-y-4">
+            <div id="delays-summary" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div class="panel">
+                <h2 class="panel-title">Days lost by cause</h2>
+                <div id="delays-by-cause"></div>
+              </div>
+              <div class="panel">
+                <h2 class="panel-title">Days lost by contractor</h2>
+                <div id="delays-by-contractor"></div>
+              </div>
+            </div>
+            <div class="panel">
+              <h2 class="panel-title">Delay register</h2>
+              <div id="delays-table" class="overflow-x-auto"></div>
+            </div>
+          </div>
         </section>
 
         <!-- PDF REPORTS -->
@@ -959,11 +975,16 @@
   <!-- New delay -->
   <dialog id="modal-delay" class="modal" aria-labelledby="delay-title">
     <form id="form-delay">
+      <input type="hidden" name="id">
       <div class="modal-header">
         <h2 id="delay-title">Log Delay</h2>
         <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
       </div>
       <div class="modal-body space-y-4">
+        <label class="block">
+          <span class="form-label">Date</span>
+          <input name="delay_date" type="date" required class="input-dark w-full">
+        </label>
         <label id="delay-flat-field" class="block">
           <span class="form-label">Affected room</span>
           <select id="delay-flat" name="flat_id" class="select-dark w-full"></select>

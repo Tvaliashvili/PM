@@ -30,14 +30,15 @@ serveJson(async (payload: { ka?: string; en?: string; cause?: string }) => {
   if (!ka && !en) return json({ error: "Write a description first" }, 400);
   if (ka.length + en.length > MAX_TEXT_CHARS) return json({ error: "Description is too long" }, 413);
 
-  const { result, model } = await generateJson({
+  const { result, model, skipped } = await generateJson({
     systemPrompt: SYSTEM_PROMPT,
     userText: JSON.stringify({ cause: payload.cause ?? null, ka: ka || null, en: en || null }, null, 2),
     schema: SCHEMA,
     temperature: 0.2,
+    quick: true,
   });
 
   const out = { ka: String(result.ka ?? "").trim(), en: String(result.en ?? "").trim() };
   if (!out.ka || !out.en) return json({ error: "Gemini returned an empty translation" }, 502);
-  return json({ ...out, model });
+  return json({ ...out, model, ...(skipped.length ? { skipped } : {}) });
 });
