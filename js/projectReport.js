@@ -447,8 +447,8 @@ export async function buildProjectReport({
               <td class="num">${st.expected}%</td>
               <td class="num rpt-late">${st.actual}%</td>
               <td>${st.kind === 'not_started'
-    ? L(`უნდა დაწყებულიყო ${st.elapsed} დღის წინ - ჩაწერილია 0%`,
-      `Due to start ${st.elapsed} days ago - 0% recorded`)
+    ? L(`უნდა დაწყებულიყო ${st.elapsed} დღის წინ`,
+      `Due to start ${st.elapsed} days ago`)
     : L(`დღევანდელ გეგმას ${st.gap}%-ით ჩამორჩება`,
       `${st.gap}% short of where today's plan puts it`)}</td>
             </tr>`).join('')}
