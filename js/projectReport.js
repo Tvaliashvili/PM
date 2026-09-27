@@ -5,7 +5,7 @@
 import {
   taskState, completionOf, costPosition, contractorPerformance, plannedSpendByMonth, actualSpendByMonth,
 } from './schedule.js';
-import { bi, dateKa, dateEn, signatureHtml } from './bilingual.js';
+import { bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
 import { MANPOWER_TRADES, REPORT_AUTHOR } from './config.js';
 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
@@ -85,7 +85,10 @@ export async function buildProjectReport({
   const { logs, delays } = await fetchExtras(db, project.id, today);
   const cost = costPosition(tasks, payments, today);
   const perf = contractorPerformance(tasks, contractorDelays, payments, today); // all-time delays
-  const nameOf = (id) => contractors.find((c) => c.id === id)?.name ?? '—';
+  const nameOf = (id) => {
+    const c = contractors.find((x) => x.id === id);
+    return c ? biName(c.name, c.name_ka) : '—';
+  };
   const paidOn = (taskId) => payments.filter((p) => p.task_id === taskId).reduce((s, p) => s + Number(p.amount), 0);
   const m = (n) => money.format(n);
 
@@ -96,7 +99,9 @@ export async function buildProjectReport({
         <p class="rpt-eyebrow">პროექტის ანგარიში · Project Report</p>
         <h1>${esc(project.name)}</h1>
         <p class="rpt-muted">${esc([project.location, project.currency].filter(Boolean).join(' · '))}</p>
-        ${project.client_name ? `<p class="rpt-client">დამკვეთი · Client: <strong>${esc(project.client_name)}</strong></p>` : ''}
+        ${project.client_name || project.client_name_ka
+          ? `<p class="rpt-client">დამკვეთი · Client: <strong>${esc(biName(project.client_name, project.client_name_ka))}</strong></p>`
+          : ''}
       </div>
       <div class="rpt-header-date">
         <p class="rpt-eyebrow">თარიღი · Date</p>
@@ -215,7 +220,7 @@ export async function buildProjectReport({
               const s = perf.get(c.id);
               return `
                 <tr>
-                  <td><strong>${esc(c.name)}</strong>${c.trade ? `<br><span class="rpt-muted">${esc(c.trade)}</span>` : ''}</td>
+                  <td><strong>${esc(biName(c.name, c.name_ka))}</strong>${c.trade ? `<br><span class="rpt-muted">${esc(c.trade)}</span>` : ''}</td>
                   <td class="num">${s?.items ?? 0}</td>
                   <td class="num">${s?.onTime ?? 0}</td>
                   <td class="num">${s?.late ?? 0}</td>

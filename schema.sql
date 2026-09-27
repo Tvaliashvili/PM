@@ -170,6 +170,9 @@ alter table public.daily_logs
 
 -- The client (employer) who hired the company for this project.
 alter table public.projects add column if not exists client_name text;
+-- Names are spelled by hand in both languages (documents are bilingual).
+alter table public.projects add column if not exists client_name_ka text;
+alter table public.contractors add column if not exists name_ka text;
 
 -- Per-project currency (amounts are stored as plain numbers in that currency).
 alter table public.projects

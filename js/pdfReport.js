@@ -4,7 +4,7 @@
 // (via Edge Function) → html2pdf
 // =============================================================
 import { MANPOWER_TRADES, REPORT_AUTHOR } from './config.js';
-import { ka, bi, dateKa, dateEn, signatureHtml } from './bilingual.js';
+import { ka, bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
 
 const SUMMARY_FUNCTION = 'daily-summary';
 
@@ -126,7 +126,8 @@ function buildReport({ project, day, logs, delays, manpower, summary, progress, 
 
   set('project', project.name);
   set('location', project.location || '');
-  set('client', project.client_name ? `დამკვეთი / Client: ${project.client_name}` : '');
+  const client = biName(project.client_name, project.client_name_ka);
+  set('client', client ? `დამკვეთი / Client: ${client}` : '');
   set('date-ka', dateKa(day.date));
   set('date-en', dateEn(day.date));
   set('weather', weather || bi('Not recorded'));
@@ -195,7 +196,8 @@ export async function generateDailyReport({ db, project, progress, userEmail }) 
     project: {
       name: project.name,
       location: project.location,
-      client: project.client_name, // the company that hired us — the report's main reader
+      // the company that hired us — the report's main reader; spelled by hand in both languages
+      client: { en: project.client_name, ka: project.client_name_ka },
       total_rooms: project.total_flats,
     },
     // Timetable position (progress is weighted by planned duration).

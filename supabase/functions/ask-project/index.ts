@@ -15,7 +15,7 @@ const MAX_CONTEXT_CHARS = 400_000; // oldest logs are dropped beyond this
 const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one residential project using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget), contractors, delays and payments.
 
 Rules:
-- Answer in the same language as the question (Georgian or English).
+- Answer in the same language as the question (Georgian or English). Client and contractor names are spelled by hand in both languages (client_name / client_name_ka, name / name_ka): use the Georgian spelling in Georgian answers and the English one in English answers.
 - Be specific: give dates, figures, names and units. Keep it short; for lists, put each point on its own line starting with "- ".
 - When you add things up (workers, hours, days, money), say what you counted.
 - Use only the data. If it doesn't contain the answer, say so plainly and, if useful, say what information is missing. Never invent facts.
@@ -36,11 +36,11 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
 
   const sb = userClient(req);
   const [project, tasks, contractors, logs, delays, payments] = await Promise.all([
-    sb.from("projects").select("name, location, client_name, start_date, end_date, currency").eq("id", projectId).single(),
+    sb.from("projects").select("name, location, client_name, client_name_ka, start_date, end_date, currency").eq("id", projectId).single(),
     sb.from("schedule_tasks")
       .select("id, name, planned_start, planned_finish, progress_pct, done_at, contractor_id, budget")
       .eq("project_id", projectId).order("planned_start"),
-    sb.from("contractors").select("id, name, trade").eq("project_id", projectId),
+    sb.from("contractors").select("id, name, name_ka, trade").eq("project_id", projectId),
     sb.from("daily_logs")
       .select("log_date, weather, manpower, notes, notes_en")
       .eq("project_id", projectId).order("log_date", { ascending: false }).limit(1000),

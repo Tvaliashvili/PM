@@ -73,7 +73,10 @@ export function signatureHtml(author) {
     </div>`;
 }
 
-const KA_MONTHS =['იანვარი', 'თებერვალი', 'მარტი', 'აპრილი', 'მაისი', 'ივნისი',
+/** A name spelled in both languages: "ქართული / English", or whichever exists. */
+export const biName = (en, ka) => (en && ka && en !== ka ? `${ka} / ${en}` : (ka || en || ''));
+
+const KA_MONTHS = ['იანვარი', 'თებერვალი', 'მარტი', 'აპრილი', 'მაისი', 'ივნისი',
   'ივლისი', 'აგვისტო', 'სექტემბერი', 'ოქტომბერი', 'ნოემბერი', 'დეკემბერი'];
 const KA_WEEKDAYS = ['კვირა', 'ორშაბათი', 'სამშაბათი', 'ოთხშაბათი', 'ხუთშაბათი', 'პარასკევი', 'შაბათი'];
 

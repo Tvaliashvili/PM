@@ -523,10 +523,16 @@
           <span class="form-label">Location</span>
           <input name="location" maxlength="120" class="input-dark w-full" placeholder="e.g. Vake, Tbilisi">
         </label>
-        <label class="block">
-          <span class="form-label">Client</span>
-          <input name="client_name" maxlength="160" class="input-dark w-full" placeholder="e.g. Archi Group">
-        </label>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="form-label">Client — English</span>
+            <input name="client_name" maxlength="160" class="input-dark w-full" placeholder="e.g. Archi Group">
+          </label>
+          <label class="block">
+            <span class="form-label">Client — ქართული</span>
+            <input name="client_name_ka" maxlength="160" class="input-dark w-full" placeholder="მაგ. არქი ჯგუფი">
+          </label>
+        </div>
         <label class="block">
           <span class="form-label">Currency</span>
           <select name="currency" class="select-dark w-full" data-currency-options></select>
@@ -557,9 +563,13 @@
             <span class="form-label">Location</span>
             <input name="location" maxlength="120" class="input-dark w-full">
           </label>
-          <label class="block sm:col-span-2">
-            <span class="form-label">Client</span>
+          <label class="block">
+            <span class="form-label">Client — English</span>
             <input name="client_name" maxlength="160" class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Client — ქართული</span>
+            <input name="client_name_ka" maxlength="160" class="input-dark w-full">
           </label>
           <label class="block">
             <span class="form-label">Start date</span>
@@ -702,10 +712,14 @@
         <fieldset class="space-y-3">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label class="block">
-              <span class="form-label">Company / name</span>
-              <input name="name" required maxlength="120" class="input-dark w-full">
+              <span class="form-label">Company name — English</span>
+              <input name="name" required maxlength="120" class="input-dark w-full" placeholder="e.g. Betoni Ltd">
             </label>
             <label class="block">
+              <span class="form-label">Company name — ქართული</span>
+              <input name="name_ka" maxlength="120" class="input-dark w-full" placeholder="მაგ. შპს ბეტონი">
+            </label>
+            <label class="block sm:col-span-2">
               <span class="form-label">Trade</span>
               <input name="trade" list="contractor-trades" maxlength="60" class="input-dark w-full" placeholder="e.g. Concrete">
               <datalist id="contractor-trades"></datalist>

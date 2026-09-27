@@ -213,7 +213,7 @@ function showSetupNotice() {
 async function loadProjects() {
   const { data, error } = await db
     .from('projects')
-    .select('id, name, location, client_name, total_flats, created_at, start_date, end_date, currency')
+    .select('id, name, location, client_name, client_name_ka, total_flats, created_at, start_date, end_date, currency')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -254,6 +254,9 @@ async function selectProject(projectId) {
   ]);
 }
 
+// The UI is English: show the English client name, else the Georgian one.
+const clientOf = (p) => p?.client_name || p?.client_name_ka || '';
+
 const currentProject = () => state.projects.find((p) => p.id === state.projectId);
 
 // Project name/location wherever it's shown in the workspace.
@@ -262,10 +265,10 @@ function applyProjectHeader(project) {
   navLabel.textContent = project?.name ?? '';
   navLabel.classList.toggle('hidden', !project);
   $('#topbar-project-name').textContent = project?.name ?? '';
-  $('#topbar-project-location').textContent = [project?.location, project?.client_name && `Client: ${project.client_name}`]
+  $('#topbar-project-location').textContent = [project?.location, clientOf(project) && `Client: ${clientOf(project)}`]
     .filter(Boolean).join(' · ');
   $('#dashboard-subtitle').textContent = project
-    ? [project.name, project.location, project.client_name && `Client: ${project.client_name}`].filter(Boolean).join(' · ')
+    ? [project.name, project.location, clientOf(project) && `Client: ${clientOf(project)}`].filter(Boolean).join(' · ')
     : 'Select a project to view its status.';
 }
 
@@ -314,7 +317,7 @@ async function renderProjectList() {
         <button type="button" class="project-card-open" data-open-project="${esc(p.id)}">
           <p class="pr-8 font-semibold text-white truncate">${esc(p.name)}</p>
           <p class="text-sm text-slate-500 truncate">${esc(p.location || 'No location set')} · ${esc(p.currency ?? DEFAULT_CURRENCY)}</p>
-          ${p.client_name ? `<p class="text-xs text-slate-400 truncate">Client: ${esc(p.client_name)}</p>` : ''}
+          ${clientOf(p) ? `<p class="text-xs text-slate-400 truncate">Client: ${esc(clientOf(p))}</p>` : ''}
           <p class="text-xs text-slate-500 mt-1">${p.start_date && p.end_date
             ? `${esc(formatDate(p.start_date))} → ${esc(formatDate(p.end_date))}`
             : 'Dates not set'}</p>
@@ -386,6 +389,7 @@ async function saveProject(e) {
       name: fd.get('name').trim(),
       location: fd.get('location').trim() || null,
       client_name: fd.get('client_name').trim() || null,
+      client_name_ka: fd.get('client_name_ka').trim() || null,
       currency: fd.get('currency') || DEFAULT_CURRENCY,
     })
     .select('id')
@@ -622,7 +626,7 @@ async function loadSchedule(projectId) {
       .select('contractor_id, duration_hours')
       .eq('project_id', projectId),
     db.from('contractors')
-      .select('id, name, trade, contact_person, phone, email, notes')
+      .select('id, name, name_ka, trade, contact_person, phone, email, notes')
       .eq('project_id', projectId)
       .order('name'),
   ]);
@@ -1080,6 +1084,7 @@ function openEditProjectModal() {
   f.name.value = project.name;
   f.location.value = project.location ?? '';
   f.client_name.value = project.client_name ?? '';
+  f.client_name_ka.value = project.client_name_ka ?? '';
   f.start_date.value = project.start_date ?? '';
   f.end_date.value = project.end_date ?? '';
   f.currency.value = project.currency ?? DEFAULT_CURRENCY;
@@ -1098,6 +1103,7 @@ async function saveEditProject(e) {
     name: fd.get('name').trim(),
     location: fd.get('location').trim() || null,
     client_name: fd.get('client_name').trim() || null,
+    client_name_ka: fd.get('client_name_ka').trim() || null,
     start_date: fd.get('start_date') || null,
     end_date: fd.get('end_date') || null,
     currency: fd.get('currency') || DEFAULT_CURRENCY,
@@ -1384,7 +1390,7 @@ async function onPaymentsClick(e) {
 // Contractors — each project has its own (contractors.project_id).
 // Loaded with the project in loadSchedule(); performance is per project.
 // =============================================================
-const CONTRACTOR_FIELDS = ['name', 'trade', 'contact_person', 'phone', 'email', 'notes'];
+const CONTRACTOR_FIELDS = ['name', 'name_ka', 'trade', 'contact_person', 'phone', 'email', 'notes'];
 
 function contractorRating(s) {
   if (!s || !s.items) return '<span class="text-slate-500">No jobs yet</span>';
@@ -1411,7 +1417,7 @@ function renderContractors() {
     return `
       <tr>
         <td>
-          <p class="text-white font-medium">${esc(c.name)}</p>
+          <p class="text-white font-medium">${esc(c.name)}${c.name_ka ? ` <span class="text-slate-400 font-normal">· ${esc(c.name_ka)}</span>` : ''}</p>
           <p class="text-xs text-slate-500">${contact(c)}</p>
         </td>
         <td class="num">${s?.items ?? 0}</td>
