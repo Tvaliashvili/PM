@@ -10,7 +10,7 @@ import { generateJson, json, serveJson } from "../_shared/gemini.ts";
 
 const MAX_TEXT_CHARS = 5_000;
 
-const SYSTEM_PROMPT = `You keep delay records for a construction project in Georgia. Every record is stored in Georgian and English. You receive a short delay description written by the site team — in Georgian ("ka"), English ("en") or both — and may be given the delay cause for context.
+const SYSTEM_PROMPT = `You keep delay records for a construction project in Georgia. Every record is stored in Georgian and English. You receive a short delay description written by the site team - in Georgian ("ka"), English ("en") or both - and may be given the delay cause for context.
 
 Return:
 - ka: the description as clean, professional Georgian as used in Georgian construction reporting. If Georgian text was given, fix its spelling, grammar and punctuation and expand obvious abbreviations, but keep its meaning. If only English was given, translate it.

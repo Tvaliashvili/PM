@@ -1,5 +1,5 @@
 // =============================================================
-// CPMG PM — main app logic
+// CPMG PM - main app logic
 // =============================================================
 import {
   SUPABASE_URL, SUPABASE_KEY, CURRENCIES, DEFAULT_CURRENCY,
@@ -481,7 +481,7 @@ function renderUnits() {
   ].join('');
 
   if (!units.length) {
-    $('#units-table').innerHTML = '<div class="empty-state">No rooms yet — click Add Room.</div>';
+    $('#units-table').innerHTML = '<div class="empty-state">No rooms yet - click Add Room.</div>';
     return;
   }
 
@@ -490,8 +490,8 @@ function renderUnits() {
       <td class="font-medium text-white whitespace-nowrap">${esc(u.flat_number)}</td>
       <td>${esc(u.block)}</td>
       <td class="whitespace-nowrap">${esc(floorLabel(u.floor))}</td>
-      <td>${u.unit_type ? esc(u.unit_type) : '<span class="text-slate-500">—</span>'}</td>
-      <td class="num">${u.area_m2 != null ? areaFormat.format(u.area_m2) : '—'}</td>
+      <td>${u.unit_type ? esc(u.unit_type) : '<span class="text-slate-500">-</span>'}</td>
+      <td class="num">${u.area_m2 != null ? areaFormat.format(u.area_m2) : '-'}</td>
       <td><span class="status-chip ${UNIT_STATUS_CHIP[u.status] ?? 'status-pending'}">${esc(UNIT_STATUSES[u.status] ?? u.status)}</span></td>
       <td class="max-w-[16rem] truncate text-slate-400" title="${esc(u.notes ?? '')}">${esc(u.notes ?? '')}</td>
       <td class="text-right whitespace-nowrap">
@@ -619,7 +619,7 @@ async function syncFlatCount(projectId) {
 }
 
 // =============================================================
-// Timetable (schedule_tasks) — drives progress, and doubles as the BOQ:
+// Timetable (schedule_tasks) - drives progress, and doubles as the BOQ:
 // each item has dates, a contractor, a budget and dated payments.
 // =============================================================
 const addDays = (iso, n) => {
@@ -715,14 +715,14 @@ function renderSchedule() {
   $('#schedule-summary').innerHTML = [
     statTile('Progress', `${p.actualPct}%`, `${p.doneCount} of ${p.count} items done`),
     statTile('Planned by today', `${p.plannedPct}%`,
-      !p.count ? '—' : planStatus(gap), gap < -5 ? 'negative' : ''),
+      !p.count ? '-' : planStatus(gap), gap < -5 ? 'negative' : ''),
     statTile('Overdue', String(p.overdue.length),
       p.overdue.length ? `Longest: ${p.overdue[0].daysLate} days late` : 'Nothing overdue', p.overdue.length ? 'negative' : ''),
     statTile('Remaining', `${100 - p.actualPct}%`, `${p.count - p.doneCount} items left`),
   ].join('');
 
   if (!state.tasks.length) {
-    $('#schedule-table').innerHTML = '<div class="empty-state">No items yet — click Add Item to build the timetable. Progress, the BOQ and cash flow are all calculated from it.</div>';
+    $('#schedule-table').innerHTML = '<div class="empty-state">No items yet - click Add Item to build the timetable. Progress, the BOQ and cash flow are all calculated from it.</div>';
     return;
   }
 
@@ -746,7 +746,7 @@ function renderSchedule() {
         <td class="whitespace-nowrap">${esc(formatDate(t.planned_start))}</td>
         <td class="whitespace-nowrap">${esc(formatDate(t.planned_finish))}</td>
         <td class="num">${durationDays(t)} d</td>
-        <td class="num">${Number(t.budget) ? money.format(t.budget) : '—'}</td>
+        <td class="num">${Number(t.budget) ? money.format(t.budget) : '-'}</td>
         <td class="whitespace-nowrap">${taskStateChip(t, s)}</td>
         <td class="text-right whitespace-nowrap">
           <button type="button" class="table-action" data-task-edit="${esc(t.id)}">Edit</button>
@@ -795,7 +795,7 @@ async function setTaskPercent(taskId, rawValue) {
 
 // Dropdown options: this project's contractors.
 function contractorOptions(selectedId) {
-  return '<option value="">— None —</option>'
+  return '<option value="">- None -</option>'
     + state.contractors.map((c) => `
       <option value="${esc(c.id)}"${c.id === selectedId ? ' selected' : ''}>
         ${esc(c.name)}${c.trade ? ` · ${esc(c.trade)}` : ''}
@@ -1029,14 +1029,14 @@ function renderDelays() {
     statTile('Delays', String(delays.length), delays.length ? `latest ${formatDate(delayDate(delays[0]))}` : 'None recorded'),
     statTile('Days lost', String(days), 'All time', days ? 'negative' : ''),
     statTile('This month', `${monthDays} ${monthDays === 1 ? 'day' : 'days'}`, 'Days lost this month'),
-    statTile('Main cause', top ? top[0] : '—', top ? `${top[1]} days` : ''),
+    statTile('Main cause', top ? top[0] : '-', top ? `${top[1]} days` : ''),
   ].join('');
 
   $('#delays-by-cause').innerHTML = barList(sorted(byCause), 'd');
   $('#delays-by-contractor').innerHTML = barList(sorted(byContractor), 'd');
 
   if (!delays.length) {
-    $('#delays-table').innerHTML = '<div class="empty-state">No delays yet — click Log Delay.</div>';
+    $('#delays-table').innerHTML = '<div class="empty-state">No delays yet - click Log Delay.</div>';
     return;
   }
   const rows = delays.map((d) => {
@@ -1046,12 +1046,12 @@ function renderDelays() {
         <td class="whitespace-nowrap">${esc(formatDate(delayDate(d)))}</td>
         <td>${esc(d.delay_cause)}</td>
         ${rooms ? `<td>${esc(where)}</td>` : ''}
-        <td>${d.contractor_id ? esc(contractorName(d.contractor_id)) : '<span class="text-slate-500">—</span>'}</td>
+        <td>${d.contractor_id ? esc(contractorName(d.contractor_id)) : '<span class="text-slate-500">-</span>'}</td>
         <td class="num font-semibold text-rose-400">${Number(d.duration_days)}</td>
         <td class="max-w-md">
           ${d.description_en ? `<p>${esc(d.description_en)}</p>` : ''}
           ${d.description ? `<p class="text-slate-500">${esc(d.description)}</p>` : ''}
-          ${!d.description && !d.description_en ? '<span class="text-slate-500">—</span>' : ''}
+          ${!d.description && !d.description_en ? '<span class="text-slate-500">-</span>' : ''}
         </td>
         <td class="text-right whitespace-nowrap">
           <button type="button" class="table-action" data-delay-edit="${esc(d.id)}">Edit</button>
@@ -1111,7 +1111,7 @@ function renderRecentLogs(logs) {
           <p class="text-slate-500 truncate">${esc(l.notes || 'No notes')}</p>
         </div>
         <div class="shrink-0 text-right text-xs text-slate-400">
-          <p>${esc(l.weather || '—')}</p>
+          <p>${esc(l.weather || '-')}</p>
           <p>${workers} on site</p>
         </div>
       </div>`;
@@ -1129,7 +1129,7 @@ function renderRecentDelays(delays) {
   const rooms = hasRooms(currentProject());
   el.innerHTML = delays.map((d) => {
     const where = !rooms ? '' : d.flats ? `Block ${d.flats.block} · Room ${d.flats.flat_number}` : 'Site-wide';
-    const text = [where, d.description_en || d.description].filter(Boolean).join(' — ');
+    const text = [where, d.description_en || d.description].filter(Boolean).join(' - ');
     return `
       <div class="py-2.5 flex items-start justify-between gap-3 text-sm">
         <div class="min-w-0">
@@ -1172,7 +1172,7 @@ function renderTimeline() {
   const end = parseDate(project.end_date);
   const today = parseDate(todayISO());
   const bars = [];
-  let dates = '<p class="text-slate-500">No start or completion date — add them with Edit project.</p>';
+  let dates = '<p class="text-slate-500">No start or completion date - add them with Edit project.</p>';
   let when = '';
 
   if (start && end) {
@@ -1203,7 +1203,7 @@ function renderTimeline() {
   const overdueList = p.overdue.length ? `
     <ul class="mt-3 space-y-1 text-xs">
       ${p.overdue.slice(0, 3).map((t) => `
-        <li class="text-rose-300">! ${esc(t.name)} — ${t.daysLate} days past planned finish</li>`).join('')}
+        <li class="text-rose-300">! ${esc(t.name)} - ${t.daysLate} days past planned finish</li>`).join('')}
       ${p.overdue.length > 3 ? `<li class="text-slate-500">and ${p.overdue.length - 3} more on the Timetable page</li>` : ''}
     </ul>` : '';
 
@@ -1215,7 +1215,7 @@ function renderTimeline() {
       </div>
     </div>
     ${bars.length ? `<div class="space-y-3">${bars.join('')}</div>` : ''}
-    ${p.count ? '' : '<p class="mt-3 text-slate-500">No timetable yet — add activities on the Timetable page to track progress.</p>'}
+    ${p.count ? '' : '<p class="mt-3 text-slate-500">No timetable yet - add activities on the Timetable page to track progress.</p>'}
     ${overdueList}
     ${when ? `<p class="mt-3 text-xs text-slate-500">${esc(when)}</p>` : ''}`;
 }
@@ -1282,7 +1282,7 @@ async function saveEditProject(e) {
 }
 
 // =============================================================
-// BOQ & cash flow — built from timetable items and their payments
+// BOQ & cash flow - built from timetable items and their payments
 // =============================================================
 const qtyFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 });
 const sumOf = (items, key) => items.reduce((sum, i) => sum + Number(i[key] || 0), 0);
@@ -1352,7 +1352,7 @@ function renderCosts() {
 
   // ---- BOQ table ----
   if (!state.tasks.length) {
-    $('#boq-table').innerHTML = '<div class="empty-state">No items yet — add them on the Timetable. Each timetable item can carry a budget and payments.</div>';
+    $('#boq-table').innerHTML = '<div class="empty-state">No items yet - add them on the Timetable. Each timetable item can carry a budget and payments.</div>';
   } else {
     const rows = state.tasks.map((t) => {
       const budget = Number(t.budget || 0);
@@ -1360,15 +1360,15 @@ function renderCosts() {
       const left = budget - paid;
       const qty = t.quantity != null
         ? `${qtyFormat.format(t.quantity)} ${esc(t.unit || '')}${t.rate != null ? ` × ${money2.format(t.rate)}` : ''}`
-        : '<span class="text-slate-500">—</span>';
+        : '<span class="text-slate-500">-</span>';
       return `
         <tr>
           <td class="task-name">${esc(t.name)}</td>
-          <td>${t.contractor_id ? esc(contractorName(t.contractor_id)) : '<span class="text-slate-500">—</span>'}</td>
+          <td>${t.contractor_id ? esc(contractorName(t.contractor_id)) : '<span class="text-slate-500">-</span>'}</td>
           <td class="num">${qty}</td>
-          <td class="num">${budget ? money.format(budget) : '—'}</td>
-          <td class="num">${paid ? money.format(paid) : '—'}</td>
-          <td class="num">${!budget ? '—' : left < 0
+          <td class="num">${budget ? money.format(budget) : '-'}</td>
+          <td class="num">${paid ? money.format(paid) : '-'}</td>
+          <td class="num">${!budget ? '-' : left < 0
             ? `<span class="variance-over">${money.format(-left)} over</span>`
             : money.format(left)}</td>
           <td class="whitespace-nowrap">${taskStateChip(t, taskState(t, today))}</td>
@@ -1411,7 +1411,7 @@ function renderCosts() {
   }
 
   const thisMonth = today.slice(0, 7);
-  const cell = (v) => (v ? money.format(v) : '<span class="text-slate-500">—</span>');
+  const cell = (v) => (v ? money.format(v) : '<span class="text-slate-500">-</span>');
   let cumPlanned = 0;
   let cumSpent = 0;
   const totals = { p: 0, a: 0, labour: 0, rental: 0 };
@@ -1435,7 +1435,7 @@ function renderCosts() {
         <td class="num">${cell(rental)}</td>
         <td class="num font-semibold text-white">${cell(spent)}</td>
         <td class="num">${money.format(cumPlanned)}</td>
-        <td class="num">${ym <= thisMonth ? money.format(cumSpent) : '—'}</td>
+        <td class="num">${ym <= thisMonth ? money.format(cumSpent) : '-'}</td>
       </tr>`;
   }).join('');
 
@@ -1468,7 +1468,7 @@ function renderLabour() {
   const entries = state.siteCosts.filter((e) => e.kind === 'labour');
   const el = $('#labour-table');
   if (!entries.length) {
-    el.innerHTML = '<div class="empty-state">No daily workers logged yet — add them in a daily log’s Manpower section.</div>';
+    el.innerHTML = '<div class="empty-state">No daily workers logged yet - add them in a daily log’s Manpower section.</div>';
     return;
   }
   const byMonth = new Map();
@@ -1486,7 +1486,7 @@ function renderLabour() {
       <td>${esc(monthLabel(ym))}</td>
       <td class="num">${m.days}</td>
       <td class="num">${m.workerDays}</td>
-      <td class="num">${m.workerDays ? money2.format(m.cost / m.workerDays) : '—'}</td>
+      <td class="num">${m.workerDays ? money2.format(m.cost / m.workerDays) : '-'}</td>
       <td class="num">${money.format(m.cost)}</td>
     </tr>`).join('');
   const total = entries.reduce((s, e) => s + e.amount, 0);
@@ -1512,7 +1512,7 @@ function renderLabour() {
 function renderRentals() {
   const el = $('#rentals-table');
   if (!state.rentals.length) {
-    el.innerHTML = '<div class="empty-state">No rentals yet — click Add Rental.</div>';
+    el.innerHTML = '<div class="empty-state">No rentals yet - click Add Rental.</div>';
     return;
   }
   const today = todayISO();
@@ -1527,7 +1527,7 @@ function renderRentals() {
       <tr>
         <td>
           <p class="text-white font-medium">${esc(r.equipment)}</p>
-          <p class="text-xs text-slate-500">${esc([r.supplier, r.note].filter(Boolean).join(' · ') || '—')}</p>
+          <p class="text-xs text-slate-500">${esc([r.supplier, r.note].filter(Boolean).join(' · ') || '-')}</p>
         </td>
         <td class="whitespace-nowrap">${esc(formatDate(r.start_date))} → ${esc(formatDate(end))}
           <span class="block text-xs text-slate-500">${status}</span></td>
@@ -1555,7 +1555,7 @@ function openRentalModal(rental = null) {
   const form = $('#form-rental');
   const f = form.elements;
   form.reset();
-  $('#rental-title').textContent = rental ? `Edit Rental — ${rental.equipment}` : 'Add Rental';
+  $('#rental-title').textContent = rental ? `Edit Rental - ${rental.equipment}` : 'Add Rental';
   f.id.value = rental?.id ?? '';
   f.equipment.value = rental?.equipment ?? '';
   f.supplier.value = rental?.supplier ?? '';
@@ -1586,7 +1586,7 @@ async function saveRental(e) {
   const days = Number(fd.get('days'));
   const rate = Number(fd.get('daily_rate'));
   if (!Number.isInteger(days) || days < 1) {
-    showFormError(form, 'Days must be a whole number — 1 or more.');
+    showFormError(form, 'Days must be a whole number - 1 or more.');
     return;
   }
   if (fd.get('daily_rate') === '' || !Number.isFinite(rate) || rate < 0) {
@@ -1650,7 +1650,7 @@ function renderPaymentsList() {
   const paid = sumOf(payments, 'amount');
   const budget = Number(task.budget || 0);
 
-  $('#payments-title').textContent = `Payments — ${task.name}`;
+  $('#payments-title').textContent = `Payments - ${task.name}`;
   $('#payments-summary').textContent = budget
     ? `Budget ${money.format(budget)} · paid ${money.format(paid)} · ${paid > budget ? `${money.format(paid - budget)} over budget` : `${money.format(budget - paid)} left`}`
     : `Paid ${money.format(paid)} · no budget set for this item`;
@@ -1748,7 +1748,7 @@ async function onPaymentsClick(e) {
 }
 
 // =============================================================
-// Contractors — each project has its own (contractors.project_id).
+// Contractors - each project has its own (contractors.project_id).
 // Loaded with the project in loadSchedule(); performance is per project.
 // =============================================================
 const CONTRACTOR_FIELDS = ['name', 'name_ka', 'trade', 'contact_person', 'phone', 'email', 'notes'];
@@ -1768,7 +1768,7 @@ function renderContractors() {
     (perf.get(b.id)?.items ?? 0) - (perf.get(a.id)?.items ?? 0) || a.name.localeCompare(b.name));
 
   if (!list.length) {
-    el.innerHTML = '<div class="empty-state">No contractors on this project yet — click Add Contractor.</div>';
+    el.innerHTML = '<div class="empty-state">No contractors on this project yet - click Add Contractor.</div>';
     return;
   }
 
@@ -1786,9 +1786,9 @@ function renderContractors() {
         <td class="num">${s?.late ? `${s.late} <span class="text-slate-500">(avg ${s.avgDaysLate} d)</span>` : 0}</td>
         <td class="num">${s?.overdue ? `<span class="variance-over">${s.overdue}</span>` : 0}</td>
         <td class="num">${s?.open ?? 0}</td>
-        <td class="num">${s?.delayDays ? `${s.delayDays} d` : '—'}</td>
-        <td class="num">${s?.budget ? money.format(s.budget) : '—'}</td>
-        <td class="num">${s?.paid ? money.format(s.paid) : '—'}</td>
+        <td class="num">${s?.delayDays ? `${s.delayDays} d` : '-'}</td>
+        <td class="num">${s?.budget ? money.format(s.budget) : '-'}</td>
+        <td class="num">${s?.paid ? money.format(s.paid) : '-'}</td>
         <td class="whitespace-nowrap">${contractorRating(s)}</td>
         <td class="text-right whitespace-nowrap">
           <button type="button" class="table-action" data-contractor-edit="${esc(c.id)}">Edit</button>
@@ -1809,7 +1809,7 @@ function renderContractors() {
       </thead>
       <tbody>${rows}</tbody>
     </table>
-    ${unassigned ? `<p class="mt-3 text-xs text-slate-500">${unassigned} timetable item(s) have no contractor yet — pick one in the Contractor column on the Timetable.</p>` : ''}`;
+    ${unassigned ? `<p class="mt-3 text-xs text-slate-500">${unassigned} timetable item(s) have no contractor yet - pick one in the Contractor column on the Timetable.</p>` : ''}`;
 }
 
 function openContractorModal(contractor) {
@@ -1891,7 +1891,7 @@ async function loadLogs(projectId) {
     return;
   }
   if (!data.length) {
-    el.innerHTML = "<div class=\"panel empty-state\">No daily logs yet — click New Daily Log and paste today's WhatsApp log.</div>";
+    el.innerHTML = "<div class=\"panel empty-state\">No daily logs yet - click New Daily Log and paste today's WhatsApp log.</div>";
     return;
   }
 
@@ -1907,8 +1907,8 @@ async function loadLogs(projectId) {
         </div>
         ${crew.length ? `<p class="log-card-crew">${crew.map(([k, n]) => `${esc(tradeLabel(k))} ${n}`).join(' · ')}</p>` : ''}
         <div class="log-notes">
-          <p><span class="log-lang">ქართული</span>${esc(l.notes || '—')}</p>
-          <p><span class="log-lang">English</span>${esc(l.notes_en || '—')}</p>
+          <p><span class="log-lang">ქართული</span>${esc(l.notes || '-')}</p>
+          <p><span class="log-lang">English</span>${esc(l.notes_en || '-')}</p>
         </div>
       </article>`;
   }).join('') + (data.length === 60 ? '<p class="text-xs text-slate-500">Showing the latest 60 logs. Ask Gemini to search older ones.</p>' : '');
@@ -1968,7 +1968,7 @@ function initModals() {
   });
 
   // Static option lists
-  $('#log-weather').innerHTML = '<option value="">— Select —</option>'
+  $('#log-weather').innerHTML = '<option value="">- Select -</option>'
     + WEATHER_OPTIONS.map((w) => `<option value="${esc(w)}">${esc(w)}</option>`).join('');
 
   $('#manpower-fields').innerHTML = MANPOWER_TRADES.map((t) => `
@@ -1983,7 +1983,7 @@ function initModals() {
 
   $('#form-daily-log').addEventListener('input', updateManpowerTotal);
 
-  $('#task-unit').innerHTML = '<option value="">—</option>'
+  $('#task-unit').innerHTML = '<option value="">-</option>'
     + BOQ_UNITS.map((u) => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
   $('#contractor-trades').innerHTML = CONTRACTOR_TRADES.map((t) => `<option value="${esc(t)}"></option>`).join('');
 
@@ -1991,7 +1991,7 @@ function initModals() {
     .map(([code, label]) => `<option value="${code}">${esc(label)}</option>`).join('');
   $$('[data-currency-options]').forEach((sel) => { sel.innerHTML = currencyOptions; });
 
-  const typeOptions = '<option value="">—</option>'
+  const typeOptions = '<option value="">-</option>'
     + UNIT_TYPES.map((u) => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
   $('#unit-type').innerHTML = typeOptions;
   $('#unit-status').innerHTML = Object.entries(UNIT_STATUSES)
@@ -2021,7 +2021,7 @@ function updateDayCost() {
     el.textContent = 'No daily workers entered.';
     el.className = 'text-sm text-slate-500 pb-2';
   } else if (rate == null) {
-    el.textContent = `${workers} daily worker${workers === 1 ? '' : 's'} — enter the rate to count their pay.`;
+    el.textContent = `${workers} daily worker${workers === 1 ? '' : 's'} - enter the rate to count their pay.`;
     el.className = 'text-sm text-amber-400 pb-2';
   } else {
     el.textContent = `${workers} × ${money2.format(rate)} = ${money.format(workers * rate)} today`;
@@ -2086,7 +2086,7 @@ async function processLogText() {
   f.notes.value = data.notes_ka || '';
   f.notes_en.value = data.notes_en || '';
   updateManpowerTotal();
-  toast('Log processed — check the details, then save.', 'success');
+  toast('Log processed - check the details, then save.', 'success');
 }
 
 async function saveDailyLog(e) {
@@ -2202,7 +2202,7 @@ async function saveDelay(e) {
 
   const days = Number(fd.get('duration_days'));
   if (!Number.isInteger(days) || days < 1) {
-    showFormError(form, 'Enter the days lost as a whole number — 1 or more.');
+    showFormError(form, 'Enter the days lost as a whole number - 1 or more.');
     return;
   }
 
@@ -2213,7 +2213,7 @@ async function saveDelay(e) {
   const f = form.elements;
   if (!f.description.value.trim() !== !f.description_en.value.trim()) {
     const err = await translateDelayText(form);
-    if (err) toast(`Saved without translation — ${err}`, 'error');
+    if (err) toast(`Saved without translation - ${err}`, 'error');
   }
 
   const id = fd.get('id');
@@ -2258,7 +2258,7 @@ async function openProjectReport() {
   reportPage = null;
   pdfBtn.disabled = true;
   root.innerHTML = '<p class="rpt-loading">Building report…</p>';
-  $('#report-title').textContent = `Project Report — ${project.name}`;
+  $('#report-title').textContent = `Project Report - ${project.name}`;
   openModal('modal-report');
 
   try {
@@ -2311,7 +2311,7 @@ async function exportDailyReport(e) {
   exporting = true;
   btn.disabled = true;
   label.textContent = 'Generating…';
-  toast('Building today\'s report — the AI summary can take a few seconds.');
+  toast('Building today\'s report - the AI summary can take a few seconds.');
 
   try {
     const { aiNote } = await generateDailyReport({

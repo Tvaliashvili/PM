@@ -1,5 +1,5 @@
 // =============================================================
-// Daily PDF report — bilingual (Georgian / English)
+// Daily PDF report - bilingual (Georgian / English)
 // Today's daily_logs + delays → Gemini summary in both languages
 // (via Edge Function) → html2pdf
 // =============================================================
@@ -163,12 +163,12 @@ function buildReport({ project, day, logs, delays, rentals, manpower, summary, p
   set('manpower-total', workers);
   set('delay-count', delays.length);
   set('delay-days', daysLost.toLocaleString('en-GB'));
-  if (rooms) set('total-flats', project.total_flats ?? '—');
+  if (rooms) set('total-flats', project.total_flats ?? '-');
   set('progress', progress?.count
     ? `${progress.actualPct}% (${ka('plan')}/plan ${progress.plannedPct}%)`
     : bi('No timetable'));
 
-  // Executive summary — Georgian and English columns
+  // Executive summary - Georgian and English columns
   fillList(page.querySelector('[data-list="summary-ka"]'), summary.ka);
   fillList(page.querySelector('[data-list="summary-en"]'), summary.en);
   set('summary-note', {
@@ -198,7 +198,7 @@ function buildReport({ project, day, logs, delays, rentals, manpower, summary, p
   if (rentals.length) {
     rentals.forEach((r) => addRow(rentalRows, [
       { text: r.equipment },
-      { text: r.supplier || '—' },
+      { text: r.supplier || '-' },
       { text: `${Math.round((new Date(`${day.date}T00:00`) - new Date(`${r.start_date}T00:00`)) / 86_400_000) + 1} / ${r.days}` },
       { text: money.format(r.daily_rate), className: 'num' },
     ]));
@@ -213,7 +213,7 @@ function buildReport({ project, day, logs, delays, rentals, manpower, summary, p
       { text: bi(d.delay_cause) },
       ...(rooms ? [{ text: flatLabelBi(d.flats) }] : []),
       { text: Number(d.duration_days).toLocaleString('en-GB'), className: 'num' },
-      { text: [d.description, d.description_en].filter(Boolean).join('\n') || '—', className: 'pdf-bi' },
+      { text: [d.description, d.description_en].filter(Boolean).join('\n') || '-', className: 'pdf-bi' },
     ]));
   } else {
     addEmptyRow(delayRows, rooms ? 4 : 3, bi('No delays recorded today.'));
@@ -233,7 +233,7 @@ function buildReport({ project, day, logs, delays, rentals, manpower, summary, p
 // ---------- 4. Export ----------
 /**
  * Builds today's bilingual report for `project` and downloads Daily_Report_[YYYY-MM-DD].pdf.
- * Returns { aiNote } — set when the PDF was saved without an AI summary.
+ * Returns { aiNote } - set when the PDF was saved without an AI summary.
  */
 export async function generateDailyReport({ db, project, progress, userEmail, money }) {
   const day = todayRange();
@@ -247,7 +247,7 @@ export async function generateDailyReport({ db, project, progress, userEmail, mo
       // spelled by hand in both languages, like the client
       name: { en: project.name, ka: project.name_ka },
       location: project.location,
-      // the company that hired us — the report's main reader; spelled by hand in both languages
+      // the company that hired us - the report's main reader; spelled by hand in both languages
       client: { en: project.client_name, ka: project.client_name_ka },
       ...(project.has_rooms ? { total_rooms: project.total_flats } : {}),
     },

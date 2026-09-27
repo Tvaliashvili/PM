@@ -1,9 +1,9 @@
 // =============================================================
-// CPMG PM — configuration
+// CPMG PM - configuration
 // =============================================================
 
 // Supabase Dashboard > Project Settings > API.
-// Use the anon (public) key only — never the service_role key.
+// Use the anon (public) key only - never the service_role key.
 export const SUPABASE_URL = 'https://wlysnnevbazfjqtuysei.supabase.co';
 export const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndseXNubmV2YmF6ZmpxdHV5c2VpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0MzY1MzQsImV4cCI6MjEwNjAxMjUzNH0._XZ5BMrIHlxQe8jnDRYzZpWwMp9xzz1J0_stDQgT0TA';
 

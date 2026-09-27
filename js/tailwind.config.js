@@ -1,4 +1,4 @@
-// Tailwind CDN theme config — must load right after the Tailwind CDN script.
+// Tailwind CDN theme config - must load right after the Tailwind CDN script.
 tailwind.config = {
   darkMode: 'class',
   theme: {

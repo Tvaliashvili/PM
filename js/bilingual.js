@@ -59,7 +59,7 @@ export const KA = {
 /** Georgian for an English term, or the English itself when there's no entry. */
 export const ka = (en) => KA[en] ?? en;
 
-/** "ქართული / English" — both languages on one line. */
+/** "ქართული / English" - both languages on one line. */
 export const bi = (en) => (KA[en] ? `${KA[en]} / ${en}` : en);
 
 /** Bilingual "Prepared by" block for the end of a document (HTML string). */

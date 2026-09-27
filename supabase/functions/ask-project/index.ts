@@ -1,7 +1,7 @@
 // =============================================================
 // Supabase Edge Function: ask-project
-// Answers a free-text question about one project from all of its data —
-// daily logs, timetable, contractors, delays and payments — via Gemini.
+// Answers a free-text question about one project from all of its data -
+// daily logs, timetable, contractors, delays and payments - via Gemini.
 // Data is read as the signed-in caller, so row-level security applies.
 //
 // Deploy:

@@ -107,9 +107,9 @@ export async function generateJson(
   if (!res.ok) {
     console.error(`Gemini API error ${res.status}:`, data?.error?.message);
     if (res.status === 429) {
-      throw new GeminiError("Gemini usage limit reached for now — try again later (the free Gemini plan has a daily limit)", 429);
+      throw new GeminiError("Gemini usage limit reached for now - try again later (the free Gemini plan has a daily limit)", 429);
     }
-    if (RETRYABLE.has(res.status)) throw new GeminiError("Gemini is busy — try again in a minute", 503);
+    if (RETRYABLE.has(res.status)) throw new GeminiError("Gemini is busy - try again in a minute", 503);
     if (res.status === 400 || res.status === 403) throw new GeminiError("AI service is not configured correctly", 500);
     throw new GeminiError(`Gemini API error (${res.status})`, 502);
   }
@@ -119,7 +119,9 @@ export async function generateJson(
     throw new GeminiError("Gemini declined this request", 422);
   }
 
-  const text = (candidate?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("");
+  // House style: short hyphens only, so long dashes Gemini writes become "-".
+  const text = (candidate?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("")
+    .replace(/[–—]/g, "-");
   try {
     return { result: JSON.parse(text), model, skipped };
   } catch {

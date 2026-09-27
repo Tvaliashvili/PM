@@ -1,5 +1,5 @@
 // =============================================================
-// Full project report — bilingual (Georgian / English), print-ready.
+// Full project report - bilingual (Georgian / English), print-ready.
 // Built from the open project's data; shown in the app and saved as PDF.
 // Charts are plain HTML/CSS (plus one inline SVG) so html2pdf renders them as-is.
 // =============================================================
@@ -21,7 +21,7 @@ const addDays = (isoDate, n) => { const x = toDate(isoDate); x.setDate(x.getDate
 const dayDiff = (a, b) => Math.round((toDate(b) - toDate(a)) / DAY_MS);
 
 // Language-neutral dates: 26.09.2026 / 26.09
-const d = (v) => (v ? v.slice(0, 10).split('-').reverse().join('.') : '—');
+const d = (v) => (v ? v.slice(0, 10).split('-').reverse().join('.') : '-');
 const dm = (v) => v.slice(5, 10).split('-').reverse().join('.');
 const num = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 2 });
 const pctOf = (part, whole) => (whole ? Math.round((part / whole) * 100) : 0);
@@ -41,7 +41,7 @@ const none = `<p class="rpt-none">${L('მონაცემები არ ა
 // Free text kept in both languages: Georgian first, English muted below.
 const biText = (ka, en) => (ka && en
   ? `${esc(ka)}<br><span class="rpt-muted">${esc(en)}</span>`
-  : esc(ka || en || '—'));
+  : esc(ka || en || '-'));
 
 const TASK_STATUS = {
   done:     { ka: 'დასრულდა',         en: 'Done',        tone: 'ok' },
@@ -233,8 +233,8 @@ export async function buildProjectReport({
   }
   for (const t of progress.overdue.slice(0, 5)) {
     const who = nameOf(t.contractor_id);
-    alerts.push(['bad', `${t.name} — ${t.daysLate} დღით გადაცილებული${who ? ` (${who})` : ''}`,
-      `${t.name} — ${t.daysLate} days overdue${who ? ` (${who})` : ''}`]);
+    alerts.push(['bad', `${t.name} - ${t.daysLate} დღით გადაცილებული${who ? ` (${who})` : ''}`,
+      `${t.name} - ${t.daysLate} days overdue${who ? ` (${who})` : ''}`]);
   }
   if (progress.overdue.length > 5) {
     alerts.push(['bad', `და კიდევ ${progress.overdue.length - 5} ვადაგადაცილებული პუნქტი`,
@@ -254,7 +254,7 @@ export async function buildProjectReport({
     const byCause = new Map();
     for (const x of delays) byCause.set(x.delay_cause, (byCause.get(x.delay_cause) ?? 0) + Number(x.duration_days || 0));
     const [topCause, topDays] = [...byCause].sort((a, b) => b[1] - a[1])[0];
-    alerts.push(['warn', `ბოლო 30 დღეში ${delays.length} შეფერხება, ${delayDays} დღე; ძირითადად — ${bi(topCause).split(' / ')[0]} (${topDays} დღე)`,
+    alerts.push(['warn', `ბოლო 30 დღეში ${delays.length} შეფერხება, ${delayDays} დღე; ძირითადად - ${bi(topCause).split(' / ')[0]} (${topDays} დღე)`,
       `${delays.length} delays in the last 30 days, ${delayDays} days lost; mostly ${topCause} (${topDays} days)`]);
   }
 
@@ -292,7 +292,7 @@ export async function buildProjectReport({
                   <strong>${esc(t.name)}</strong>
                   <em>${kind === 'start'
                     ? `${esc('იწყება')} · Starts`
-                    : `${esc('უნდა დასრულდეს')} · Due — ${Math.round(completionOf(t) * 100)}% ${esc('შესრულებული')} / done`}${
+                    : `${esc('უნდა დასრულდეს')} · Due - ${Math.round(completionOf(t) * 100)}% ${esc('შესრულებული')} / done`}${
                     t.contractor_id ? ` · ${esc(nameOf(t.contractor_id))}` : ''}</em>
                 </span>
               </li>`).join('')}
@@ -459,10 +459,10 @@ export async function buildProjectReport({
             <tr class="${k === thisMonth ? 'rpt-current' : ''}">
               <td>${MONTHS_KA[Number(k.slice(5)) - 1]} / ${MONTHS_EN[Number(k.slice(5)) - 1]} ${k.slice(0, 4)}</td>
               <td class="num">${m(p)}</td>
-              <td class="num">${a ? m(a) : '—'}</td>
-              ${hasSite ? `<td class="num">${sc.labour ? m(sc.labour) : '—'}</td><td class="num">${sc.rental ? m(sc.rental) : '—'}</td>` : ''}
+              <td class="num">${a ? m(a) : '-'}</td>
+              ${hasSite ? `<td class="num">${sc.labour ? m(sc.labour) : '-'}</td><td class="num">${sc.rental ? m(sc.rental) : '-'}</td>` : ''}
               <td class="num">${m(cp)}</td>
-              <td class="num">${k <= thisMonth ? m(ca) : '—'}</td>
+              <td class="num">${k <= thisMonth ? m(ca) : '-'}</td>
             </tr>`;
         }).join('')}
       </tbody>
@@ -522,7 +522,7 @@ export async function buildProjectReport({
           ${rentals.map((r) => `
             <tr>
               <td>${esc(r.equipment)}${r.note ? `<br><span class="rpt-muted">${esc(r.note)}</span>` : ''}</td>
-              <td>${esc(r.supplier || '—')}</td>
+              <td>${esc(r.supplier || '-')}</td>
               <td>${d(r.start_date)} → ${d(rentalEnd(r))}</td>
               <td class="num">${r.days} × ${m(r.daily_rate)}</td>
               <td class="num">${m(rentalTotal(r))}</td>
@@ -597,7 +597,7 @@ export async function buildProjectReport({
   if (rooms) {
     const byType = new Map();
     for (const u of units) {
-      const key = u.unit_type || '—';
+      const key = u.unit_type || '-';
       const e = byType.get(key) ?? { n: 0, area: 0 };
       e.n += 1;
       e.area += Number(u.area_m2 || 0);
@@ -659,8 +659,8 @@ export async function buildProjectReport({
             </div>
             ${crew.length ? `<p class="rpt-muted rpt-crew">${crew.map(([k, n]) => `${esc(bi(tradeLabel(k)))} ${n}`).join(' · ')}</p>` : ''}
             <div class="rpt-two">
-              <p class="rpt-notes">${esc(l.notes || '—')}</p>
-              <p class="rpt-notes rpt-notes-en">${esc(l.notes_en || '—')}</p>
+              <p class="rpt-notes">${esc(l.notes || '-')}</p>
+              <p class="rpt-notes rpt-notes-en">${esc(l.notes_en || '-')}</p>
             </div>
           </article>`;
       }).join('') : none}
@@ -701,7 +701,7 @@ export async function buildProjectReport({
                 <td>${d(x.created_at)}</td>
                 <td>${esc(bi(x.delay_cause))}</td>
                 ${rooms ? `<td>${x.flats ? `${esc(x.flats.block)}-${esc(x.flats.flat_number)}` : esc(bi('Site-wide'))}</td>` : ''}
-                <td>${x.contractor_id ? esc(nameOf(x.contractor_id)) : '—'}</td>
+                <td>${x.contractor_id ? esc(nameOf(x.contractor_id)) : '-'}</td>
                 <td class="num">${num.format(Number(x.duration_days))}</td>
                 <td>${biText(x.description, x.description_en)}</td>
               </tr>`).join('')}

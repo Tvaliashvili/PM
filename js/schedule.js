@@ -1,5 +1,5 @@
 // =============================================================
-// Timetable progress maths (pure — no DOM, no database)
+// Timetable progress maths (pure - no DOM, no database)
 // Each item has a % complete (100% = finished) and weighs its planned
 // duration in days.
 //   actual  = weighted average of the items' % complete
@@ -127,13 +127,13 @@ export function siteCostsByMonth(entries, todayIso) {
 
 /**
  * Cost position on `todayIso`:
- *   budget    — total of all item budgets
- *   planned   — value of work that should be done by today (budget × planned share)
- *   earned    — value of work actually done (budget × % complete)
- *   contracts — payments against timetable items made up to today
- *   labour    — daily-worker pay up to today
- *   rental    — equipment hire accrued up to today
- *   spent     — all of the above money: contracts + labour + rental
+ *   budget    - total of all item budgets
+ *   planned   - value of work that should be done by today (budget × planned share)
+ *   earned    - value of work actually done (budget × % complete)
+ *   contracts - payments against timetable items made up to today
+ *   labour    - daily-worker pay up to today
+ *   rental    - equipment hire accrued up to today
+ *   spent     - all of the above money: contracts + labour + rental
  */
 export function costPosition(tasks, payments, todayIso, siteCosts = []) {
   let budget = 0;
@@ -159,9 +159,9 @@ export function costPosition(tasks, payments, todayIso, siteCosts = []) {
 /**
  * Per-contractor performance on one project. Keyed by contractor_id ('' = unassigned).
  * Each entry: { items, onTime, late, avgDaysLate, overdue, open, delayDays, budget, paid }
- *   onTime/late — finished items, split by whether done_at was after planned_finish
- *   overdue     — unfinished items past their planned finish today
- *   open        — unfinished items not yet overdue (in progress or upcoming)
+ *   onTime/late - finished items, split by whether done_at was after planned_finish
+ *   overdue     - unfinished items past their planned finish today
+ *   open        - unfinished items not yet overdue (in progress or upcoming)
  */
 export function contractorPerformance(tasks, delays, payments, todayIso) {
   const stats = new Map();
