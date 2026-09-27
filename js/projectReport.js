@@ -434,7 +434,7 @@ export async function buildProjectReport({
           <tr>
             <th>${L('სამუშაო', 'Work item')}</th><th>${L('კონტრაქტორი', 'Contractor')}</th>
             <th>${L('დაგეგმილი', 'Planned')}</th>
-            <th class="num">${L('გეგმით', 'Expected')}</th><th class="num">${L('ფაქტი', 'Actual')}</th>
+            <th class="num">${L('გეგმით', 'Expected')}</th><th class="num">${L('ფაქტიური', 'Actual')}</th>
             <th>${L('განმარტება', 'What it means')}</th>
           </tr>
         </thead>
