@@ -131,7 +131,7 @@ async function fetchExtras(db, projectId, today) {
  * `money` formats amounts in the project's currency.
  */
 export async function buildProjectReport({
-  db, project, tasks, payments, contractors, contractorDelays, units, progress, money, userEmail,
+  db, project, tasks, payments, contractors, contractorDelays, units, progress, money,
   siteCosts = [], rentals = [],
 }) {
   const today = iso(new Date());
@@ -446,8 +446,8 @@ export async function buildProjectReport({
               <td>${st.kind === 'not_started'
     ? L(`${st.elapsed} დღეა უნდა დაწყებულიყო - 0% ჩაწერილია`,
       `Due to start ${st.elapsed} days ago - 0% recorded`)
-    : L(`${st.gap} პუნქტით ჩამორჩება დღევანდელ გეგმას`,
-      `${st.gap} points under where it should be today`)}</td>
+    : L(`დღევანდელ გეგმას ${st.gap}%-ით ჩამორჩება`,
+      `${st.gap}% short of where today's plan puts it`)}</td>
             </tr>`).join('')}
         </tbody>
       </table>
@@ -874,9 +874,7 @@ export async function buildProjectReport({
         </table>` : `<p class="rpt-all-good">✓ ${L('ბოლო 30 დღეში შეფერხება არ ყოფილა', 'No delays in the last 30 days')}</p>`}
     </section>`;
 
-  const footer = `
-    <div class="rpt-avoid">${signatureHtml(REPORT_AUTHOR)}</div>
-    <p class="pdf-footer">${esc(bi('Generated'))} ${esc(new Date().toLocaleString('en-GB'))}${userEmail ? ` · ${esc(userEmail)}` : ''} · CPMG PM</p>`;
+  const footer = `<div class="rpt-avoid">${signatureHtml(REPORT_AUTHOR)}</div>`;
 
   const page = document.createElement('div');
   page.className = 'pdf-page rpt';

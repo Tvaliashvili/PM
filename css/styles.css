@@ -178,8 +178,20 @@ html, body { background: var(--ink-950); }
   border: 1px solid var(--ink-700);
   border-radius: 0.375rem;
 }
-.task-pct-bar { height: 3px; margin-top: 0.3rem; border-radius: 999px; background: var(--ink-700); overflow: hidden; }
-.task-pct-bar > div { height: 100%; background: #10b981; }
+.task-pct-bar { position: relative; height: 3px; margin-top: 0.3rem; border-radius: 999px; background: var(--ink-700); }
+.task-pct-bar > div { height: 100%; border-radius: 999px; background: #10b981; }
+/* Where the item's own dates say it should be by today. */
+.task-pct-plan {
+  position: absolute;
+  top: -2px;
+  width: 2px;
+  height: 7px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: #94a3b8;
+}
+.task-pct-hint { display: block; margin-top: 0.25rem; font-size: 0.65rem; color: #64748b; }
+.task-pct-hint.is-behind { color: #fb7185; }
 /* Contractor jobs count: opens the jobs pop-up */
 .link-count {
   padding: 0 0.4rem;

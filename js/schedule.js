@@ -39,6 +39,9 @@ function plannedFraction(task, todayIso) {
   return (dayDiff(task.planned_start, todayIso) + 1) / durationDays(task);
 }
 
+/** What share of an item should be done by `todayIso`, 0-100, from its dates alone. */
+export const expectedPct = (task, todayIso) => Math.round(plannedFraction(task, todayIso) * 100);
+
 /**
  * State of one activity on `todayIso`:
  *   { key: 'done' | 'overdue' | 'active' | 'upcoming', daysLate }

@@ -10,7 +10,7 @@ import {
 import { generateDailyReport } from './pdfReport.js';
 import { buildProjectReport, downloadProjectReport } from './projectReport.js';
 import {
-  scheduleProgress, taskState, durationDays, completionOf,
+  scheduleProgress, taskState, durationDays, completionOf, expectedPct,
   plannedSpendByMonth, actualSpendByMonth, costPosition, contractorPerformance,
   labourCosts, rentalCosts, rentalTotal, rentalEnd, siteCostsByMonth,
   delayIsOngoing, delayDaysLost, delayStart,
@@ -732,6 +732,11 @@ function renderSchedule() {
 
   const rows = state.tasks.map((t) => {
     const s = taskState(t, today);
+    // What the dates say should be done by today - a guide when the real figure
+    // is hard to measure, and a nudge when nobody has updated it.
+    const donePct = Math.round(completionOf(t) * 100);
+    const plan = expectedPct(t, today);
+    const showPlan = !t.done && donePct < 100 && today >= t.planned_start;
     return `
       <tr class="${s.key === 'overdue' ? 'is-overdue' : ''}${t.done ? ' is-done' : ''}">
         <td class="task-pct-cell">
@@ -740,7 +745,13 @@ function renderSchedule() {
                    value="${Math.round(completionOf(t) * 100)}" data-task-pct="${esc(t.id)}"
                    aria-label="Percent complete for ${esc(t.name)}"><span>%</span>
           </div>
-          <div class="task-pct-bar"><div style="width:${Math.round(completionOf(t) * 100)}%"></div></div>
+          <div class="task-pct-bar">
+            <div style="width:${donePct}%"></div>
+            ${showPlan ? `<i class="task-pct-plan" style="left:${plan}%" aria-hidden="true"></i>` : ''}
+          </div>
+          ${showPlan
+    ? `<span class="task-pct-hint${plan - donePct > 10 ? ' is-behind' : ''}" title="From this item's start and finish dates">plan ${plan}%</span>`
+    : ''}
         </td>
         <td class="task-name">${esc(t.name)}${t.name_ka && t.name_ka !== t.name ? `<span class="block text-xs text-slate-500">${esc(t.name_ka)}</span>` : ''}</td>
         <td>
@@ -2494,7 +2505,6 @@ async function openProjectReport() {
       rentals: state.rentals,
       progress: state.progress ?? scheduleProgress([], todayISO()),
       money,
-      userEmail: state.user?.email,
     });
     if (project.id !== state.projectId) return;
     root.replaceChildren(page);
