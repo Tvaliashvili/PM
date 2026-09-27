@@ -10,7 +10,9 @@
 import { generateJson, json, serveJson, userClient } from "../_shared/gemini.ts";
 
 const MAX_QUESTION_CHARS = 1_000;
-const MAX_CONTEXT_CHARS = 400_000; // oldest logs are dropped beyond this
+// Gemini Flash reads a million tokens, so years of site history still fit:
+// roughly 1.5M characters of JSON. Only past that are the oldest logs dropped.
+const MAX_CONTEXT_CHARS = 1_500_000;
 
 const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget), contractors, delays (counted in whole days lost, described in Georgian and English; a delay with ongoing=true has not been settled yet - its days_lost is the count so far and keeps growing), payments to contractors, daily workers (manpower.day_workers, each paid the log's day_rate for that day) and equipment rentals (daily_rate × days).
 
@@ -43,7 +45,8 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
     sb.from("contractors").select("id, name, name_ka, trade").eq("project_id", projectId),
     sb.from("daily_logs")
       .select("log_date, weather, manpower, day_rate, notes, notes_en")
-      .eq("project_id", projectId).order("log_date", { ascending: false }).limit(1000),
+      // Every log, newest first - four years of daily logs on one project.
+      .eq("project_id", projectId).order("log_date", { ascending: false }).limit(1500),
     sb.from("delays")
       .select("created_at, delay_cause, duration_days, resolved_on, description, description_en, contractor_id, flats(block, flat_number)")
       .eq("project_id", projectId).order("created_at", { ascending: false }).limit(1000),
@@ -96,20 +99,29 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
   };
 
   // Keep within the budget by dropping the oldest logs.
+  const logsFound = context.daily_logs.length;
   let text = JSON.stringify(context);
   while (text.length > MAX_CONTEXT_CHARS && context.daily_logs.length) {
     context.daily_logs = context.daily_logs.slice(0, Math.floor(context.daily_logs.length * 0.8));
     text = JSON.stringify(context);
   }
 
+  // Say so plainly when the oldest logs did not fit, so an answer is never
+  // passed off as covering the whole project.
+  const dropped = logsFound - context.daily_logs.length;
+  const note = dropped
+    ? `\n\nNote: only the most recent ${context.daily_logs.length} daily logs fitted in this context; `
+      + `the ${dropped} oldest are missing. Say so if the question reaches back that far.`
+    : "";
+
   const { result, model } = await generateJson({
     systemPrompt: SYSTEM_PROMPT,
-    userText: `Today is ${payload.today ?? "unknown"}.\n\nProject data (JSON):\n${text}\n\nQuestion:\n${question}`,
+    userText: `Today is ${payload.today ?? "unknown"}.${note}\n\nProject data (JSON):\n${text}\n\nQuestion:\n${question}`,
     schema: SCHEMA,
     temperature: 0.2,
   });
 
   const answer = String(result.answer ?? "").trim();
   if (!answer) return json({ error: "Gemini returned an empty answer" }, 502);
-  return json({ answer, logs_used: context.daily_logs.length, model });
+  return json({ answer, logs_used: context.daily_logs.length, logs_found: logsFound, model });
 });

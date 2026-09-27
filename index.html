@@ -288,6 +288,27 @@
             <div id="ask-answer" class="ask-answer hidden"></div>
           </form>
 
+          <!-- Find a day: a long project has hundreds of logs -->
+          <div class="panel mt-4">
+            <div class="flex flex-wrap items-end gap-3">
+              <label class="block">
+                <span class="form-label">From</span>
+                <input id="log-from" type="date" class="input-dark">
+              </label>
+              <label class="block">
+                <span class="form-label">To</span>
+                <input id="log-to" type="date" class="input-dark">
+              </label>
+              <label class="block grow min-w-[12rem]">
+                <span class="form-label">Search the notes</span>
+                <input id="log-search" type="search" class="input-dark w-full"
+                       placeholder="rain, concrete, ბეტონი…">
+              </label>
+              <button type="button" id="btn-log-clear" class="btn btn-secondary">Clear</button>
+            </div>
+            <p id="log-count" class="mt-2 text-xs text-slate-500"></p>
+          </div>
+
           <div id="daily-logs-container" class="space-y-3 mt-4"></div>
         </section>
 

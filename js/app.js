@@ -263,6 +263,7 @@ async function selectProject(projectId) {
   }
 
   storage.set('cpm.projectId', project.id);
+  resetLogFilter(); // a new project starts with a clean, unfiltered log list
   await Promise.all([
     loadUnits(project.id), loadSchedule(project.id), refreshDashboard(project.id), loadLogs(project.id),
   ]);
@@ -1983,42 +1984,108 @@ function onContractorsClick(e) {
 // =============================================================
 // Daily logs list + Ask Gemini (whole-project Q&A)
 // =============================================================
-async function loadLogs(projectId) {
+const LOG_PAGE = 60;                                  // logs fetched at a time
+const logFilter = { from: '', to: '', text: '' };     // what the toolbar asks for
+let shownLogs = [];                                   // logs on screen, newest first
+
+// PostgREST reads commas and brackets as syntax inside .or() - keep them out.
+const searchTerm = (v) => v.replace(/[(),*%\\]/g, ' ').trim();
+
+const logCard = (l) => {
+  const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key;
+  const crew = Object.entries(l.manpower || {}).filter(([, n]) => n > 0);
+  const total = crew.reduce((sum, [, n]) => sum + Number(n), 0);
+  return `
+    <article class="log-card">
+      <div class="log-card-head">
+        <span class="log-card-date">${esc(formatDate(l.log_date))}</span>
+        <span class="log-card-meta">${esc([l.weather, total ? `${total} on site` : ''].filter(Boolean).join(' · '))}</span>
+      </div>
+      ${crew.length ? `<p class="log-card-crew">${crew.map(([k, n]) => `${esc(tradeLabel(k))} ${n}`).join(' · ')}</p>` : ''}
+      <div class="log-notes">
+        <p><span class="log-lang">ქართული</span>${esc(l.notes || '-')}</p>
+        <p><span class="log-lang">English</span>${esc(l.notes_en || '-')}</p>
+      </div>
+    </article>`;
+};
+
+/**
+ * Newest first, a page at a time. `more` keeps what is on screen and adds the
+ * next page; anything else starts again from the newest log that matches.
+ */
+async function loadLogs(projectId, { more = false } = {}) {
   const el = $('#daily-logs-container');
-  const { data, error } = await db
+  const from = more ? shownLogs.length : 0;
+
+  let q = db
     .from('daily_logs')
-    .select('log_date, weather, manpower, notes, notes_en')
-    .eq('project_id', projectId)
+    .select('log_date, weather, manpower, notes, notes_en', { count: 'exact' })
+    .eq('project_id', projectId);
+  if (logFilter.from) q = q.gte('log_date', logFilter.from);
+  if (logFilter.to) q = q.lte('log_date', logFilter.to);
+  const term = searchTerm(logFilter.text);
+  if (term) q = q.or(`notes.ilike.%${term}%,notes_en.ilike.%${term}%,weather.ilike.%${term}%`);
+
+  const { data, error, count } = await q
     .order('log_date', { ascending: false })
-    .limit(60);
+    .range(from, from + LOG_PAGE - 1);
 
   if (projectId !== state.projectId) return;
   if (error) {
     el.innerHTML = `<div class="panel empty-state">Could not load logs: ${esc(error.message)}</div>`;
     return;
   }
-  if (!data.length) {
-    el.innerHTML = "<div class=\"panel empty-state\">No daily logs yet - click New Daily Log and paste today's WhatsApp log.</div>";
+
+  shownLogs = more ? [...shownLogs, ...data] : data;
+  const filtered = Boolean(logFilter.from || logFilter.to || term);
+  const total = Number(count ?? shownLogs.length);
+
+  $('#log-count').textContent = total
+    ? `${filtered ? `${total} log${total === 1 ? '' : 's'} found` : `${total} log${total === 1 ? '' : 's'}`}`
+      + (shownLogs.length < total ? ` · showing the newest ${shownLogs.length}` : '')
+    : '';
+
+  if (!shownLogs.length) {
+    el.innerHTML = filtered
+      ? '<div class="panel empty-state">No logs match - widen the dates or clear the search.</div>'
+      : "<div class=\"panel empty-state\">No daily logs yet - click New Daily Log and paste today's WhatsApp log.</div>";
     return;
   }
 
-  const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key;
-  el.innerHTML = data.map((l) => {
-    const crew = Object.entries(l.manpower || {}).filter(([, n]) => n > 0);
-    const total = crew.reduce((sum, [, n]) => sum + Number(n), 0);
-    return `
-      <article class="log-card">
-        <div class="log-card-head">
-          <span class="log-card-date">${esc(formatDate(l.log_date))}</span>
-          <span class="log-card-meta">${esc([l.weather, total ? `${total} on site` : ''].filter(Boolean).join(' · '))}</span>
-        </div>
-        ${crew.length ? `<p class="log-card-crew">${crew.map(([k, n]) => `${esc(tradeLabel(k))} ${n}`).join(' · ')}</p>` : ''}
-        <div class="log-notes">
-          <p><span class="log-lang">ქართული</span>${esc(l.notes || '-')}</p>
-          <p><span class="log-lang">English</span>${esc(l.notes_en || '-')}</p>
-        </div>
-      </article>`;
-  }).join('') + (data.length === 60 ? '<p class="text-xs text-slate-500">Showing the latest 60 logs. Ask Gemini to search older ones.</p>' : '');
+  el.innerHTML = shownLogs.map(logCard).join('')
+    + (shownLogs.length < total
+      ? `<button type="button" id="btn-log-more" class="btn btn-secondary w-full">
+           Show older logs (${total - shownLogs.length} more)
+         </button>`
+      : '');
+}
+
+// Typing in the search box shouldn't hit the database on every keystroke.
+let logSearchTimer;
+function onLogFilterChange() {
+  logFilter.from = $('#log-from').value;
+  logFilter.to = $('#log-to').value;
+  logFilter.text = $('#log-search').value.trim();
+  clearTimeout(logSearchTimer);
+  logSearchTimer = setTimeout(() => loadLogs(state.projectId), 250);
+}
+
+// Switching project starts the list again, unfiltered.
+function resetLogFilter() {
+  logFilter.from = '';
+  logFilter.to = '';
+  logFilter.text = '';
+  shownLogs = [];
+  $('#log-from').value = '';
+  $('#log-to').value = '';
+  $('#log-search').value = '';
+}
+
+function clearLogFilter() {
+  $('#log-from').value = '';
+  $('#log-to').value = '';
+  $('#log-search').value = '';
+  onLogFilterChange();
 }
 
 async function askGemini(e) {
@@ -2038,9 +2105,18 @@ async function askGemini(e) {
   });
   setBusy(btn, false);
 
-  out.innerHTML = `<p class="ask-q">${esc(question)}</p>${esc(error
-    ? `Gemini couldn't answer: ${await functionErrorMessage(error)}`
-    : data.answer)}`;
+  if (error) {
+    out.innerHTML = `<p class="ask-q">${esc(question)}</p>${esc(`Gemini couldn't answer: ${await functionErrorMessage(error)}`)}`;
+    return;
+  }
+  // How much of the project the answer is based on - and what it could not read.
+  const read = Number(data.logs_used || 0);
+  const found = Number(data.logs_found || read);
+  const coverage = read
+    ? `Read ${read} daily log${read === 1 ? '' : 's'}${read < found ? ` of ${found} - the ${found - read} oldest did not fit` : ''}.`
+    : '';
+  out.innerHTML = `<p class="ask-q">${esc(question)}</p>${esc(data.answer)}`
+    + (coverage ? `<p class="mt-2 text-xs text-slate-500">${esc(coverage)}</p>` : '');
 }
 
 function onAskSuggestion(e) {
@@ -2494,6 +2570,13 @@ $('#btn-new-project').addEventListener('click', openProjectModal);
 $('#form-project').addEventListener('submit', saveProject);
 $('#btn-parse-log').addEventListener('click', processLogText);
 $('#btn-new-log-page').addEventListener('click', openDailyLogModal);
+$('#log-from').addEventListener('change', onLogFilterChange);
+$('#log-to').addEventListener('change', onLogFilterChange);
+$('#log-search').addEventListener('input', onLogFilterChange);
+$('#btn-log-clear').addEventListener('click', clearLogFilter);
+$('#daily-logs-container').addEventListener('click', (e) => {
+  if (e.target.closest('#btn-log-more')) loadLogs(state.projectId, { more: true });
+});
 $('#form-ask').addEventListener('submit', askGemini);
 $('#form-ask').addEventListener('click', onAskSuggestion);
 $('#btn-edit-project').addEventListener('click', openEditProjectModal);
