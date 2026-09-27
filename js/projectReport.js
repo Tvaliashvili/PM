@@ -933,7 +933,9 @@ export async function downloadProjectReport(page, project) {
       image: { type: 'jpeg', quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.rpt-avoid', 'h2', '.rpt-h'] },
+      // A section that would not fit starts the next page instead of splitting.
+      // One taller than a page still splits, but from the top of a page.
+      pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.rpt-section', '.rpt-avoid', 'h2', '.rpt-h'] },
     })
     .from(page)
     .save();
