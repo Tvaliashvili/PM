@@ -28,7 +28,7 @@ const state = {
   flats: [],            // units
   tasks: [],            // timetable items (also the BOQ)
   payments: [],         // task_payments
-  contractorDelays: [], // delays with contractor_id + hours
+  contractorDelays: [], // delays with contractor_id + days
   contractors: [],      // this project's contractors
   progress: null,       // scheduleProgress() result
 };
@@ -623,7 +623,7 @@ async function loadSchedule(projectId) {
       .eq('project_id', projectId)
       .order('paid_on'),
     db.from('delays')
-      .select('contractor_id, duration_hours')
+      .select('contractor_id, duration_days')
       .eq('project_id', projectId),
     db.from('contractors')
       .select('id, name, name_ka, trade, contact_person, phone, email, notes')
@@ -926,7 +926,7 @@ async function refreshDashboard(projectId) {
   // The Spent vs Budget card is updated by renderCosts() from the timetable.
   const [delays, logs] = await Promise.all([
     db.from('delays')
-      .select('id, delay_cause, duration_hours, description, created_at, flats(block, flat_number)')
+      .select('id, delay_cause, duration_days, description, description_en, created_at, flats(block, flat_number)')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false }),
     db.from('daily_logs')
@@ -944,9 +944,9 @@ async function refreshDashboard(projectId) {
   }
 
   // Delays
-  const hours = delays.data.reduce((sum, d) => sum + Number(d.duration_hours || 0), 0);
+  const days = delays.data.reduce((sum, d) => sum + Number(d.duration_days || 0), 0);
   $('#kpi-delays').textContent = delays.data.length;
-  $('#kpi-delays-meta').textContent = `${hours.toLocaleString()} hours lost`;
+  $('#kpi-delays-meta').textContent = `${days.toLocaleString()} ${days === 1 ? 'day' : 'days'} lost`;
 
   renderRecentLogs(logs.data);
   renderRecentDelays(delays.data.slice(0, 5));
@@ -986,13 +986,14 @@ function renderRecentDelays(delays) {
   el.className = 'divide-y divide-ink-700';
   el.innerHTML = delays.map((d) => {
     const where = d.flats ? `Block ${d.flats.block} · Room ${d.flats.flat_number}` : 'Site-wide';
+    const text = d.description_en || d.description;
     return `
       <div class="py-2.5 flex items-start justify-between gap-3 text-sm">
         <div class="min-w-0">
           <p class="text-white font-medium">${esc(d.delay_cause)}</p>
-          <p class="text-slate-500 truncate">${esc(where)}${d.description ? ` — ${esc(d.description)}` : ''}</p>
+          <p class="text-slate-500 truncate">${esc(where)}${text ? ` — ${esc(text)}` : ''}</p>
         </div>
-        <span class="shrink-0 text-xs font-semibold text-rose-400 tabular-nums">${Number(d.duration_hours)} h</span>
+        <span class="shrink-0 text-xs font-semibold text-rose-400 tabular-nums">${Number(d.duration_days)} d</span>
       </div>`;
   }).join('');
 }
@@ -1425,7 +1426,7 @@ function renderContractors() {
         <td class="num">${s?.late ? `${s.late} <span class="text-slate-500">(avg ${s.avgDaysLate} d)</span>` : 0}</td>
         <td class="num">${s?.overdue ? `<span class="variance-over">${s.overdue}</span>` : 0}</td>
         <td class="num">${s?.open ?? 0}</td>
-        <td class="num">${s?.delayHours ? `${s.delayHours} h` : '—'}</td>
+        <td class="num">${s?.delayDays ? `${s.delayDays} d` : '—'}</td>
         <td class="num">${s?.budget ? money.format(s.budget) : '—'}</td>
         <td class="num">${s?.paid ? money.format(s.paid) : '—'}</td>
         <td class="whitespace-nowrap">${contractorRating(s)}</td>
@@ -1442,7 +1443,7 @@ function renderContractors() {
       <thead>
         <tr>
           <th>Contractor</th><th class="num">Jobs</th><th class="num">On time</th><th class="num">Late</th>
-          <th class="num">Overdue now</th><th class="num">Open</th><th class="num">Delays</th>
+          <th class="num">Overdue now</th><th class="num">Open</th><th class="num">Delay days</th>
           <th class="num">Budget</th><th class="num">Paid</th><th>Performance</th><th></th>
         </tr>
       </thead>
@@ -1763,16 +1764,54 @@ function openDelayModal() {
   openModal('modal-delay');
 }
 
+// Fills the delay description in both languages via Gemini. Returns an error message, or '' on success.
+async function translateDelayText(form) {
+  const f = form.elements;
+  const { data, error } = await db.functions.invoke('translate-delay', {
+    body: { ka: f.description.value, en: f.description_en.value, cause: f.delay_cause.value },
+  });
+  if (error) return functionErrorMessage(error);
+  f.description.value = data.ka;
+  f.description_en.value = data.en;
+  return '';
+}
+
+async function onTranslateDelay() {
+  const form = $('#form-delay');
+  const f = form.elements;
+  if (!f.description.value.trim() && !f.description_en.value.trim()) {
+    showFormError(form, 'Write the description in Georgian or English first.');
+    f.description.focus();
+    return;
+  }
+  const btn = $('#btn-translate-delay');
+  showFormError(form, '');
+  setBusy(btn, true, 'Translating…');
+  const err = await translateDelayText(form);
+  setBusy(btn, false);
+  if (err) showFormError(form, `Gemini couldn't translate: ${err}`);
+}
+
 async function saveDelay(e) {
   e.preventDefault();
   const form = e.currentTarget;
   const btn  = $('[type=submit]', form);
   const fd   = new FormData(form);
 
-  const duration = parseFloat(fd.get('duration_hours'));
-  if (!Number.isFinite(duration) || duration < 0) {
-    showFormError(form, 'Enter a duration of 0 hours or more.');
+  const days = Number(fd.get('duration_days'));
+  if (!Number.isInteger(days) || days < 1) {
+    showFormError(form, 'Enter the days lost as a whole number — 1 or more.');
     return;
+  }
+
+  showFormError(form, '');
+  setBusy(btn, true);
+
+  // One language filled in: let Gemini write the other before saving.
+  const f = form.elements;
+  if (!f.description.value.trim() !== !f.description_en.value.trim()) {
+    const err = await translateDelayText(form);
+    if (err) toast(`Saved without translation — ${err}`, 'error');
   }
 
   const row = {
@@ -1780,12 +1819,11 @@ async function saveDelay(e) {
     flat_id:        fd.get('flat_id') || null,
     contractor_id:  fd.get('contractor_id') || null,
     delay_cause:    fd.get('delay_cause'),
-    duration_hours: duration,
-    description:    fd.get('description').trim() || null,
+    duration_days:  days,
+    description:    f.description.value.trim() || null,
+    description_en: f.description_en.value.trim() || null,
   };
 
-  showFormError(form, '');
-  setBusy(btn, true);
   const { error } = await db.from('delays').insert(row);
   setBusy(btn, false);
 
@@ -1797,7 +1835,7 @@ async function saveDelay(e) {
   closeModal('modal-delay');
   toast('Delay recorded.', 'success');
   refreshDashboard(state.projectId);
-  if (row.contractor_id) loadSchedule(state.projectId); // contractor delay hours
+  if (row.contractor_id) loadSchedule(state.projectId); // contractor delay days
 }
 
 // =============================================================
@@ -1893,6 +1931,7 @@ $('#btn-new-log').addEventListener('click', openDailyLogModal);
 $('#btn-new-delay').addEventListener('click', openDelayModal);
 $('#form-daily-log').addEventListener('submit', saveDailyLog);
 $('#form-delay').addEventListener('submit', saveDelay);
+$('#btn-translate-delay').addEventListener('click', onTranslateDelay);
 $('#units-table').addEventListener('click', onUnitsTableClick);
 $('#btn-add-unit').addEventListener('click', () => openUnitModal(null));
 $('#form-unit').addEventListener('submit', saveUnit);

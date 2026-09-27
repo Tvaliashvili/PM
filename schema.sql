@@ -79,8 +79,9 @@ create table if not exists public.delays (
   project_id      uuid not null references public.projects(id) on delete cascade,
   flat_id         uuid references public.flats(id) on delete set null,
   delay_cause     text not null,
-  duration_hours  numeric(8,2) not null default 0 check (duration_hours >= 0),
-  description     text,
+  duration_days   integer not null default 1 check (duration_days >= 1),
+  description     text,          -- Georgian
+  description_en  text,          -- English
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
 );
@@ -317,3 +318,23 @@ begin
   end loop;
 end;
 $$;
+
+-- -------------------------------------------------------------
+-- 7. Delays counted in whole days + description in both languages
+-- (migration for databases created with duration_hours; 8 h = 1 day)
+-- -------------------------------------------------------------
+alter table public.delays
+  add column if not exists duration_days integer not null default 1 check (duration_days >= 1),
+  add column if not exists description_en text;
+
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'delays' and column_name = 'duration_hours') then
+    update public.delays set duration_days = greatest(1, ceil(duration_hours / 8.0))::int;
+    alter table public.delays drop column duration_hours;
+  end if;
+end;
+$$;
+
+notify pgrst, 'reload schema';

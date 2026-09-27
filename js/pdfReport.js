@@ -54,7 +54,7 @@ async function fetchTodayData(db, projectId, day) {
       .eq('project_id', projectId)
       .eq('log_date', day.date),
     db.from('delays')
-      .select('delay_cause, duration_hours, description, created_at, flats(block, floor, flat_number)')
+      .select('delay_cause, duration_days, description, description_en, created_at, flats(block, floor, flat_number)')
       .eq('project_id', projectId)
       .gte('created_at', day.startISO)
       .lt('created_at', day.endISO)
@@ -121,7 +121,7 @@ function buildReport({ project, day, logs, delays, manpower, summary, progress, 
 
   // Site details
   const workers = manpower.reduce((sum, [, n]) => sum + n, 0);
-  const hoursLost = delays.reduce((sum, d) => sum + Number(d.duration_hours || 0), 0);
+  const daysLost = delays.reduce((sum, d) => sum + Number(d.duration_days || 0), 0);
   const weather = [...new Set(logs.map((l) => l.weather).filter(Boolean))].map(bi).join(', ');
 
   set('project', project.name);
@@ -133,7 +133,7 @@ function buildReport({ project, day, logs, delays, manpower, summary, progress, 
   set('weather', weather || bi('Not recorded'));
   set('manpower-total', workers);
   set('delay-count', delays.length);
-  set('delay-hours', hoursLost.toLocaleString('en-GB'));
+  set('delay-days', daysLost.toLocaleString('en-GB'));
   set('total-flats', project.total_flats ?? '—');
   set('progress', progress?.count
     ? `${progress.actualPct}% (${ka('plan')}/plan ${progress.plannedPct}%)`
@@ -163,8 +163,8 @@ function buildReport({ project, day, logs, delays, manpower, summary, progress, 
     delays.forEach((d) => addRow(delayRows, [
       { text: bi(d.delay_cause) },
       { text: flatLabelBi(d.flats) },
-      { text: Number(d.duration_hours).toLocaleString('en-GB'), className: 'num' },
-      { text: d.description || '—' },
+      { text: Number(d.duration_days).toLocaleString('en-GB'), className: 'num' },
+      { text: [d.description, d.description_en].filter(Boolean).join('\n') || '—', className: 'pdf-bi' },
     ]));
   } else {
     addEmptyRow(delayRows, 4, bi('No delays recorded today.'));
@@ -211,8 +211,9 @@ export async function generateDailyReport({ db, project, progress, userEmail }) 
     delays: delays.map((d) => ({
       cause: d.delay_cause,
       location: flatLabel(d.flats),
-      duration_hours: Number(d.duration_hours),
-      description: d.description,
+      duration_days: Number(d.duration_days),
+      description_ka: d.description,
+      description_en: d.description_en,
     })),
   });
 

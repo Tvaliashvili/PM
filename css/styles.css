@@ -515,6 +515,7 @@ textarea.input-dark { resize: vertical; }
 .pdf-page th { background: #f1f5f9; font-weight: 600; }
 .pdf-page .num { text-align: right; font-variant-numeric: tabular-nums; }
 .pdf-page .pdf-empty { color: #64748b; font-style: italic; text-align: center; }
+.pdf-page .pdf-bi { white-space: pre-line; }
 
 .pdf-footer {
   margin-top: 24px;

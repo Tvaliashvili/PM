@@ -12,7 +12,7 @@ import { generateJson, json, serveJson, userClient } from "../_shared/gemini.ts"
 const MAX_QUESTION_CHARS = 1_000;
 const MAX_CONTEXT_CHARS = 400_000; // oldest logs are dropped beyond this
 
-const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one residential project using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget), contractors, delays and payments.
+const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one residential project using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget), contractors, delays (counted in whole days lost, described in Georgian and English) and payments.
 
 Rules:
 - Answer in the same language as the question (Georgian or English). Client and contractor names are spelled by hand in both languages (client_name / client_name_ka, name / name_ka): use the Georgian spelling in Georgian answers and the English one in English answers.
@@ -45,7 +45,7 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
       .select("log_date, weather, manpower, notes, notes_en")
       .eq("project_id", projectId).order("log_date", { ascending: false }).limit(1000),
     sb.from("delays")
-      .select("created_at, delay_cause, duration_hours, description, contractor_id, flats(block, flat_number)")
+      .select("created_at, delay_cause, duration_days, description, description_en, contractor_id, flats(block, flat_number)")
       .eq("project_id", projectId).order("created_at", { ascending: false }).limit(1000),
     sb.from("task_payments").select("task_id, paid_on, amount, note").eq("project_id", projectId).order("paid_on"),
   ]);
@@ -73,10 +73,11 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
     delays: (delays.data ?? []).map((d: any) => ({
       date: String(d.created_at).slice(0, 10),
       cause: d.delay_cause,
-      hours: d.duration_hours,
-      unit: d.flats ? `${d.flats.block}-${d.flats.flat_number}` : "site-wide",
+      days_lost: d.duration_days,
+      room: d.flats ? `${d.flats.block}-${d.flats.flat_number}` : "site-wide",
       contractor: contractorName.get(d.contractor_id) ?? null,
-      description: d.description,
+      description_ka: d.description,
+      description_en: d.description_en,
     })),
     payments: (payments.data ?? []).map((p) => ({
       item: taskName.get(p.task_id) ?? null, paid_on: p.paid_on, amount: p.amount, note: p.note,

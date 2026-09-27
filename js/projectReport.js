@@ -21,6 +21,10 @@ const num = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 2 });
 const L = (ka, en) => `${esc(ka)}<em>${esc(en)}</em>`;
 const H = (ka, en) => `<h2>${esc(ka)} <em>${esc(en)}</em></h2>`;
 const none = `<p class="rpt-none">${L('მონაცემები არ არის', 'No data yet')}</p>`;
+// Free text kept in both languages: Georgian first, English muted below.
+const biText = (ka, en) => (ka && en
+  ? `${esc(ka)}<br><span class="rpt-muted">${esc(en)}</span>`
+  : esc(ka || en || '—'));
 
 const TASK_STATUS = {
   done:     { ka: 'დასრულდა',          en: 'Done',        tone: 'ok' },
@@ -64,7 +68,7 @@ async function fetchExtras(db, projectId, today) {
       .order('log_date', { ascending: false })
       .limit(7),
     db.from('delays')
-      .select('created_at, delay_cause, duration_hours, description, contractor_id, flats(block, flat_number)')
+      .select('created_at, delay_cause, duration_days, description, description_en, contractor_id, flats(block, flat_number)')
       .eq('project_id', projectId)
       .gte('created_at', since.toISOString())
       .order('created_at', { ascending: false }),
@@ -112,7 +116,7 @@ export async function buildProjectReport({
 
   // ---------- Key figures ----------
   const area = units.reduce((s, u) => s + Number(u.area_m2 || 0), 0);
-  const delayHours = delays.reduce((s, x) => s + Number(x.duration_hours || 0), 0);
+  const delayDays = delays.reduce((s, x) => s + Number(x.duration_days || 0), 0);
   const gap = progress.actualPct - progress.plannedPct;
   const keyFigures = `
     <section class="rpt-section rpt-avoid">
@@ -127,7 +131,7 @@ export async function buildProjectReport({
           cost.spent > cost.budget && cost.budget ? 'bad' : '')}
         ${tile('ოთახები', 'Rooms', String(units.length), area ? `${num.format(area)} m²` : '')}
         ${tile('შეფერხებები (30 დღე)', 'Delays (30 days)', String(delays.length),
-          delayHours ? `${num.format(delayHours)} ${L('საათი', 'hours')}` : '')}
+          delayDays ? `${num.format(delayDays)} ${L('დღე', 'days')}` : '')}
       </div>
     </section>`;
 
@@ -211,7 +215,7 @@ export async function buildProjectReport({
             <tr>
               <th>${L('კონტრაქტორი', 'Contractor')}</th><th class="num">${L('სამუშაო', 'Jobs')}</th>
               <th class="num">${L('ვადაში', 'On time')}</th><th class="num">${L('დაგვიანებით', 'Late')}</th>
-              <th class="num">${L('გადაცილებული', 'Overdue')}</th><th class="num">${L('შეფერხება', 'Delay')}</th>
+              <th class="num">${L('გადაცილებული', 'Overdue')}</th><th class="num">${L('შეფერხება, დღე', 'Delay days')}</th>
               <th class="num">${L('გადახდილი', 'Paid')}</th><th>${L('შეფასება', 'Rating')}</th>
             </tr>
           </thead>
@@ -225,7 +229,7 @@ export async function buildProjectReport({
                   <td class="num">${s?.onTime ?? 0}</td>
                   <td class="num">${s?.late ?? 0}</td>
                   <td class="num">${s?.overdue ?? 0}</td>
-                  <td class="num">${s?.delayHours ? `${num.format(s.delayHours)} h` : '—'}</td>
+                  <td class="num">${s?.delayDays ? num.format(s.delayDays) : '—'}</td>
                   <td class="num">${s?.paid ? m(s.paid) : '—'}</td>
                   <td>${rating(s)}</td>
                 </tr>`;
@@ -344,7 +348,7 @@ export async function buildProjectReport({
           <thead>
             <tr>
               <th>${L('თარიღი', 'Date')}</th><th>${L('მიზეზი', 'Cause')}</th><th>${L('ადგილი', 'Location')}</th>
-              <th>${L('კონტრაქტორი', 'Contractor')}</th><th class="num">${L('საათი', 'Hours')}</th><th>${L('აღწერა', 'Description')}</th>
+              <th>${L('კონტრაქტორი', 'Contractor')}</th><th class="num">${L('დღე', 'Days')}</th><th>${L('აღწერა', 'Description')}</th>
             </tr>
           </thead>
           <tbody>
@@ -354,12 +358,12 @@ export async function buildProjectReport({
                 <td>${esc(bi(x.delay_cause))}</td>
                 <td>${x.flats ? `${esc(x.flats.block)}-${esc(x.flats.flat_number)}` : esc(bi('Site-wide'))}</td>
                 <td>${x.contractor_id ? esc(nameOf(x.contractor_id)) : '—'}</td>
-                <td class="num">${num.format(Number(x.duration_hours))}</td>
-                <td>${esc(x.description || '—')}</td>
+                <td class="num">${num.format(Number(x.duration_days))}</td>
+                <td>${biText(x.description, x.description_en)}</td>
               </tr>`).join('')}
           </tbody>
           <tfoot>
-            <tr><td colspan="4">${L('სულ', 'Total')}</td><td class="num">${num.format(delayHours)}</td><td></td></tr>
+            <tr><td colspan="4">${L('სულ', 'Total')}</td><td class="num">${num.format(delayDays)}</td><td></td></tr>
           </tfoot>
         </table>` : none}
     </section>`;

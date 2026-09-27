@@ -184,7 +184,7 @@
                 </span>
               </div>
               <p id="kpi-delays" class="kpi-value">—</p>
-              <p id="kpi-delays-meta" class="kpi-meta">0 hours lost</p>
+              <p id="kpi-delays-meta" class="kpi-meta">0 days lost</p>
             </article>
 
             <article class="kpi-card">
@@ -423,7 +423,7 @@
         <div><span>ამინდი<em>Weather</em></span><strong data-field="weather"></strong></div>
         <div><span>მუშები ობიექტზე<em>Manpower on site</em></span><strong data-field="manpower-total"></strong></div>
         <div><span>შეფერხებები<em>Delays today</em></span><strong data-field="delay-count"></strong></div>
-        <div><span>დაკარგული საათები<em>Hours lost</em></span><strong data-field="delay-hours"></strong></div>
+        <div><span>დაკარგული დღეები<em>Days lost</em></span><strong data-field="delay-days"></strong></div>
         <div><span>ოთახები სულ<em>Total rooms</em></span><strong data-field="total-flats"></strong></div>
         <div><span>პროგრესი (გეგმა)<em>Progress (planned)</em></span><strong data-field="progress"></strong></div>
       </div>
@@ -458,7 +458,7 @@
             <tr>
               <th>მიზეზი<em>Cause</em></th>
               <th>ადგილი<em>Location</em></th>
-              <th class="num">საათი<em>Hours</em></th>
+              <th class="num">დღე<em>Days</em></th>
               <th>აღწერა<em>Description</em></th>
             </tr>
           </thead>
@@ -880,15 +880,24 @@
             <select id="delay-cause" name="delay_cause" required class="select-dark w-full"></select>
           </label>
           <label class="block">
-            <span class="form-label">Duration (hours)</span>
-            <input name="duration_hours" type="number" min="0" step="0.5" required class="input-dark w-full">
+            <span class="form-label">Days lost</span>
+            <input name="duration_days" type="number" min="1" step="1" value="1" required class="input-dark w-full">
           </label>
         </div>
         <label class="block">
-          <span class="form-label">Description</span>
+          <span class="form-label">Description — ქართული</span>
           <textarea name="description" rows="3" class="input-dark w-full"
+                    placeholder="რა მოხდა და რა არის საჭირო მოსაგვარებლად…"></textarea>
+        </label>
+        <label class="block">
+          <span class="form-label">Description — English</span>
+          <textarea name="description_en" rows="3" class="input-dark w-full"
                     placeholder="What happened and what's needed to resolve it…"></textarea>
         </label>
+        <div class="flex flex-wrap items-center gap-3">
+          <button type="button" id="btn-translate-delay" class="btn btn-secondary">Translate with Gemini</button>
+          <p class="text-xs text-slate-500">Write in either language — Gemini fixes the Georgian and fills in the other. Also runs on save if one is empty.</p>
+        </div>
         <p class="form-error hidden" data-error></p>
       </div>
       <div class="modal-footer">

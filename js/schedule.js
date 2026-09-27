@@ -98,7 +98,7 @@ export function costPosition(tasks, payments, todayIso) {
 
 /**
  * Per-contractor performance on one project. Keyed by contractor_id ('' = unassigned).
- * Each entry: { items, onTime, late, avgDaysLate, overdue, open, delayHours, budget, paid }
+ * Each entry: { items, onTime, late, avgDaysLate, overdue, open, delayDays, budget, paid }
  *   onTime/late — finished items, split by whether done_at was after planned_finish
  *   overdue     — unfinished items past their planned finish today
  *   open        — unfinished items not yet overdue (in progress or upcoming)
@@ -108,7 +108,7 @@ export function contractorPerformance(tasks, delays, payments, todayIso) {
   const entry = (id) => {
     const key = id ?? '';
     if (!stats.has(key)) {
-      stats.set(key, { items: 0, onTime: 0, late: 0, lateDays: 0, overdue: 0, open: 0, delayHours: 0, budget: 0, paid: 0 });
+      stats.set(key, { items: 0, onTime: 0, late: 0, lateDays: 0, overdue: 0, open: 0, delayDays: 0, budget: 0, paid: 0 });
     }
     return stats.get(key);
   };
@@ -133,7 +133,7 @@ export function contractorPerformance(tasks, delays, payments, todayIso) {
       s.open += 1;
     }
   }
-  for (const d of delays) if (d.contractor_id) entry(d.contractor_id).delayHours += Number(d.duration_hours || 0);
+  for (const d of delays) if (d.contractor_id) entry(d.contractor_id).delayDays += Number(d.duration_days || 0);
   for (const p of payments) entry(taskContractor.get(p.task_id)).paid += Number(p.amount || 0);
 
   for (const s of stats.values()) {
