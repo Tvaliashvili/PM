@@ -59,6 +59,8 @@ html, body { background: var(--ink-950); }
 .btn-primary:hover:not(:disabled) { background: var(--brand-400); }
 .btn-secondary { background: var(--ink-800); color: #e2e8f0; border: 1px solid var(--ink-700); }
 .btn-secondary:hover:not(:disabled) { background: var(--ink-700); }
+.btn-danger { background: #e11d48; color: #fff; }
+.btn-danger:hover:not(:disabled) { background: #be123c; }
 
 /* ---------- Form controls ---------- */
 .select-dark,

@@ -368,25 +368,71 @@ function onProjectsClick(e) {
   if (open) return openProject(open.dataset.openProject);
 
   const del = e.target.closest('[data-delete-project]');
-  if (del) deleteProject(del.dataset.deleteProject);
+  if (del) openDeleteProjectModal(del.dataset.deleteProject);
 }
 
-async function deleteProject(projectId) {
+function openDeleteProjectModal(projectId) {
   const project = state.projects.find((p) => p.id === projectId);
   if (!project) return;
-  if (!confirm(`Delete "${project.name}" and everything in it?\n\n`
-    + 'This permanently removes its timetable, budgets and payments, contractors, units, '
-    + 'daily logs and delays. This cannot be undone.')) return;
+  const form = $('#form-delete-project');
+  form.reset();
+  form.elements.id.value = project.id;
+  $('#delete-project-name').textContent = project.name;
+  showFormError(form, '');
+  openModal('modal-delete-project');
+}
+
+/**
+ * Deleting a project wipes years of site history and nothing restores it, so
+ * the account's own password has to be typed first - a reflex click is not enough.
+ */
+async function confirmDeleteProject(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn = $('[type=submit]', form);
+  const projectId = form.elements.id.value;
+  const email = state.user?.email;
+  if (!email) {
+    showFormError(form, 'You are not signed in.');
+    return;
+  }
+
+  showFormError(form, '');
+  setBusy(btn, true, 'Checking…');
+  // The only way to check a password is to sign in with it again: same user,
+  // same session, so nothing else about the app changes.
+  const { error: authError } = await db.auth.signInWithPassword({
+    email,
+    password: form.elements.password.value,
+  });
+  if (authError) {
+    setBusy(btn, false);
+    showFormError(form, 'That password is not right - nothing has been deleted.');
+    form.elements.password.select();
+    return;
+  }
+
+  setBusy(btn, true, 'Deleting…');
+  const deleted = await deleteProject(projectId);
+  setBusy(btn, false);
+  if (deleted) closeModal('modal-delete-project');
+}
+
+/** Removes the project and everything that cascades from it. True when it went. */
+async function deleteProject(projectId) {
+  const project = state.projects.find((p) => p.id === projectId);
+  if (!project) return false;
 
   const { error } = await db.from('projects').delete().eq('id', projectId);
   if (error) {
     toast(`Could not delete project: ${error.message}`, 'error');
-    return;
+    return false;
   }
 
   toast(`Deleted ${project.name}.`, 'success');
   if (state.projectId === projectId) selectProject(null);
   await loadProjects();
+  return true;
 }
 
 // ---------- New project ----------
@@ -2607,6 +2653,7 @@ $('#form-ask').addEventListener('submit', askGemini);
 $('#form-ask').addEventListener('click', onAskSuggestion);
 $('#btn-edit-project').addEventListener('click', openEditProjectModal);
 $('#form-edit-project').addEventListener('submit', saveEditProject);
+$('#form-delete-project').addEventListener('submit', confirmDeleteProject);
 $('#btn-report-daily').addEventListener('click', exportDailyReport);
 $('#btn-view-report').addEventListener('click', openProjectReport);
 $('#btn-report-pdf').addEventListener('click', downloadReport);

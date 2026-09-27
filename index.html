@@ -1042,6 +1042,34 @@
     </form>
   </dialog>
 
+  <!-- Delete a project: the password is asked for because this cannot be undone -->
+  <dialog id="modal-delete-project" class="modal" aria-labelledby="delete-project-title">
+    <form id="form-delete-project">
+      <input type="hidden" name="id">
+      <div class="modal-header">
+        <h2 id="delete-project-title">Delete project</h2>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body space-y-4">
+        <p class="text-sm text-slate-300">
+          <strong id="delete-project-name" class="text-white"></strong> and everything in it will be
+          permanently removed: its timetable, budgets and payments, contractors, units, daily logs and delays.
+        </p>
+        <p class="text-sm font-semibold text-rose-300">This cannot be undone and there is no backup.</p>
+        <label class="block">
+          <span class="form-label">Type your sign-in password to confirm</span>
+          <input name="password" type="password" required autocomplete="current-password"
+                 class="input-dark w-full" placeholder="Password">
+        </label>
+        <p class="form-error hidden" data-error></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+        <button type="submit" class="btn btn-danger">Delete permanently</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- New delay -->
   <dialog id="modal-delay" class="modal" aria-labelledby="delay-title">
     <form id="form-delay">
