@@ -463,19 +463,18 @@ export async function buildProjectReport({
   });
   const lateBy = forecast && project.end_date ? dayDiff(project.end_date, forecast.date) : null;
 
-  // What is left, month by month: what starts, what is due, and the money riding on it.
-  const ahead = new Map();
-  const bucket = (key) => {
-    if (!ahead.has(key)) ahead.set(key, { starts: 0, due: 0, budget: 0 });
-    return ahead.get(key);
-  };
-  for (const t of remaining) {
-    if (t.planned_start > today) bucket(t.planned_start.slice(0, 7)).starts += 1;
-    const b = bucket(t.planned_finish.slice(0, 7));
-    b.due += 1;
-    b.budget += Number(t.budget || 0) * (1 - completionOf(t));
+  // What is left, listed by the month it is due: a count says how much is
+  // coming, but not which work it is - and that is what gets chased.
+  const AHEAD_MAX = 15; // a long project would otherwise fill pages with rows
+  const byFinish = [...remaining].sort((a, b) => a.planned_finish.localeCompare(b.planned_finish));
+  const aheadShown = byFinish.slice(0, AHEAD_MAX);
+  const aheadMore = byFinish.length - aheadShown.length;
+  const aheadMonths = new Map();
+  for (const t of aheadShown) {
+    const key = t.planned_finish.slice(0, 7);
+    if (!aheadMonths.has(key)) aheadMonths.set(key, []);
+    aheadMonths.get(key).push(t);
   }
-  const aheadRows = [...ahead].sort((a, b) => a[0].localeCompare(b[0]));
   const monthLabel = (key) => {
     const [y, mo] = key.split('-');
     return `${MONTHS_KA[Number(mo) - 1]}<em>${MONTHS_EN[Number(mo) - 1]} ’${y.slice(2)}</em>`;
@@ -507,26 +506,39 @@ export async function buildProjectReport({
     : tile('პროგნოზი ამ ტემპით', 'Forecast at this pace', '-',
       L('ჯერ ნაადრევია', 'too early to say'), 'muted')}
       </div>
-      ${aheadRows.length ? `
+      ${aheadMonths.size ? `
         <table class="rpt-compact">
           <thead>
             <tr>
-              <th>${L('თვე', 'Month')}</th>
-              <th class="num">${L('იწყება', 'Starts')}</th>
-              <th class="num">${L('უნდა დასრულდეს', 'Due to finish')}</th>
-              <th class="num">${L('დარჩენილი ბიუჯეტი', 'Budget left')}</th>
+              <th>${L('ამოცანა', 'Work item')}</th>
+              <th>${L('კონტრაქტორი', 'Contractor')}</th>
+              <th>${L('უნდა დასრულდეს', 'Due to finish')}</th>
+              <th class="num">${L('შესრ.', 'Done')}</th>
+              <th class="num">${L('დარჩენილი თანხა', 'Value left')}</th>
             </tr>
           </thead>
-          <tbody>
-            ${aheadRows.map(([key, v]) => `
-              <tr${key === today.slice(0, 7) ? ' class="rpt-current"' : ''}>
-                <td>${monthLabel(key)}</td>
-                <td class="num">${v.starts || '-'}</td>
-                <td class="num">${v.due || '-'}</td>
-                <td class="num">${v.budget ? m(v.budget) : '-'}</td>
-              </tr>`).join('')}
-          </tbody>
-        </table>` : ''}
+          ${[...aheadMonths].map(([key, list]) => `
+            <tbody>
+              <tr class="rpt-month-row${key === today.slice(0, 7) ? ' rpt-current' : ''}">
+                <td colspan="5">${monthLabel(key)} · ${list.length} ${L('ამოცანა', 'items')}</td>
+              </tr>
+              ${list.map((t) => {
+    const leftValue = Number(t.budget || 0) * (1 - completionOf(t));
+    return `
+              <tr>
+                <td>${esc(taskBi(t))}</td>
+                <td>${t.contractor_id ? esc(nameOf(t.contractor_id)) : '-'}</td>
+                <td>${d(t.planned_finish)}</td>
+                <td class="num">${Math.round(completionOf(t) * 100)}%</td>
+                <td class="num">${leftValue ? m(leftValue) : '-'}</td>
+              </tr>`;
+  }).join('')}
+            </tbody>`).join('')}
+        </table>
+        ${aheadMore ? `<p class="rpt-foot-note">${L(
+    `და კიდევ ${aheadMore} ამოცანა - სრული სია სამუშაო გრაფიკშია.`,
+    `and ${aheadMore} more - the timeline above lists them all.`,
+  )}</p>` : ''}` : ''}
       ${forecast ? `<p class="rpt-foot-note">${L(
     `პროგნოზი ეყრდნობა აქამდე ნაჩვენებ ტემპს: ${forecast.elapsed} დღეში ${progress.actualPct}%.`,
     `The forecast follows the pace kept so far: ${progress.actualPct}% in ${forecast.elapsed} days.`,

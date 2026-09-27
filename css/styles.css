@@ -723,6 +723,10 @@ textarea.input-dark { resize: vertical; }
 .rpt table { margin-top: 4px; }
 .rpt tbody tr:nth-child(even) td { background: #f8fafc; }
 .rpt tr.rpt-current td { background: #fffbeb; }
+/* A month heading inside a table, above the work due that month. */
+.rpt tr.rpt-month-row td { font-weight: 700; background: #eef2f7; border-top: 1px solid #cbd5e1; }
+.rpt tr.rpt-month-row.rpt-current td { background: #fef3c7; }
+.rpt tr.rpt-month-row em { font-weight: 400; color: #64748b; }
 .rpt tfoot td { font-weight: 700; background: #f1f5f9; }
 .rpt td em { margin-left: 3px; }
 
