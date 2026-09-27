@@ -46,7 +46,7 @@ const biText = (ka, en) => (ka && en
 
 const TASK_STATUS = {
   done:     { ka: 'დასრულდა',         en: 'Done',        tone: 'ok' },
-  overdue:  { ka: 'ვადაგადაცილებული', en: 'Overdue',     tone: 'bad' },
+  overdue:  { ka: 'ვადაგასული',        en: 'Overdue',     tone: 'bad' },
   active:   { ka: 'მიმდინარე',         en: 'In progress', tone: 'info' },
   upcoming: { ka: 'დაგეგმილი',         en: 'Upcoming',    tone: 'muted' },
 };
@@ -240,7 +240,7 @@ export async function buildProjectReport({
         ${tile('ბიუჯეტი', 'Budget', m(cost.budget), `${L('შესრულებული', 'Work done')} ${m(cost.earned)}`)}
         ${tile('დახარჯული', 'Spent', m(cost.spent), spentSub,
           cost.budget && cost.spent > cost.budget ? 'bad' : '')}
-        ${tile('ვადაგადაცილებული', 'Overdue items', String(progress.overdue.length),
+        ${tile('ვადაგასული პუნქტები', 'Overdue items', String(progress.overdue.length),
           `${progress.count} ${L('პუნქტიდან', 'items in total')}`, progress.overdue.length ? 'bad' : 'ok')}
         ${rooms
           ? tile('ოთახები', 'Rooms', String(units.length), area ? `${num.format(area)} m²` : '')
@@ -261,7 +261,7 @@ export async function buildProjectReport({
       `${t.name} - ${t.daysLate} days overdue${who ? ` (${who})` : ''}`]);
   }
   if (progress.overdue.length > 5) {
-    alerts.push(['bad', `და კიდევ ${progress.overdue.length - 5} ვადაგადაცილებული პუნქტი`,
+    alerts.push(['bad', `და კიდევ ${progress.overdue.length - 5} ვადაგასული პუნქტი`,
       `and ${progress.overdue.length - 5} more overdue items`]);
   }
   if (project.end_date && today > project.end_date && progress.actualPct < 100) {
@@ -390,7 +390,7 @@ export async function buildProjectReport({
           </div>
           <div class="rpt-g-pct">
             <strong>${done}%</strong>
-            <span class="rpt-g-state rpt-g-state-${s.key}">${esc(TASK_STATUS[s.key].ka)}<br>${esc(TASK_STATUS[s.key].en)}${s.daysLate ? ` +${s.daysLate}d` : ''}</span>
+            <span class="rpt-g-state rpt-g-state-${s.key}">${esc(TASK_STATUS[s.key].ka)}${s.daysLate ? ` +${s.daysLate}დღ` : ''}<br>${esc(TASK_STATUS[s.key].en)}${s.daysLate ? ` +${s.daysLate}d` : ''}</span>
           </div>
         </div>`;
     }).join('');
@@ -399,7 +399,7 @@ export async function buildProjectReport({
       <div class="rpt-legend">
         ${legendItem('ok', 'დასრულდა', 'Done')}
         ${legendItem('info', 'მიმდინარე', 'In progress')}
-        ${legendItem('bad', 'ვადაგადაცილებული', 'Overdue')}
+        ${legendItem('bad', 'ვადაგასული', 'Overdue')}
         ${legendItem('muted', 'დაგეგმილი', 'Upcoming')}
         <span class="rpt-legend-item"><i class="rpt-sw rpt-sw-fill"></i>${L('მუქი ნაწილი = შესრულებული %', 'dark part = % complete')}</span>
         <span class="rpt-legend-item"><i class="rpt-sw-line rpt-sw-today"></i>${L('დღეს', 'Today')}</span>
@@ -704,7 +704,7 @@ export async function buildProjectReport({
   const rating = (s) => {
     if (!s?.items) return chip({ ka: 'სამუშაო არ აქვს', en: 'No work yet', tone: 'muted' });
     if (s.overdue) return chip({ ka: 'ვადაგადაცილება', en: 'Overdue', tone: 'bad' });
-    if (s.late) return chip({ ka: 'დაგვიანება', en: 'Late', tone: 'warn' }, ` · ${s.avgDaysLate}d`);
+    if (s.late) return chip({ ka: 'დაგვიანება', en: 'Late', tone: 'warn' }, ` · ${s.avgDaysLate}დღ / ${s.avgDaysLate}d`);
     if (s.onTime) return chip({ ka: 'ვადაში', en: 'On time', tone: 'ok' });
     return chip({ ka: 'მიმდინარე', en: 'Ongoing', tone: 'info' });
   };

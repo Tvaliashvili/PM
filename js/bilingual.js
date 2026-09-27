@@ -84,7 +84,7 @@ export const KA = {
   // Timetable states
   'Done': 'დასრულდა',
   'In progress': 'მიმდინარე',
-  'Overdue': 'ვადაგადაცილებული',
+  'Overdue': 'ვადაგასული',
   'Upcoming': 'დაგეგმილი',
 
   // Report phrases
