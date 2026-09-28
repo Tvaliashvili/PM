@@ -521,7 +521,7 @@ textarea.input-dark { resize: vertical; }
   letter-spacing: 0.06em;
   color: #b45309;
 }
-.pdf-page h1 { font-size: 22px; font-weight: 700; color: #0f172a; line-height: 1.2; }
+.pdf-page h1 { font-size: 22px; font-weight: 700; color: #0f172a; line-height: 1.35; }
 .pdf-page h2 {
   font-size: 13px;
   font-weight: 700;
@@ -631,9 +631,10 @@ textarea.input-dark { resize: vertical; }
 .rpt th em { display: block; font-size: 0.85em; margin-left: 0; }
 .rpt h2 {
   margin: 0 0 10px;
-  padding-bottom: 6px;
+  padding-bottom: 8px;
   border-bottom: 2px solid #e2e8f0;
   font-size: 13px;
+  line-height: 1.5;
   text-transform: none;
   letter-spacing: 0;
 }
@@ -751,9 +752,9 @@ textarea.input-dark { resize: vertical; }
   margin-bottom: 10px;
   border-bottom: 2px solid #0f172a;
 }
-.rpt .rpt-h h2 { margin: 0; padding-bottom: 5px; border: 0; font-size: 14px; }
+.rpt .rpt-h h2 { margin: 0; padding-bottom: 7px; border: 0; font-size: 14px; line-height: 1.5; }
 .rpt-h-note { font-size: 10.5px; font-weight: 600; color: #475569; }
-.rpt-sub-h { margin: 16px 0 6px; font-size: 12px; font-weight: 700; }
+.rpt-sub-h { margin: 16px 0 6px; font-size: 12px; font-weight: 700; line-height: 1.5; }
 .rpt h2, .rpt h3, .rpt .rpt-h, .rpt .rpt-sub-h { page-break-after: avoid; break-after: avoid; }
 .rpt p, .rpt .rpt-legend, .rpt .rpt-sub-h { page-break-inside: avoid; break-inside: avoid; }
 .rpt-sub-h em { margin-left: 4px; }
