@@ -63,8 +63,8 @@ function mergeManpower(logs) {
 }
 
 // ---------- 1. Query today's data ----------
-async function fetchTodayData(db, projectId, day) {
-  const [logs, delays, rentals] = await Promise.all([
+async function fetchTodayData(db, projectId, day, { withRooms = false } = {}) {
+  const [logs, delays, rentals, rooms] = await Promise.all([
     db.from('daily_logs')
       .select('log_date, weather, manpower, notes, notes_en, day_rate')
       .eq('project_id', projectId)
@@ -82,16 +82,24 @@ async function fetchTodayData(db, projectId, day) {
       .eq('project_id', projectId)
       .lte('start_date', day.date)
       .order('start_date'),
+    withRooms
+      ? db.from('flats').select('status').eq('project_id', projectId)
+      : Promise.resolve({ data: [] }),
   ]);
 
-  const failed = [logs, delays, rentals].find((r) => r.error);
+  const failed = [logs, delays, rentals, rooms].find((r) => r.error);
   if (failed) throw new Error(`Could not load today's data: ${failed.error.message}`);
   // Equipment on hire today: started on or before today and not yet returned.
   const onHire = rentals.data.filter((r) => rentalEnd(r) >= day.date);
   // Today's figures count today's delays; the ones carried over are listed apart.
   const today = delays.data.filter((d) => d.created_at >= day.startISO);
   const carried = delays.data.filter((d) => d.created_at < day.startISO);
-  return { logs: logs.data, delays: today, carriedDelays: carried, rentals: onHire };
+  // A room counts as done once it is finished or handed over.
+  const roomProgress = {
+    total: rooms.data.length,
+    done: rooms.data.filter((r) => r.status === 'finished' || r.status === 'handed_over').length,
+  };
+  return { logs: logs.data, delays: today, carriedDelays: carried, rentals: onHire, roomProgress };
 }
 
 // ---------- 2. AI summary (both languages) ----------
@@ -143,7 +151,7 @@ function fillList(list, items) {
   }
 }
 
-function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, manpower, summary, progress, userEmail, money }) {
+function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, roomProgress, manpower, summary, progress, userEmail, money }) {
   const page = document.getElementById('daily-report-template').content.firstElementChild.cloneNode(true);
   const set = (field, value) => { page.querySelector(`[data-field="${field}"]`).textContent = value; };
   const rooms = Boolean(project.has_rooms);
@@ -170,7 +178,9 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
   set('manpower-total', workers);
   set('delay-count', allDelays.length);
   set('delay-days', daysLost.toLocaleString('en-GB'));
-  if (rooms) set('total-flats', project.total_flats ?? '-');
+  if (rooms) set('total-flats', roomProgress.total
+    ? `${roomProgress.done} / ${roomProgress.total} (${Math.round((roomProgress.done / roomProgress.total) * 100)}%)`
+    : '-');
   set('progress', progress?.count
     ? `${progress.actualPct}% (${ka('plan')}/plan ${progress.plannedPct}%)`
     : bi('No timetable'));
@@ -244,7 +254,8 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
  */
 export async function generateDailyReport({ db, project, progress, userEmail, money }) {
   const day = todayRange();
-  const { logs, delays, carriedDelays, rentals } = await fetchTodayData(db, project.id, day);
+  const { logs, delays, carriedDelays, rentals, roomProgress } =
+    await fetchTodayData(db, project.id, day, { withRooms: Boolean(project.has_rooms) });
   const pay = dayWorkerPay(logs);
   const manpower = mergeManpower(logs);
 
@@ -256,7 +267,7 @@ export async function generateDailyReport({ db, project, progress, userEmail, mo
       location: { en: project.location, ka: project.location_ka },
       // the company that hired us - the report's main reader; spelled by hand in both languages
       client: { en: project.client_name, ka: project.client_name_ka },
-      ...(project.has_rooms ? { total_rooms: project.total_flats } : {}),
+      ...(project.has_rooms ? { total_rooms: roomProgress.total, rooms_finished: roomProgress.done } : {}),
     },
     // Timetable position (progress is weighted by planned duration).
     schedule: progress?.count ? {
@@ -280,7 +291,7 @@ export async function generateDailyReport({ db, project, progress, userEmail, mo
     })),
   });
 
-  const page = buildReport({ project, day, logs, delays, carriedDelays, rentals, manpower, summary, progress, userEmail, money });
+  const page = buildReport({ project, day, logs, delays, carriedDelays, rentals, roomProgress, manpower, summary, progress, userEmail, money });
   const root = document.getElementById('pdf-export-root');
   root.replaceChildren(page);
 
