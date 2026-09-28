@@ -288,9 +288,6 @@ const currentProject = () => state.projects.find((p) => p.id === state.projectId
 
 // Project name/location wherever it's shown in the workspace.
 function applyProjectHeader(project) {
-  const navLabel = $('#nav-project-name');
-  navLabel.textContent = project?.name ?? '';
-  navLabel.classList.toggle('hidden', !project);
   $('#topbar-project-name').textContent = project?.name ?? '';
   $('#topbar-project-location').textContent = [locationOf(project), clientOf(project) && `Client: ${clientOf(project)}`]
     .filter(Boolean).join(' · ');

@@ -383,17 +383,6 @@ html, body { background: var(--ink-950); }
 @media (max-width: 639px) { .log-notes { grid-template-columns: 1fr; } }
 
 /* ---------- Projects list ---------- */
-.nav-group-label {
-  margin: 0.9rem 0.75rem 0.35rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--brand-400);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .projects-grid {
   display: grid;
