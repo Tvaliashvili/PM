@@ -705,7 +705,7 @@ async function loadSchedule(projectId) {
       .eq('project_id', projectId)
       .order('name'),
     db.from('daily_logs')
-      .select('log_date, manpower, day_rate')
+      .select('log_date, manpower, day_rate, weather')
       .eq('project_id', projectId)
       .order('log_date'),
     db.from('equipment_rentals')
@@ -2788,6 +2788,7 @@ async function openProjectReport() {
       contractors: state.contractors,
       contractorDelays: state.contractorDelays,
       units: state.flats,
+      siteLogs: state.siteLogs,
       siteCosts: state.siteCosts,
       rentals: state.rentals,
       progress: state.progress ?? scheduleProgress([], todayISO()),
