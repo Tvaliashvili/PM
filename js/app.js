@@ -698,7 +698,7 @@ async function loadSchedule(projectId) {
       .eq('project_id', projectId)
       .order('paid_on'),
     db.from('delays')
-      .select('contractor_id, duration_days, created_at')
+      .select('contractor_id, duration_days, created_at, delay_cause, resolved_on')
       .eq('project_id', projectId),
     db.from('contractors')
       .select('id, name, name_ka, trade, contact_person, phone, email, notes')

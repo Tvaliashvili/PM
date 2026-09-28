@@ -866,6 +866,48 @@ export async function buildProjectReport({
   }
   const causes = [...causeDays].sort((a, b) => b[1].days - a[1].days);
   const maxCause = Math.max(1, ...causes.map(([, e]) => e.days));
+  // Who and how often, over the whole project rather than the last 30 days.
+  // One six-day delay is bad luck; the same cause three times from the same
+  // contractor is a pattern, and that is a different conversation.
+  const byContractor = new Map();
+  for (const x of contractorDelays) {
+    if (!x.contractor_id) continue;
+    const e = byContractor.get(x.contractor_id) ?? { n: 0, days: 0, causes: new Map() };
+    e.n += 1;
+    e.days += delayDaysLost(x, today);
+    e.causes.set(x.delay_cause, (e.causes.get(x.delay_cause) ?? 0) + 1);
+    byContractor.set(x.contractor_id, e);
+  }
+  const blame = [...byContractor]
+    .map(([id, e]) => {
+      const [cause, times] = [...e.causes].sort((a, b) => b[1] - a[1])[0] ?? ['', 0];
+      return { id, ...e, cause, times };
+    })
+    .sort((a, b) => b.days - a.days);
+
+  const blameTable = blame.length ? `
+    <h3 class="rpt-sub-h">${L('შეფერხებები კონტრაქტორების მიხედვით (მთელი პროექტი)', 'Delays by contractor (whole project)')}</h3>
+    <table class="rpt-compact rpt-avoid">
+      <thead>
+        <tr>
+          <th>${L('კონტრაქტორი', 'Contractor')}</th>
+          <th class="num">${L('შემთხვევა', 'Times')}</th>
+          <th class="num">${L('დაკარგული დღე', 'Days lost')}</th>
+          <th>${L('ყველაზე ხშირი მიზეზი', 'Most frequent cause')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${blame.map((b) => `
+          <tr>
+            <td>${esc(nameOf(b.id))}</td>
+            <td class="num">${b.n}</td>
+            <td class="num rpt-late">${num.format(b.days)}</td>
+            <td>${esc(bi(b.cause))}${b.times > 1
+    ? ` ${chip({ ka: `${b.times}-ჯერ`, en: `${b.times}×`, tone: 'warn' })}` : ''}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>` : '';
+
   const delaysSection = `
     <section class="rpt-section">
       ${H('შეფერხებები (ბოლო 30 დღე)', 'Delays (last 30 days)', delays.length ? `${delayDays} ${L('დღე', 'days')}` : '')}
@@ -906,6 +948,7 @@ export async function buildProjectReport({
               </tr>`).join('')}
           </tbody>
         </table>` : `<p class="rpt-all-good">✓ ${L('ბოლო 30 დღეში შეფერხება არ ყოფილა', 'No delays in the last 30 days')}</p>`}
+      ${blameTable}
     </section>`;
 
   const footer = `<div class="rpt-avoid">${signatureHtml(REPORT_AUTHOR)}</div>`;
