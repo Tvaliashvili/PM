@@ -2467,7 +2467,11 @@ async function resetPicker(name, owner = null) {
   p.removed = [];
   renderPicker(name);
   if (!owner) return;
-  const photos = await fetchPhotos(db, owner);
+  // fetchPhotos takes lists, not one id - passing the owner straight through
+  // matched nothing, so an edited entry opened with no photos to remove.
+  const photos = await fetchPhotos(db, owner.dailyLogId
+    ? { dailyLogIds: [owner.dailyLogId] }
+    : { delayIds: [owner.delayId] });
   const urls = await signPhotos(db, photos);
   p.existing = photos.map((photo) => ({ photo, url: urls.get(photo.id) || '' }));
   renderPicker(name);
