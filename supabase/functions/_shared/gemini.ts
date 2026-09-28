@@ -105,7 +105,13 @@ export async function generateJson(
   }
 
   if (!res.ok) {
-    console.error(`Gemini API error ${res.status}:`, data?.error?.message);
+    console.error(`Gemini API error ${res.status}:`, data?.error?.message, skipped.join("; "));
+    // Every model 404s = the names are retired or the GEMINI_MODEL secret is
+    // wrong. That is a configuration problem, not a busy service, and saying
+    // "try again in a minute" would hide it for good.
+    if (res.status === 404) {
+      throw new GeminiError(`No Gemini model answered - check GEMINI_MODEL (tried ${GEMINI_MODELS.join(", ")})`, 502);
+    }
     if (res.status === 429) {
       throw new GeminiError("Gemini usage limit reached for now - try again later (the free Gemini plan has a daily limit)", 429);
     }

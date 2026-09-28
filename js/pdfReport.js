@@ -199,10 +199,15 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
     ? `${progress.actualPct}% (${ka('plan')}/plan ${progress.plannedPct}%)`
     : bi('No timetable'));
 
-  // Executive summary - Georgian and English columns
-  fillList(page.querySelector('[data-list="summary-ka"]'), summary.ka);
-  fillList(page.querySelector('[data-list="summary-en"]'), summary.en);
-  set('summary-note', summary.source === 'error' ? summary.note : '');
+  // Executive summary - Georgian and English columns. If Gemini could not be
+  // reached the section goes altogether: an apology to the client reads worse
+  // than no summary, and the app says what happened.
+  if (summary.source === 'error') {
+    page.querySelector('[data-section="summary"]').remove();
+  } else {
+    fillList(page.querySelector('[data-list="summary-ka"]'), summary.ka);
+    fillList(page.querySelector('[data-list="summary-en"]'), summary.en);
+  }
 
   // Manpower
   const mpRows = page.querySelector('[data-rows="manpower"]');
