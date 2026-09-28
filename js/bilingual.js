@@ -25,6 +25,12 @@ export const KA = {
   'Payment / funding': 'გადახდა / დაფინანსება',
   'Other': 'სხვა',
 
+  // Variations (change orders)
+  'Instructed': 'დავალებული',
+  'Priced': 'შეფასებული',
+  'Approved': 'დამტკიცებული',
+  'Rejected': 'უარყოფილი',
+
   // Site events (safety and quality)
   'Incident': 'შემთხვევა',
   'Near miss': 'კინაღამ შემთხვევა',

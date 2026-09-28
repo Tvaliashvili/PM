@@ -528,3 +528,58 @@ create policy "authenticated_full_access" on public.site_events
   for all to authenticated using (true) with check (true);
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 17. Retention
+-- A share of every certified amount is held back until the work is accepted.
+-- task_payments.amount stays the net actually paid, so every existing cost
+-- figure is unchanged; retention is what was withheld from that certificate,
+-- and gross certified = amount + retention.
+-- -------------------------------------------------------------
+alter table public.task_payments
+  add column if not exists retention numeric(14,2) not null default 0 check (retention >= 0);
+
+alter table public.projects
+  add column if not exists retention_pct numeric(5,2) not null default 0
+    check (retention_pct >= 0 and retention_pct <= 100);
+
+notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 18. Variations (change orders)
+-- Extra or altered work instructed after the contract was signed. Editing a
+-- task's budget would hide that it was ever extra, which is exactly what gets
+-- argued about later - so a variation is its own record, from instruction to
+-- approval, carrying both the money and any extension of time claimed with it.
+-- -------------------------------------------------------------
+create table if not exists public.variations (
+  id             uuid primary key default gen_random_uuid(),
+  project_id     uuid not null references public.projects(id) on delete cascade,
+  ref            text,           -- the number it is known by on site, e.g. VO-03
+  title          text not null,
+  description    text,           -- Georgian
+  description_en text,           -- English
+  contractor_id  uuid references public.contractors(id) on delete set null,
+  instructed_on  date not null default current_date,
+  status         text not null default 'instructed'
+                 check (status in ('instructed', 'priced', 'approved', 'rejected')),
+  amount         numeric(14,2) not null default 0,
+  days_claimed   integer not null default 0 check (days_claimed >= 0),
+  decided_on     date,           -- approved or rejected on
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+
+create index if not exists variations_project_idx
+  on public.variations (project_id, instructed_on desc);
+
+drop trigger if exists set_updated_at on public.variations;
+create trigger set_updated_at before update on public.variations
+  for each row execute function public.set_updated_at();
+
+alter table public.variations enable row level security;
+drop policy if exists "authenticated_full_access" on public.variations;
+create policy "authenticated_full_access" on public.variations
+  for all to authenticated using (true) with check (true);
+
+notify pgrst, 'reload schema';

@@ -110,6 +110,10 @@
           <svg viewBox="0 0 24 24" class="nav-icon"><path d="M12 1 3 5v6c0 5 3.8 9.7 9 11 5.2-1.3 9-6 9-11V5l-9-4zm0 6a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm0 5.5c1.7 0 5 .9 5 2.5v1.3A8.9 8.9 0 0 1 12 19a8.9 8.9 0 0 1-5-2.7V15c0-1.6 3.3-2.5 5-2.5z"/></svg>
           Safety
         </a>
+        <a href="#variations" data-nav="variations" class="nav-link">
+          <svg viewBox="0 0 24 24" class="nav-icon"><path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zM20.7 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          Variations
+        </a>
         <a href="#reports" data-nav="reports" class="nav-link">
           <svg viewBox="0 0 24 24" class="nav-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 13h8v2H8v-2zm0 4h5v2H8v-2z"/></svg>
           PDF Reports
@@ -450,6 +454,29 @@
           </div>
         </section>
 
+        <!-- VARIATIONS -->
+        <section id="section-variations" data-section="variations" class="module hidden">
+          <div class="module-header">
+            <div>
+              <h1 class="text-xl font-semibold text-white">Variations</h1>
+              <p class="text-sm text-slate-500">
+                Work instructed after the contract was signed. Only approved variations change the contract sum - the rest is money still being argued about.
+              </p>
+            </div>
+            <button id="btn-new-variation" class="btn btn-primary">
+              <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
+              Add Variation
+            </button>
+          </div>
+          <div class="space-y-4">
+            <div id="variations-summary" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
+            <div class="panel">
+              <h2 class="panel-title">Variation register</h2>
+              <div id="variations-table" class="overflow-x-auto"></div>
+            </div>
+          </div>
+        </section>
+
         <!-- PDF REPORTS -->
         <section id="section-reports" data-section="reports" class="module hidden">
           <div class="module-header">
@@ -696,10 +723,15 @@
             <span class="form-label">Daily worker rate (default, per day)</span>
             <input name="day_rate" type="number" min="0" step="0.01" class="input-dark w-full" placeholder="e.g. 80">
           </label>
+          <label class="block">
+            <span class="form-label">Retention held (%)</span>
+            <input name="retention_pct" type="number" min="0" max="100" step="0.01" class="input-dark w-full" placeholder="e.g. 5">
+          </label>
         </div>
         <p class="text-xs text-slate-500">
           Changing the currency relabels existing amounts - it doesn't convert them.
           The daily worker rate fills in each new daily log; you can change it per log.
+          Retention is withheld from each certified payment and shown as money owed back to the contractor.
         </p>
         <label class="check-row">
           <input name="has_rooms" type="checkbox">
@@ -819,21 +851,26 @@
     <div class="modal-body space-y-4">
       <p id="payments-summary" class="text-sm text-slate-400"></p>
       <div id="payments-list" class="overflow-x-auto"></div>
-      <form id="form-payment" class="grid grid-cols-1 sm:grid-cols-[9rem_9rem_1fr_auto] gap-3 items-end pt-3 border-t border-ink-700">
+      <form id="form-payment" class="grid grid-cols-1 sm:grid-cols-[9rem_9rem_9rem_1fr_auto] gap-3 items-end pt-3 border-t border-ink-700">
         <label class="block">
           <span class="form-label">Date paid</span>
           <input name="paid_on" type="date" required class="input-dark w-full">
         </label>
         <label class="block">
-          <span class="form-label">Amount</span>
-          <input name="amount" type="number" min="0.01" step="0.01" required class="input-dark w-full">
+          <span class="form-label">Certified</span>
+          <input name="gross" type="number" min="0.01" step="0.01" required class="input-dark w-full">
+        </label>
+        <label class="block">
+          <span class="form-label">Retention held</span>
+          <input name="retention" type="number" min="0" step="0.01" class="input-dark w-full" placeholder="0">
         </label>
         <label class="block">
           <span class="form-label">Note</span>
           <input name="note" maxlength="200" class="input-dark w-full" placeholder="e.g. Advance, invoice #12">
         </label>
         <button type="submit" class="btn btn-primary justify-center">Add Payment</button>
-        <p class="form-error hidden sm:col-span-4" data-error></p>
+        <p id="payment-net" class="text-sm text-slate-400 sm:col-span-5"></p>
+        <p class="form-error hidden sm:col-span-5" data-error></p>
       </form>
     </div>
   </dialog>
@@ -1173,6 +1210,71 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-close>Cancel</button>
         <button type="submit" class="btn btn-primary">Save Delay</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Variation (add / edit) -->
+  <dialog id="modal-variation" class="modal" aria-labelledby="variation-title">
+    <form id="form-variation">
+      <input type="hidden" name="id">
+      <div class="modal-header">
+        <h2 id="variation-title">Add Variation</h2>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <label class="block">
+            <span class="form-label">Reference</span>
+            <input name="ref" maxlength="20" class="input-dark w-full" placeholder="e.g. VO-03">
+          </label>
+          <label class="block">
+            <span class="form-label">Instructed on</span>
+            <input name="instructed_on" type="date" required class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Status</span>
+            <select id="variation-status" name="status" class="select-dark w-full"></select>
+          </label>
+        </div>
+        <label class="block">
+          <span class="form-label">What was instructed</span>
+          <input name="title" required maxlength="160" class="input-dark w-full"
+                 placeholder="e.g. Extra drainage to the east boundary">
+        </label>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <label class="block">
+            <span class="form-label">Contractor</span>
+            <select id="variation-contractor" name="contractor_id" class="select-dark w-full"></select>
+          </label>
+          <label class="block">
+            <span class="form-label">Value</span>
+            <input name="amount" type="number" min="0" step="0.01" class="input-dark w-full" placeholder="0">
+          </label>
+          <label class="block">
+            <span class="form-label">Extra days claimed</span>
+            <input name="days_claimed" type="number" min="0" step="1" class="input-dark w-full" placeholder="0">
+          </label>
+        </div>
+        <label class="block" id="variation-decided-field">
+          <span class="form-label">Decided on</span>
+          <input name="decided_on" type="date" class="input-dark w-full">
+        </label>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="form-label">Detail - ქართული</span>
+            <textarea name="description" rows="3" class="input-dark w-full"></textarea>
+          </label>
+          <label class="block">
+            <span class="form-label">Detail - English</span>
+            <textarea name="description_en" rows="3" class="input-dark w-full"></textarea>
+          </label>
+        </div>
+        <p class="form-error hidden" data-error></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Variation</button>
       </div>
     </form>
   </dialog>

@@ -5,7 +5,7 @@ import {
   SUPABASE_URL, SUPABASE_KEY, CURRENCIES, DEFAULT_CURRENCY,
   UNIT_TYPES, UNIT_STATUSES,
   MANPOWER_TRADES, WEATHER_OPTIONS, DELAY_CAUSES, DAY_WORKER_KEY, EQUIPMENT_SUGGESTIONS,
-  SITE_EVENT_KINDS, INCIDENT_SEVERITIES,
+  SITE_EVENT_KINDS, INCIDENT_SEVERITIES, VARIATION_STATUSES,
   BOQ_UNITS, CONTRACTOR_TRADES,
 } from './config.js';
 import { generateDailyReport } from './pdfReport.js';
@@ -38,6 +38,7 @@ const state = {
   contractors: [],      // this project's contractors
   siteLogs: [],         // every daily log's date, manpower and day rate (daily-worker pay)
   events: [],           // safety and quality events, newest first
+  variations: [],       // change orders, newest first
   rentals: [],          // equipment_rentals
   delays: [],           // every delay on the project, newest first
   siteCosts: [],        // labourCosts() + rentalCosts() entries
@@ -114,7 +115,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-view-report', '#btn-add-unit', '#btn-add-task', '#btn-baseline', '#btn-new-event', '#btn-add-contractor', '#btn-add-rental',
+  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-view-report', '#btn-add-unit', '#btn-add-task', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -228,7 +229,7 @@ function showSetupNotice() {
 async function loadProjects() {
   const { data, error } = await db
     .from('projects')
-    .select('id, name, name_ka, location, location_ka, client_name, client_name_ka, total_flats, has_rooms, day_rate, created_at, start_date, end_date, currency, baseline_set_on')
+    .select('id, name, name_ka, location, location_ka, client_name, client_name_ka, total_flats, has_rooms, day_rate, created_at, start_date, end_date, currency, baseline_set_on, retention_pct')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -258,6 +259,7 @@ async function selectProject(projectId) {
   state.siteCosts = [];
   state.delays = [];
   state.events = [];
+  state.variations = [];
   setProjectActionsEnabled(Boolean(state.projectId));
 
   const project = currentProject();
@@ -272,7 +274,7 @@ async function selectProject(projectId) {
   resetLogFilter(); // a new project starts with a clean, unfiltered log list
   await Promise.all([
     loadUnits(project.id), loadSchedule(project.id), refreshDashboard(project.id), loadLogs(project.id),
-    loadEvents(project.id),
+    loadEvents(project.id), loadVariations(project.id),
   ]);
 }
 
@@ -698,7 +700,7 @@ async function loadSchedule(projectId) {
       .order('planned_start')
       .order('planned_finish'),
     db.from('task_payments')
-      .select('id, task_id, paid_on, amount, note')
+      .select('id, task_id, paid_on, amount, retention, note')
       .eq('project_id', projectId)
       .order('paid_on'),
     db.from('delays')
@@ -1368,6 +1370,7 @@ function openEditProjectModal() {
   f.currency.value = project.currency ?? DEFAULT_CURRENCY;
   f.has_rooms.checked = hasRooms(project);
   f.day_rate.value = project.day_rate ?? '';
+  f.retention_pct.value = Number(project.retention_pct) || '';
   showFormError(form, '');
   openModal('modal-edit-project');
 }
@@ -1391,6 +1394,7 @@ async function saveEditProject(e) {
     currency: fd.get('currency') || DEFAULT_CURRENCY,
     has_rooms: fd.has('has_rooms'),
     day_rate: fd.get('day_rate') === '' ? null : Number(fd.get('day_rate')),
+    retention_pct: Number(fd.get('retention_pct') || 0),
   };
   if (row.start_date && row.end_date && row.end_date < row.start_date) {
     showFormError(form, 'Planned completion must be on or after the start date.');
@@ -1808,18 +1812,21 @@ function renderPaymentsList() {
   const budget = Number(task.budget || 0);
 
   $('#payments-title').textContent = `Payments - ${task.name}`;
-  $('#payments-summary').textContent = budget
+  const held = sumOf(payments, 'retention');
+  $('#payments-summary').textContent = (budget
     ? `Budget ${money.format(budget)} · paid ${money.format(paid)} · ${paid > budget ? `${money.format(paid - budget)} over budget` : `${money.format(budget - paid)} left`}`
-    : `Paid ${money.format(paid)} · no budget set for this item`;
+    : `Paid ${money.format(paid)} · no budget set for this item`)
+    + (held ? ` · ${money.format(held)} retention held` : '');
 
   $('#payments-list').innerHTML = payments.length ? `
     <table class="data-table">
-      <thead><tr><th>Date</th><th class="num">Amount</th><th>Note</th><th></th></tr></thead>
+      <thead><tr><th>Date</th><th class="num">Paid</th><th class="num">Retention</th><th>Note</th><th></th></tr></thead>
       <tbody>
         ${payments.map((p) => `
           <tr>
             <td class="whitespace-nowrap">${esc(formatDate(p.paid_on))}</td>
             <td class="num">${money2.format(p.amount)}</td>
+            <td class="num">${Number(p.retention) ? money2.format(p.retention) : '<span class="text-slate-500">-</span>'}</td>
             <td>${esc(p.note ?? '')}</td>
             <td class="text-right">
               <button type="button" class="table-action is-danger" data-payment-delete="${esc(p.id)}">Delete</button>
@@ -1835,6 +1842,7 @@ function openPaymentsModal(taskId) {
   form.reset();
   form.elements.paid_on.value = todayISO();
   showFormError(form, '');
+  updatePaymentNet();
   renderPaymentsList();
   openModal('modal-payments');
   form.elements.amount.focus();
@@ -1856,21 +1864,52 @@ async function reloadPayments() {
   renderScheduleViews();
 }
 
+// "10,000 certified - 500 retention = 9,500 paid", under the payment form.
+function updatePaymentNet() {
+  const f = $('#form-payment').elements;
+  const gross = Number(f.gross.value || 0);
+  const pct = Number(currentProject()?.retention_pct || 0);
+  // Retention follows the project percentage until someone types over it.
+  if (document.activeElement === f.gross && pct > 0) {
+    f.retention.value = gross > 0 ? (gross * pct / 100).toFixed(2) : '';
+  }
+  const retention = Number(f.retention.value || 0);
+  const el = $('#payment-net');
+  if (!(gross > 0)) {
+    el.textContent = pct > 0
+      ? `${pct}% retention is filled in for you; change it if this certificate differs.`
+      : '';
+    return;
+  }
+  el.textContent = retention > 0
+    ? `${money2.format(gross)} certified - ${money2.format(retention)} retention = ${money2.format(gross - retention)} paid`
+    : `${money2.format(gross)} paid, nothing held`;
+}
+
 async function savePayment(e) {
   e.preventDefault();
   const form = e.currentTarget;
   const btn  = $('[type=submit]', form);
   const fd   = new FormData(form);
 
+  // The certificate is the gross; what leaves the bank is the gross less the
+  // retention held, and that stays the payment's amount.
+  const gross = Number(fd.get('gross'));
+  const retention = Number(fd.get('retention') || 0);
   const row = {
     project_id: state.projectId,
     task_id:    paymentTaskId,
     paid_on:    fd.get('paid_on'),
-    amount:     Number(fd.get('amount')),
+    amount:     Number((gross - retention).toFixed(2)),
+    retention,
     note:       fd.get('note').trim() || null,
   };
-  if (!(row.amount > 0)) {
-    showFormError(form, 'Enter an amount above zero.');
+  if (!(gross > 0)) {
+    showFormError(form, 'Enter a certified amount above zero.');
+    return;
+  }
+  if (retention < 0 || retention >= gross) {
+    showFormError(form, 'Retention has to be less than the certified amount.');
     return;
   }
 
@@ -1885,6 +1924,7 @@ async function savePayment(e) {
 
   form.reset();
   form.elements.paid_on.value = row.paid_on; // keep the date for the next entry
+  updatePaymentNet();
   toast('Payment added.', 'success');
   reloadPayments();
 }
@@ -2636,6 +2676,183 @@ async function saveDailyLog(e) {
 }
 
 // =============================================================
+// Variations (change orders)
+// =============================================================
+const variationStatus = (key) => VARIATION_STATUSES[key] ?? key;
+
+async function loadVariations(projectId) {
+  const { data, error } = await db
+    .from('variations')
+    .select('id, ref, title, description, description_en, contractor_id, instructed_on, status, amount, days_claimed, decided_on')
+    .eq('project_id', projectId)
+    .order('instructed_on', { ascending: false });
+  if (projectId !== state.projectId) return;
+  if (error) {
+    $('#variations-table').innerHTML = `<div class="empty-state">Could not load variations: ${esc(error.message)}</div>`;
+    return;
+  }
+  state.variations = data;
+  renderVariations();
+}
+
+function renderVariations() {
+  const variations = state.variations;
+  const approved = variations.filter((v) => v.status === 'approved');
+  const open = variations.filter((v) => v.status === 'instructed' || v.status === 'priced');
+  const approvedValue = sumOf(approved, 'amount');
+  const openValue = sumOf(open, 'amount');
+  const approvedDays = approved.reduce((sum, v) => sum + Number(v.days_claimed || 0), 0);
+  // The contract sum as it stands: the priced work plus what has been approved
+  // on top of it. Anything unapproved is money still being argued about.
+  const contract = state.tasks.reduce((sum, t) => sum + Number(t.budget || 0), 0);
+
+  $('#variations-summary').innerHTML = [
+    statTile('Approved', money.format(approvedValue),
+      `${approved.length} variation${approved.length === 1 ? '' : 's'}`),
+    statTile('Awaiting a decision', money.format(openValue),
+      open.length ? `${open.length} not yet settled` : 'none outstanding', open.length ? 'negative' : ''),
+    statTile('Revised contract sum', money.format(contract + approvedValue),
+      contract ? `${money.format(contract)} + variations` : 'no budgets set'),
+    statTile('Extra days approved', String(approvedDays),
+      approvedDays ? 'added to the programme' : 'none granted'),
+  ].join('');
+
+  if (!variations.length) {
+    $('#variations-table').innerHTML = '<div class="empty-state">No variations yet - record work instructed after the contract was signed.</div>';
+    return;
+  }
+
+  const statusChip = (v) => {
+    const tone = { approved: 'bg-emerald-500/20 text-emerald-300', rejected: 'bg-slate-500/20 text-slate-300' }[v.status]
+      ?? 'bg-amber-500/20 text-amber-300';
+    return `<span class="rounded-full ${tone} px-2 py-0.5 text-[11px] font-semibold">${esc(variationStatus(v.status))}</span>`;
+  };
+
+  $('#variations-table').innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Ref</th><th>Instructed</th><th>What was instructed</th><th>Contractor</th>
+          <th class="num">Value</th><th class="num">Days</th><th>Status</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${variations.map((v) => `
+          <tr>
+            <td class="whitespace-nowrap">${v.ref ? esc(v.ref) : '<span class="text-slate-500">-</span>'}</td>
+            <td class="whitespace-nowrap">${esc(formatDate(v.instructed_on))}</td>
+            <td class="max-w-md">
+              <p>${esc(v.title)}</p>
+              ${v.description_en || v.description
+    ? `<p class="text-slate-500">${esc(v.description_en || v.description)}</p>` : ''}
+            </td>
+            <td>${v.contractor_id ? esc(contractorName(v.contractor_id)) : '<span class="text-slate-500">-</span>'}</td>
+            <td class="num">${Number(v.amount) ? money2.format(v.amount) : '<span class="text-slate-500">-</span>'}</td>
+            <td class="num">${Number(v.days_claimed) || '<span class="text-slate-500">-</span>'}</td>
+            <td class="whitespace-nowrap">${statusChip(v)}</td>
+            <td class="text-right whitespace-nowrap">
+              <button type="button" class="table-action" data-variation-edit="${esc(v.id)}">Edit</button>
+              <button type="button" class="table-action is-danger" data-variation-delete="${esc(v.id)}">Delete</button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function openVariationModal(variation = null) {
+  if (!requireProject()) return;
+  const form = $('#form-variation');
+  const f = form.elements;
+  form.reset();
+  $('#variation-title').textContent = variation ? 'Edit Variation' : 'Add Variation';
+  $('#variation-status').innerHTML = Object.entries(VARIATION_STATUSES)
+    .map(([key, label]) => `<option value="${key}">${esc(label)}</option>`).join('');
+  $('#variation-contractor').innerHTML = contractorOptions(variation?.contractor_id ?? '');
+  f.id.value = variation?.id ?? '';
+  f.ref.value = variation?.ref ?? '';
+  f.instructed_on.value = variation?.instructed_on ?? todayISO();
+  f.status.value = variation?.status ?? 'instructed';
+  f.title.value = variation?.title ?? '';
+  f.amount.value = Number(variation?.amount) || '';
+  f.days_claimed.value = Number(variation?.days_claimed) || '';
+  f.decided_on.value = variation?.decided_on ?? '';
+  f.description.value = variation?.description ?? '';
+  f.description_en.value = variation?.description_en ?? '';
+  syncVariationStatus();
+  showFormError(form, '');
+  openModal('modal-variation');
+}
+
+// A decision date only means something once there has been a decision.
+function syncVariationStatus() {
+  const status = $('#variation-status').value;
+  const decided = status === 'approved' || status === 'rejected';
+  $('#variation-decided-field').classList.toggle('hidden', !decided);
+  if (decided && !$('#form-variation').elements.decided_on.value) {
+    $('#form-variation').elements.decided_on.value = todayISO();
+  }
+}
+
+async function saveVariation(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn = $('[type=submit]', form);
+  const fd = new FormData(form);
+  const id = fd.get('id');
+  const status = fd.get('status');
+  const decided = status === 'approved' || status === 'rejected';
+
+  const row = {
+    ref:            fd.get('ref').trim() || null,
+    title:          fd.get('title').trim(),
+    description:    fd.get('description').trim() || null,
+    description_en: fd.get('description_en').trim() || null,
+    contractor_id:  fd.get('contractor_id') || null,
+    instructed_on:  fd.get('instructed_on'),
+    status,
+    amount:         Number(fd.get('amount') || 0),
+    days_claimed:   parseInt(fd.get('days_claimed'), 10) || 0,
+    decided_on:     decided ? (fd.get('decided_on') || todayISO()) : null,
+  };
+  if (row.decided_on && row.decided_on < row.instructed_on) {
+    showFormError(form, 'A variation cannot be decided before it was instructed.');
+    return;
+  }
+
+  showFormError(form, '');
+  setBusy(btn, true);
+  const { error } = id
+    ? await db.from('variations').update(row).eq('id', id)
+    : await db.from('variations').insert({ ...row, project_id: state.projectId });
+  setBusy(btn, false);
+
+  if (error) {
+    showFormError(form, error.message);
+    return;
+  }
+  closeModal('modal-variation');
+  toast(id ? 'Variation updated.' : 'Variation recorded.', 'success');
+  loadVariations(state.projectId);
+}
+
+async function onVariationsClick(e) {
+  const edit = e.target.closest('[data-variation-edit]');
+  if (edit) return openVariationModal(state.variations.find((v) => v.id === edit.dataset.variationEdit));
+
+  const del = e.target.closest('[data-variation-delete]');
+  if (!del) return;
+  const variation = state.variations.find((v) => v.id === del.dataset.variationDelete);
+  if (!variation || !confirm(`Delete ${variation.ref ? `${variation.ref} - ` : ''}"${variation.title}"?`)) return;
+  const { error } = await db.from('variations').delete().eq('id', variation.id);
+  if (error) {
+    toast(`Could not delete: ${error.message}`, 'error');
+    return;
+  }
+  toast('Variation deleted.', 'success');
+  loadVariations(state.projectId);
+}
+
+// =============================================================
 // Safety and quality events
 // =============================================================
 const eventKind = (key) => SITE_EVENT_KINDS[key] ?? key;
@@ -3084,6 +3301,10 @@ $('#btn-add-unit').addEventListener('click', () => openUnitModal(null));
 $('#form-unit').addEventListener('submit', saveUnit);
 $('#btn-add-task').addEventListener('click', () => openTaskModal(null));
 $('#btn-baseline').addEventListener('click', setBaseline);
+$('#btn-new-variation').addEventListener('click', () => openVariationModal(null));
+$('#form-variation').addEventListener('submit', saveVariation);
+$('#variation-status').addEventListener('change', syncVariationStatus);
+$('#variations-table').addEventListener('click', onVariationsClick);
 $('#btn-new-event').addEventListener('click', () => openEventModal(null));
 $('#form-event').addEventListener('submit', saveEvent);
 $('#event-kind').addEventListener('change', syncEventKind);
@@ -3094,6 +3315,7 @@ $('#schedule-table').addEventListener('change', onScheduleChange);
 $('#schedule-table').addEventListener('click', onTaskTableClick);
 $('#boq-table').addEventListener('click', onTaskTableClick);
 $('#form-payment').addEventListener('submit', savePayment);
+$('#form-payment').addEventListener('input', updatePaymentNet);
 $('#payments-list').addEventListener('click', onPaymentsClick);
 $('#btn-add-contractor').addEventListener('click', () => openContractorModal(null));
 $('#form-contractor').addEventListener('submit', saveContractor);

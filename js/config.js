@@ -29,6 +29,15 @@ export const UNIT_STATUSES = {
   handed_over: 'Handed over',
 };
 
+// Where a variation has got to (variations.status). Only an approved one
+// changes the contract sum; the rest are money still being argued about.
+export const VARIATION_STATUSES = {
+  instructed: 'Instructed',
+  priced:     'Priced',
+  approved:   'Approved',
+  rejected:   'Rejected',
+};
+
 // Trades counted in daily_logs.manpower.
 export const MANPOWER_TRADES = [
   { key: 'masons',       label: 'Masons' },

@@ -108,7 +108,7 @@ function ring(actual, planned) {
 async function fetchExtras(db, projectId, today) {
   const since = toDate(today);
   since.setDate(since.getDate() - 30);
-  const [logs, delays, events] = await Promise.all([
+  const [logs, delays, events, variations] = await Promise.all([
     db.from('daily_logs')
       .select('log_date, weather, manpower, notes, notes_en')
       .eq('project_id', projectId)
@@ -127,10 +127,15 @@ async function fetchExtras(db, projectId, today) {
       .select('event_date, kind, severity, title, description, description_en, contractor_id, action, closed')
       .eq('project_id', projectId)
       .order('event_date', { ascending: false }),
+    // Variations run for the life of the contract, so they are never windowed.
+    db.from('variations')
+      .select('ref, title, description, description_en, contractor_id, instructed_on, status, amount, days_claimed, decided_on')
+      .eq('project_id', projectId)
+      .order('instructed_on', { ascending: false }),
   ]);
-  const failed = [logs, delays, events].find((r) => r.error);
+  const failed = [logs, delays, events, variations].find((r) => r.error);
   if (failed) throw new Error(`Could not load report data: ${failed.error.message}`);
-  return { logs: logs.data, delays: delays.data, events: events.data };
+  return { logs: logs.data, delays: delays.data, events: events.data, variations: variations.data };
 }
 
 /**
@@ -142,7 +147,7 @@ export async function buildProjectReport({
   siteCosts = [], rentals = [], siteLogs = [],
 }) {
   const today = iso(new Date());
-  const { logs, delays, events } = await fetchExtras(db, project.id, today);
+  const { logs, delays, events, variations } = await fetchExtras(db, project.id, today);
   const cost = costPosition(tasks, payments, today, siteCosts);
   const perf = contractorPerformance(tasks, contractorDelays, payments, today); // all-time delays
   const rooms = Boolean(project.has_rooms); // sites like a stadium have no rooms
@@ -152,6 +157,18 @@ export async function buildProjectReport({
     return c ? biName(c.name, c.name_ka) : '';
   };
   const paidOn = (taskId) => payments.filter((p) => p.task_id === taskId).reduce((s, p) => s + Number(p.amount), 0);
+  // Retention is money the contractor has earned and not been given yet, so it
+  // is owed, not spent - it never touches the cost figures, only its own line.
+  const taskContractor = new Map(tasks.map((t) => [t.id, t.contractor_id]));
+  const retentionByContractor = new Map();
+  let retentionHeld = 0;
+  for (const p of payments) {
+    const held = Number(p.retention || 0);
+    if (!held) continue;
+    retentionHeld += held;
+    const id = taskContractor.get(p.task_id);
+    if (id) retentionByContractor.set(id, (retentionByContractor.get(id) ?? 0) + held);
+  }
   const m = (n) => money.format(n);
   // `money` is a plain { format } wrapper (see app.js), not a full Intl.NumberFormat,
   // so the currency symbol for the compact axis labels is derived separately.
@@ -740,15 +757,70 @@ export async function buildProjectReport({
         </tbody>
       </table>` : ''}` : '';
 
+  // ---------- Variations ----------
+  // The contract sum the client signed, plus what has been approved on top of
+  // it. An instructed-but-unpriced variation is work already being done that
+  // nobody has agreed a figure for, which is why it is shown, not hidden.
+  const VARIATION_STATUS = {
+    instructed: { ka: 'დავალებული', en: 'Instructed', tone: 'warn' },
+    priced: { ka: 'შეფასებული', en: 'Priced', tone: 'info' },
+    approved: { ka: 'დამტკიცებული', en: 'Approved', tone: 'ok' },
+    rejected: { ka: 'უარყოფილი', en: 'Rejected', tone: 'muted' },
+  };
+  const approvedVars = variations.filter((v) => v.status === 'approved');
+  const openVars = variations.filter((v) => v.status === 'instructed' || v.status === 'priced');
+  const approvedValue = approvedVars.reduce((sum, v) => sum + Number(v.amount || 0), 0);
+  const openValue = openVars.reduce((sum, v) => sum + Number(v.amount || 0), 0);
+  const approvedDays = approvedVars.reduce((sum, v) => sum + Number(v.days_claimed || 0), 0);
+  const contractSum = tasks.reduce((sum, t) => sum + Number(t.budget || 0), 0);
+
+  const variationsBlock = !variations.length ? '' : `
+    <h3 class="rpt-sub-h">${L('ცვლილებები (დამატებითი სამუშაოები)', 'Variations')}</h3>
+    <div class="rpt-tiles rpt-avoid">
+      ${tile('დამტკიცებული ცვლილებები', 'Variations approved', m(approvedValue),
+    `${approvedVars.length} ${L('ცვლილება', approvedVars.length === 1 ? 'variation' : 'variations')}`)}
+      ${tile('გადაწყვეტილების მოლოდინში', 'Awaiting a decision', m(openValue),
+    openVars.length ? `${openVars.length} ${L('ღია', 'not settled')}` : '', openVars.length ? 'warn' : 'ok')}
+      ${tile('კონტრაქტის შესწორებული ღირებულება', 'Revised contract sum', m(contractSum + approvedValue),
+    approvedDays ? `+${approvedDays} ${L('დღე', approvedDays === 1 ? 'day' : 'days')}` : '')}
+    </div>
+    <table class="rpt-compact rpt-avoid">
+      <thead>
+        <tr>
+          <th>${L('ნომერი', 'Ref')}</th><th>${L('დავალების თარიღი', 'Instructed')}</th>
+          <th>${L('რა დაევალა', 'What was instructed')}</th>
+          <th>${L('კონტრაქტორი', 'Contractor')}</th>
+          <th class="num">${L('ღირებულება', 'Value')}</th><th class="num">${L('დღე', 'Days')}</th>
+          <th>${L('სტატუსი', 'Status')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${variations.map((v) => `
+          <tr>
+            <td>${v.ref ? esc(v.ref) : '-'}</td>
+            <td>${d(v.instructed_on)}</td>
+            <td>${esc(v.title)}${v.description || v.description_en
+    ? `<em class="rpt-block">${esc(v.description_en || v.description)}</em>` : ''}</td>
+            <td>${v.contractor_id ? esc(nameOf(v.contractor_id)) : '-'}</td>
+            <td class="num">${Number(v.amount) ? m(v.amount) : '-'}</td>
+            <td class="num">${Number(v.days_claimed) || '-'}</td>
+            <td>${chip(VARIATION_STATUS[v.status] ?? { ka: v.status, en: v.status, tone: 'muted' })}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+
   const costSection = `
     <section class="rpt-section">
       ${H('ბიუჯეტი და ფულადი ნაკადი', 'Budget & Cash Flow')}
       ${/* The budget itself is a tile at a glance, and the line in the chart below. */ ''}
-      <div class="rpt-tiles rpt-tiles-2 rpt-avoid">
+      <div class="rpt-tiles${retentionHeld ? '' : ' rpt-tiles-2'} rpt-avoid">
         ${tile('გეგმით დღემდე', 'Planned by today', m(cost.planned))}
         ${tile('შესრულებული სამუშაო', 'Work done', m(cost.earned), '', cost.earned < cost.planned - 0.5 ? 'bad' : 'ok')}
+        ${retentionHeld ? tile('დაკავებული გარანტია', 'Retention held', m(retentionHeld),
+    project.retention_pct ? `${Number(project.retention_pct)}% ${L('ყოველი გადახდიდან', 'of each payment')}` : '', 'muted') : ''}
       </div>
       ${monthKeys.length ? sCurve + monthTable : none}
+      ${variationsBlock}
       ${itemCosts}
       ${siteCostsBlock}
     </section>`;
@@ -773,6 +845,7 @@ export async function buildProjectReport({
             const items = s?.items ?? 0;
             const budget = s?.budget ?? 0;
             const paid = s?.paid ?? 0;
+            const held = retentionByContractor.get(c.id) ?? 0;
             return `
               <article class="rpt-card rpt-avoid">
                 <div class="rpt-card-head">
@@ -795,6 +868,7 @@ export async function buildProjectReport({
                   <span>${L('გადახდილი', 'Paid')} <b>${m(paid)}</b>${budget ? ` / ${m(budget)}` : ''}</span>
                   <span>${L('შეფერხება', 'Delays')} <b>${s?.delayDays ?? 0}</b> ${L('დღე', 'days')}</span>
                 </div>
+                ${held ? `<p class="rpt-card-contact">${L('დაკავებული გარანტია', 'Retention held')} <b>${m(held)}</b></p>` : ''}
                 ${budget ? `<div class="rpt-minibar"><i style="width:${clamp(pctOf(paid, budget))}%"></i></div>` : ''}
                 ${c.phone || c.email ? `<p class="rpt-card-contact">${esc([c.contact_person, c.phone, c.email].filter(Boolean).join(' · '))}</p>` : ''}
               </article>`;
