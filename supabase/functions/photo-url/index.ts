@@ -26,6 +26,14 @@ serveJson(async (payload: { paths?: string[]; method?: string }) => {
     return json({ error: "Photo storage is not configured" }, 500);
   }
 
+  // A secret pasted with a stray space or quote builds a hostname with nothing
+  // before the dot, and the browser fails on DNS with no useful message. Say it
+  // here instead.
+  if (!/^[0-9a-f]{32}$/.test(account.trim())) {
+    console.error("R2_ACCOUNT_ID is not a 32-character account id");
+    return json({ error: "R2_ACCOUNT_ID is not set correctly - check the Supabase secret" }, 500);
+  }
+
   const method = payload.method === "PUT" || payload.method === "DELETE" ? payload.method : "GET";
   // A path is built by the app from ids it already holds; anything that tries
   // to climb out of the project's own folder is refused outright.
@@ -36,7 +44,7 @@ serveJson(async (payload: { paths?: string[]; method?: string }) => {
 
   const client = new AwsClient({ accessKeyId, secretAccessKey, service: "s3", region: "auto" });
   const urls = await Promise.all(paths.map(async (path) => {
-    const url = new URL(`https://${account}.r2.cloudflarestorage.com/${bucket}/${path}`);
+    const url = new URL(`https://${account.trim()}.r2.cloudflarestorage.com/${bucket.trim()}/${path}`);
     url.searchParams.set("X-Amz-Expires", String(EXPIRES));
     const signed = await client.sign(new Request(url, { method }), { aws: { signQuery: true } });
     return signed.url;
