@@ -965,13 +965,13 @@ export async function buildProjectReport({
   // Headcount alone says nothing; set against the share of work complete it
   // says how much labour the rest of the job still needs. Everyone on site
   // counts, not just the daily workers, because everyone takes a day.
-  const workerDays = siteLogs.reduce((sum, l) => (
+  const siteWorkerDays = siteLogs.reduce((sum, l) => (
     sum + Object.values(l.manpower || {}).reduce((n, v) => n + Number(v || 0), 0)
   ), 0);
   const daysWorked = siteLogs.filter((l) => (
     Object.values(l.manpower || {}).some((v) => Number(v) > 0)
   )).length;
-  const perPoint = progress.actualPct ? workerDays / progress.actualPct : 0;
+  const perPoint = progress.actualPct ? siteWorkerDays / progress.actualPct : 0;
   const toCome = perPoint ? Math.round(perPoint * (100 - progress.actualPct)) : 0;
 
   // The last four weeks against everything before them: the direction of
@@ -983,12 +983,12 @@ export async function buildProjectReport({
       sum + Object.values(l.manpower || {}).reduce((n, v) => n + Number(v || 0), 0)
     ), 0) / recent.length)
     : 0;
-  const allAvg = daysWorked ? Math.round(workerDays / daysWorked) : 0;
+  const allAvg = daysWorked ? Math.round(siteWorkerDays / daysWorked) : 0;
 
-  const labourBlock = workerDays ? `
+  const labourBlock = siteWorkerDays ? `
     <h3 class="rpt-sub-h">${L('სამუშაო ძალის ხარჯვა', 'Labour spent')}</h3>
     <div class="rpt-tiles rpt-avoid">
-      ${tile('კაც-დღე დღემდე', 'Worker-days to date', num.format(workerDays),
+      ${tile('კაც-დღე დღემდე', 'Worker-days to date', num.format(siteWorkerDays),
     `${daysWorked} ${L('სამუშაო დღე', 'days worked')}`)}
       ${tile('კაც-დღე 1%-ზე', 'Worker-days per 1%', perPoint ? num.format(Math.round(perPoint)) : '-',
     progress.actualPct ? `${progress.actualPct}% ${L('შესრულებული', 'complete')}` : '')}
