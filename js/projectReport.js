@@ -831,10 +831,52 @@ export async function buildProjectReport({
     </div>
     <p class="rpt-muted rpt-col-note">${L('საშუალოდ', 'Average')} <b>${avg}</b> · ${L('მაქსიმუმი', 'Peak')} <b>${peak}</b> ${L('მუშა ობიექტზე', 'workers on site')}</p>` : '';
 
+  // ---------- Labour: what the work has cost in worker-days ----------
+  // Headcount alone says nothing; set against the share of work complete it
+  // says how much labour the rest of the job still needs. Everyone on site
+  // counts, not just the daily workers, because everyone takes a day.
+  const workerDays = siteLogs.reduce((sum, l) => (
+    sum + Object.values(l.manpower || {}).reduce((n, v) => n + Number(v || 0), 0)
+  ), 0);
+  const daysWorked = siteLogs.filter((l) => (
+    Object.values(l.manpower || {}).some((v) => Number(v) > 0)
+  )).length;
+  const perPoint = progress.actualPct ? workerDays / progress.actualPct : 0;
+  const toCome = perPoint ? Math.round(perPoint * (100 - progress.actualPct)) : 0;
+
+  // The last four weeks against everything before them: the direction of
+  // travel matters more than the average.
+  const fourWeeksAgo = addDays(today, -28);
+  const recent = siteLogs.filter((l) => l.log_date >= fourWeeksAgo);
+  const recentAvg = recent.length
+    ? Math.round(recent.reduce((sum, l) => (
+      sum + Object.values(l.manpower || {}).reduce((n, v) => n + Number(v || 0), 0)
+    ), 0) / recent.length)
+    : 0;
+  const allAvg = daysWorked ? Math.round(workerDays / daysWorked) : 0;
+
+  const labourBlock = workerDays ? `
+    <h3 class="rpt-sub-h">${L('სამუშაო ძალის ხარჯვა', 'Labour spent')}</h3>
+    <div class="rpt-tiles rpt-avoid">
+      ${tile('კაც-დღე დღემდე', 'Worker-days to date', num.format(workerDays),
+    `${daysWorked} ${L('სამუშაო დღე', 'days worked')}`)}
+      ${tile('კაც-დღე 1%-ზე', 'Worker-days per 1%', perPoint ? num.format(Math.round(perPoint)) : '-',
+    progress.actualPct ? `${progress.actualPct}% ${L('შესრულებული', 'complete')}` : '')}
+      ${tile('დარჩენილი (პროგნოზი)', 'Still to come (forecast)', toCome ? num.format(toCome) : '-',
+    L('ამავე ტემპით', 'at the same rate'))}
+    </div>
+    <p class="rpt-muted rpt-col-note">
+      ${L('საშუალო ბოლო 4 კვირაში', 'Average over the last 4 weeks')} <b>${recentAvg}</b> ·
+      ${L('პროექტის საშუალო', 'project average')} <b>${allAvg}</b>
+      ${recentAvg && allAvg && recentAvg < allAvg * 0.8
+    ? `· ${chip({ ka: 'ობიექტზე ხალხი შემცირდა', en: 'Fewer people on site', tone: 'warn' })}` : ''}
+    </p>` : '';
+
   const logsSection = `
     <section class="rpt-section">
       ${H('ობიექტზე აქტივობა', 'Site Activity', series.length ? `${series.length} ${L('ჩანაწერი', 'logs')}` : '')}
       ${manpowerChart}
+      ${labourBlock}
       ${logs.length ? logs.slice(0, 5).map((l) => {
         const crew = Object.entries(l.manpower || {}).filter(([, n]) => n > 0);
         const total = workersOf(l);
