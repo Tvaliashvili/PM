@@ -34,6 +34,15 @@ serveJson(async (payload: { paths?: string[]; method?: string }) => {
     return json({ error: "R2_ACCOUNT_ID is not set correctly - check the Supabase secret" }, 500);
   }
 
+  // A bucket name is lowercase letters, digits and hyphens. Anything else -
+  // an API token pasted into the wrong box, say - points at a bucket that does
+  // not exist, and R2 answers without CORS headers, which the browser reports
+  // as a CORS fault rather than a wrong name.
+  if (!/^[a-z0-9][a-z0-9-]{1,62}$/.test(bucket.trim())) {
+    console.error("R2_BUCKET is not a bucket name");
+    return json({ error: "R2_BUCKET is not a bucket name - check the Supabase secret" }, 500);
+  }
+
   const method = payload.method === "PUT" || payload.method === "DELETE" ? payload.method : "GET";
   // A path is built by the app from ids it already holds; anything that tries
   // to climb out of the project's own folder is refused outright.
