@@ -762,6 +762,8 @@ textarea.input-dark { resize: vertical; }
 .rpt .rpt-h h2 { margin: 0; padding-bottom: 5px; border: 0; font-size: 14px; }
 .rpt-h-note { font-size: 10.5px; font-weight: 600; color: #475569; }
 .rpt-sub-h { margin: 16px 0 6px; font-size: 12px; font-weight: 700; }
+.rpt h2, .rpt h3, .rpt .rpt-h, .rpt .rpt-sub-h { page-break-after: avoid; break-after: avoid; }
+.rpt p, .rpt .rpt-legend, .rpt .rpt-sub-h { page-break-inside: avoid; break-inside: avoid; }
 .rpt-sub-h em { margin-left: 4px; }
 
 /* Header */
@@ -1003,7 +1005,8 @@ textarea.input-dark { resize: vertical; }
 /* Horizontal bars: cost per item, delays per cause */
 .rpt-hbars { display: grid; gap: 5px; margin-bottom: 10px; }
 .rpt-hbar { display: grid; grid-template-columns: 180px 1fr 150px; align-items: center; gap: 8px; font-size: 10.5px; }
-.rpt-hbar-label { line-height: 1.25; }
+.rpt-hbar-label { line-height: 13px; }
+.rpt-hbar-label em { display: block; color: #475569; }
 .rpt-hbar-track { height: 14px; }
 .rpt-hbar-budget { position: relative; height: 100%; border-radius: 3px; background: #cbd5e1; overflow: visible; }
 .rpt-hbar-done { height: 100%; border-radius: 3px; background: #059669; }
@@ -1054,7 +1057,7 @@ textarea.input-dark { resize: vertical; }
   padding: 18px 4px 0;
   border-bottom: 1px solid #cbd5e1;
 }
-.rpt-col { position: relative; display: flex; flex-direction: column; justify-content: flex-end; flex: 1; height: 100%; }
+.rpt-col { position: relative; display: flex; flex-direction: column; justify-content: flex-end; flex: 1; max-width: 48px; height: 100%; }
 .rpt-col-bar { border-radius: 3px 3px 0 0; background: #334155; }
 .rpt-col-value { margin-bottom: 2px; text-align: center; font-size: 9.5px; font-weight: 700; }
 .rpt-col-label { position: absolute; bottom: -15px; left: 0; right: 0; text-align: center; font-size: 8.5px; color: #64748b; }

@@ -638,7 +638,8 @@ export async function buildProjectReport({
         const w = (b / maxBudget) * 100;
         return `
           <div class="rpt-hbar rpt-avoid">
-            <span class="rpt-hbar-label">${esc(taskBi(t))}</span>
+            <span class="rpt-hbar-label">${esc(t.name_ka || t.name)}${
+              t.name_ka && t.name && t.name_ka !== t.name ? `<em>${esc(t.name)}</em>` : ''}</span>
             <div class="rpt-hbar-track">
               <div class="rpt-hbar-budget" style="width:${w.toFixed(2)}%">
                 <div class="rpt-hbar-done" style="width:${Math.round(completionOf(t) * 100)}%"></div>
@@ -816,7 +817,7 @@ export async function buildProjectReport({
   const series = [...logs].reverse(); // oldest → newest
   const peak = Math.max(1, ...series.map(workersOf));
   const avg = series.length ? Math.round(series.reduce((s, l) => s + workersOf(l), 0) / series.length) : 0;
-  const manpowerChart = series.length ? `
+  const manpowerChart = series.length > 1 ? `
     <div class="rpt-columns rpt-avoid">
       ${series.map((l) => {
         const n = workersOf(l);
@@ -935,7 +936,10 @@ export async function downloadProjectReport(page, project) {
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
       // A section that would not fit starts the next page instead of splitting.
       // One taller than a page still splits, but from the top of a page.
-      pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.rpt-section', '.rpt-avoid', 'h2', '.rpt-h'] },
+      pagebreak: {
+        mode: ['css', 'legacy'],
+        avoid: ['tr', '.rpt-section', '.rpt-avoid', 'h2', 'h3', '.rpt-h', '.rpt-sub-h', '.rpt-legend', 'p'],
+      },
     })
     .from(page)
     .save();
