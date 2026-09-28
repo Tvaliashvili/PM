@@ -259,6 +259,7 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
     const grid = page.querySelector('[data-photos]');
     photoUrls.forEach((url) => {
       const figure = document.createElement('figure');
+      figure.className = 'pdf-avoid-break'; // a photo is never split down the middle
       const img = document.createElement('img');
       img.crossOrigin = 'anonymous'; // html2canvas cannot draw a tainted image
       img.src = url;
@@ -339,7 +340,7 @@ export async function generateDailyReport({ db, project, progress, money }) {
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.pdf-avoid-break'] },
+        pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.pdf-avoid-break', '.pdf-photos figure', 'h2'] },
       })
       .from(page)
       .save();

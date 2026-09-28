@@ -618,10 +618,21 @@ textarea.input-dark { resize: vertical; }
 .pdf-page .pdf-bi { white-space: pre-line; }
 
 /* Photos in the daily report: two to a row, each kept whole across a break. */
+/* Every photo the same size, so portrait and landscape shots sit in even rows
+   instead of leaving gaps. The box crops; it never stretches the photo. */
 .pdf-photos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.pdf-photos figure { margin: 0; page-break-inside: avoid; break-inside: avoid; }
-.pdf-photos img { width: 100%; border-radius: 4px; }
+.pdf-photos figure {
+  margin: 0;
+  height: 118px;
+  overflow: hidden;
+  border-radius: 4px;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+.pdf-photos img { display: block; width: 100%; min-height: 100%; }
 .pdf-photos figcaption { margin-top: 3px; font-size: 9px; color: #64748b; }
+/* A heading stays with the photos (or the table) it introduces. */
+.pdf-page h2 { page-break-after: avoid; break-after: avoid; }
 
 /* ---------- Document sign-off (all generated documents) ---------- */
 .doc-signature {
