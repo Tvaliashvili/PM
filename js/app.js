@@ -5,6 +5,7 @@ import {
   SUPABASE_URL, SUPABASE_KEY, CURRENCIES, DEFAULT_CURRENCY,
   UNIT_TYPES, UNIT_STATUSES,
   MANPOWER_TRADES, WEATHER_OPTIONS, DELAY_CAUSES, DAY_WORKER_KEY, EQUIPMENT_SUGGESTIONS,
+  SITE_EVENT_KINDS, INCIDENT_SEVERITIES,
   BOQ_UNITS, CONTRACTOR_TRADES,
 } from './config.js';
 import { generateDailyReport } from './pdfReport.js';
@@ -36,6 +37,7 @@ const state = {
   contractorDelays: [], // delays with contractor_id + days
   contractors: [],      // this project's contractors
   siteLogs: [],         // every daily log's date, manpower and day rate (daily-worker pay)
+  events: [],           // safety and quality events, newest first
   rentals: [],          // equipment_rentals
   delays: [],           // every delay on the project, newest first
   siteCosts: [],        // labourCosts() + rentalCosts() entries
@@ -112,7 +114,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-view-report', '#btn-add-unit', '#btn-add-task', '#btn-baseline', '#btn-add-contractor', '#btn-add-rental',
+  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-view-report', '#btn-add-unit', '#btn-add-task', '#btn-baseline', '#btn-new-event', '#btn-add-contractor', '#btn-add-rental',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -255,6 +257,7 @@ async function selectProject(projectId) {
   state.rentals = [];
   state.siteCosts = [];
   state.delays = [];
+  state.events = [];
   setProjectActionsEnabled(Boolean(state.projectId));
 
   const project = currentProject();
@@ -269,6 +272,7 @@ async function selectProject(projectId) {
   resetLogFilter(); // a new project starts with a clean, unfiltered log list
   await Promise.all([
     loadUnits(project.id), loadSchedule(project.id), refreshDashboard(project.id), loadLogs(project.id),
+    loadEvents(project.id),
   ]);
 }
 
@@ -2631,6 +2635,175 @@ async function saveDailyLog(e) {
   loadSchedule(state.projectId); // daily-worker pay feeds the cash flow
 }
 
+// =============================================================
+// Safety and quality events
+// =============================================================
+const eventKind = (key) => SITE_EVENT_KINDS[key] ?? key;
+const severityLabel = (key) => INCIDENT_SEVERITIES[key] ?? key;
+const seriousEvent = (e) => e.severity === 'lost_time' || e.severity === 'reportable';
+
+async function loadEvents(projectId) {
+  const { data, error } = await db
+    .from('site_events')
+    .select('id, event_date, kind, severity, title, description, description_en, contractor_id, action, closed')
+    .eq('project_id', projectId)
+    .order('event_date', { ascending: false });
+  if (projectId !== state.projectId) return;
+  if (error) {
+    $('#events-table').innerHTML = `<div class="empty-state">Could not load events: ${esc(error.message)}</div>`;
+    return;
+  }
+  state.events = data;
+  renderEvents();
+}
+
+function renderEvents() {
+  const events = state.events;
+  const incidents = events.filter((e) => e.kind === 'incident');
+  const nearMisses = events.filter((e) => e.kind === 'near_miss');
+  const open = events.filter((e) => !e.closed);
+  const serious = incidents.filter(seriousEvent).length;
+  // The figure everyone on a site knows: counted from the last incident, or
+  // from the first thing recorded if there has never been one.
+  const lastIncident = incidents[0]?.event_date;
+  const since = lastIncident ?? events.at(-1)?.event_date;
+  const daysSince = since ? Math.round((new Date(`${todayISO()}T00:00`) - new Date(`${since}T00:00`)) / 86_400_000) : null;
+
+  $('#events-summary').innerHTML = [
+    statTile('Days without an incident', daysSince == null ? '-' : String(daysSince),
+      lastIncident ? `last one ${formatDate(lastIncident)}` : 'no incident recorded'),
+    statTile('Incidents', String(incidents.length),
+      serious ? `${serious} serious` : 'none serious', incidents.length ? 'negative' : ''),
+    statTile('Near misses', String(nearMisses.length),
+      nearMisses.length ? 'each one is a warning' : 'none recorded'),
+    statTile('Open actions', String(open.length),
+      open.length ? 'not closed out' : 'all closed', open.length ? 'negative' : ''),
+  ].join('');
+
+  if (!events.length) {
+    $('#events-table').innerHTML = '<div class="empty-state">Nothing recorded yet - log incidents, near misses, inspections and toolbox talks here.</div>';
+    return;
+  }
+
+  $('#events-table').innerHTML = `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Date</th><th>Type</th><th>What happened</th><th>Contractor</th>
+          <th>Action taken</th><th>Status</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${events.map((e) => `
+          <tr>
+            <td class="whitespace-nowrap">${esc(formatDate(e.event_date))}</td>
+            <td class="whitespace-nowrap">${esc(eventKind(e.kind))}${e.severity
+              ? `<span class="ml-1 rounded-full bg-rose-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-rose-300">${esc(severityLabel(e.severity))}</span>`
+              : ''}</td>
+            <td class="max-w-md">
+              <p>${esc(e.title)}</p>
+              ${e.description_en || e.description
+                ? `<p class="text-slate-500">${esc(e.description_en || e.description)}</p>` : ''}
+            </td>
+            <td>${e.contractor_id ? esc(contractorName(e.contractor_id)) : '<span class="text-slate-500">-</span>'}</td>
+            <td class="max-w-xs">${e.action ? esc(e.action) : '<span class="text-slate-500">-</span>'}</td>
+            <td>${e.closed
+              ? '<span class="chip-ok">Closed</span>'
+              : '<span class="chip-open">Open</span>'}</td>
+            <td class="text-right whitespace-nowrap">
+              <button type="button" class="table-action" data-event-edit="${esc(e.id)}">Edit</button>
+              <button type="button" class="table-action is-danger" data-event-delete="${esc(e.id)}">Delete</button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function openEventModal(event = null) {
+  if (!requireProject()) return;
+  const form = $('#form-event');
+  const f = form.elements;
+  form.reset();
+  $('#event-title').textContent = event ? 'Edit Event' : 'Record Event';
+  $('#event-kind').innerHTML = Object.entries(SITE_EVENT_KINDS)
+    .map(([key, label]) => `<option value="${key}">${esc(label)}</option>`).join('');
+  $('#event-severity').innerHTML = '<option value="">- Not stated -</option>'
+    + Object.entries(INCIDENT_SEVERITIES).map(([key, label]) => `<option value="${key}">${esc(label)}</option>`).join('');
+  $('#event-contractor').innerHTML = contractorOptions(event?.contractor_id ?? '');
+  f.id.value = event?.id ?? '';
+  f.event_date.value = event?.event_date ?? todayISO();
+  f.event_date.max = todayISO();
+  f.kind.value = event?.kind ?? 'incident';
+  f.severity.value = event?.severity ?? '';
+  f.title.value = event?.title ?? '';
+  f.description.value = event?.description ?? '';
+  f.description_en.value = event?.description_en ?? '';
+  f.action.value = event?.action ?? '';
+  f.closed.checked = Boolean(event?.closed);
+  syncEventKind();
+  showFormError(form, '');
+  openModal('modal-event');
+}
+
+// Severity is an incident's word; a toolbox talk has none.
+function syncEventKind() {
+  const isIncident = $('#event-kind').value === 'incident';
+  $('#event-severity-field').classList.toggle('hidden', !isIncident);
+  if (!isIncident) $('#event-severity').value = '';
+}
+
+async function saveEvent(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn = $('[type=submit]', form);
+  const fd = new FormData(form);
+  const id = fd.get('id');
+
+  const row = {
+    event_date:     fd.get('event_date'),
+    kind:           fd.get('kind'),
+    severity:       fd.get('kind') === 'incident' ? (fd.get('severity') || null) : null,
+    title:          fd.get('title').trim(),
+    description:    fd.get('description').trim() || null,
+    description_en: fd.get('description_en').trim() || null,
+    contractor_id:  fd.get('contractor_id') || null,
+    action:         fd.get('action').trim() || null,
+    closed:         fd.get('closed') === 'on',
+  };
+
+  showFormError(form, '');
+  setBusy(btn, true);
+  const { error } = id
+    ? await db.from('site_events').update(row).eq('id', id)
+    : await db.from('site_events').insert({ ...row, project_id: state.projectId });
+  setBusy(btn, false);
+
+  if (error) {
+    showFormError(form, error.message);
+    return;
+  }
+  closeModal('modal-event');
+  toast(id ? 'Event updated.' : 'Event recorded.', 'success');
+  loadEvents(state.projectId);
+}
+
+async function onEventsClick(e) {
+  const edit = e.target.closest('[data-event-edit]');
+  if (edit) return openEventModal(state.events.find((x) => x.id === edit.dataset.eventEdit));
+
+  const del = e.target.closest('[data-event-delete]');
+  if (!del) return;
+  const event = state.events.find((x) => x.id === del.dataset.eventDelete);
+  if (!event || !confirm(`Delete the ${eventKind(event.kind).toLowerCase()} of ${formatDate(event.event_date)}?`)) return;
+  const { error } = await db.from('site_events').delete().eq('id', event.id);
+  if (error) {
+    toast(`Could not delete: ${error.message}`, 'error');
+    return;
+  }
+  toast('Event deleted.', 'success');
+  loadEvents(state.projectId);
+}
+
 // ---------- Baseline ----------
 /**
  * Freezes today's planned dates as the approved programme. Everything after
@@ -2911,6 +3084,10 @@ $('#btn-add-unit').addEventListener('click', () => openUnitModal(null));
 $('#form-unit').addEventListener('submit', saveUnit);
 $('#btn-add-task').addEventListener('click', () => openTaskModal(null));
 $('#btn-baseline').addEventListener('click', setBaseline);
+$('#btn-new-event').addEventListener('click', () => openEventModal(null));
+$('#form-event').addEventListener('submit', saveEvent);
+$('#event-kind').addEventListener('change', syncEventKind);
+$('#events-table').addEventListener('click', onEventsClick);
 $('#form-task').addEventListener('submit', saveTask);
 $('#form-task').addEventListener('input', onTaskInput);
 $('#schedule-table').addEventListener('change', onScheduleChange);

@@ -108,7 +108,7 @@ function ring(actual, planned) {
 async function fetchExtras(db, projectId, today) {
   const since = toDate(today);
   since.setDate(since.getDate() - 30);
-  const [logs, delays] = await Promise.all([
+  const [logs, delays, events] = await Promise.all([
     db.from('daily_logs')
       .select('log_date, weather, manpower, notes, notes_en')
       .eq('project_id', projectId)
@@ -121,10 +121,16 @@ async function fetchExtras(db, projectId, today) {
       // delay belongs in the report however old it is.
       .or(`created_at.gte.${since.toISOString()},duration_days.is.null`)
       .order('created_at', { ascending: false }),
+    // Safety is reported for the whole project, not a window: "42 days without
+    // an incident" only means something counted from the start.
+    db.from('site_events')
+      .select('event_date, kind, severity, title, description, description_en, contractor_id, action, closed')
+      .eq('project_id', projectId)
+      .order('event_date', { ascending: false }),
   ]);
-  const failed = [logs, delays].find((r) => r.error);
+  const failed = [logs, delays, events].find((r) => r.error);
   if (failed) throw new Error(`Could not load report data: ${failed.error.message}`);
-  return { logs: logs.data, delays: delays.data };
+  return { logs: logs.data, delays: delays.data, events: events.data };
 }
 
 /**
@@ -136,7 +142,7 @@ export async function buildProjectReport({
   siteCosts = [], rentals = [], siteLogs = [],
 }) {
   const today = iso(new Date());
-  const { logs, delays } = await fetchExtras(db, project.id, today);
+  const { logs, delays, events } = await fetchExtras(db, project.id, today);
   const cost = costPosition(tasks, payments, today, siteCosts);
   const perf = contractorPerformance(tasks, contractorDelays, payments, today); // all-time delays
   const rooms = Boolean(project.has_rooms); // sites like a stadium have no rooms
@@ -1072,12 +1078,75 @@ export async function buildProjectReport({
       ${weatherBlock}
     </section>`;
 
+  // ---------- Safety and quality ----------
+  // A client reads this section first when something has gone wrong and never
+  // otherwise, so it leads with the plain figures and lists only what is open.
+  const EVENT_KIND = {
+    incident: { ka: 'შემთხვევა', en: 'Incident' },
+    near_miss: { ka: 'კინაღამ შემთხვევა', en: 'Near miss' },
+    inspection: { ka: 'ინსპექცია', en: 'Inspection' },
+    toolbox_talk: { ka: 'უსაფრთხოების ბრიფინგი', en: 'Toolbox talk' },
+  };
+  const SEVERITY = {
+    first_aid: { ka: 'პირველადი დახმარება', en: 'First aid' },
+    lost_time: { ka: 'სამუშაო დროის დაკარგვით', en: 'Lost time' },
+    reportable: { ka: 'შესატყობინებელი', en: 'Reportable' },
+  };
+  const incidents = events.filter((e) => e.kind === 'incident');
+  const nearMisses = events.filter((e) => e.kind === 'near_miss');
+  const inspections = events.filter((e) => e.kind === 'inspection');
+  const openEvents = events.filter((e) => !e.closed);
+  const lastIncident = incidents[0]?.event_date;
+  const sinceDate = lastIncident ?? events.at(-1)?.event_date;
+  const daysClear = sinceDate ? dayDiff(sinceDate, today) : null;
+
+  const safetySection = !events.length ? '' : `
+    <section class="rpt-section rpt-avoid">
+      ${H('უსაფრთხოება და ხარისხი', 'Safety & Quality', `${events.length} ${L('ჩანაწერი', 'records')}`)}
+      <div class="rpt-tiles rpt-tiles-4 rpt-avoid">
+        ${tile('დღე შემთხვევის გარეშე', 'Days without an incident', daysClear == null ? '-' : `${daysClear}`,
+          lastIncident ? `${L('ბოლო', 'last')} ${d(lastIncident)}` : L('არცერთი', 'none recorded'),
+          incidents.length ? '' : 'ok')}
+        ${tile('შემთხვევა', 'Incidents', `${incidents.length}`,
+          incidents.filter((e) => e.severity === 'lost_time' || e.severity === 'reportable').length
+            ? `${incidents.filter((e) => e.severity === 'lost_time' || e.severity === 'reportable').length} ${L('მძიმე', 'serious')}`
+            : '', incidents.length ? 'bad' : 'ok')}
+        ${tile('კინაღამ შემთხვევა', 'Near misses', `${nearMisses.length}`,
+          L('გაფრთხილება', 'each one a warning'))}
+        ${tile('ინსპექცია', 'Inspections', `${inspections.length}`, '', 'muted')}
+      </div>
+      ${openEvents.length ? `
+        <h3 class="rpt-sub-h">${L('დახურვის მოლოდინში', 'Still open')}</h3>
+        <table class="rpt-compact">
+          <thead>
+            <tr>
+              <th>${L('თარიღი', 'Date')}</th><th>${L('ტიპი', 'Type')}</th>
+              <th>${L('რა მოხდა', 'What happened')}</th>
+              <th>${L('კონტრაქტორი', 'Contractor')}</th><th>${L('ზომა', 'Action')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${openEvents.map((e) => `
+              <tr>
+                <td>${d(e.event_date)}</td>
+                <td>${L(EVENT_KIND[e.kind]?.ka ?? e.kind, EVENT_KIND[e.kind]?.en ?? e.kind)}${e.severity
+                  ? ` ${chip({ ...SEVERITY[e.severity], tone: 'bad' })}` : ''}</td>
+                <td>${esc(e.title)}${e.description || e.description_en
+                  ? `<em class="rpt-block">${esc(e.description_en || e.description)}</em>` : ''}</td>
+                <td>${e.contractor_id ? esc(nameOf(e.contractor_id)) : '-'}</td>
+                <td>${e.action ? esc(e.action) : '-'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`
+        : `<p class="rpt-all-good">✓ ${L('ყველა ჩანაწერი დახურულია', 'Every record has been closed out')}</p>`}
+    </section>`;
+
   const footer = `<div class="rpt-avoid">${signatureHtml(REPORT_AUTHOR)}</div>`;
 
   const page = document.createElement('div');
   page.className = 'pdf-page rpt';
   page.innerHTML = header + glance + attention + notMoving + driftSection + timeline + roadAhead
-    + costSection + contractorsSection + unitsSection + logsSection + delaysSection + footer;
+    + costSection + contractorsSection + unitsSection + logsSection + delaysSection + safetySection + footer;
   return page;
 }
 

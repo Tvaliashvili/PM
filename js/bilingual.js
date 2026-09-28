@@ -25,6 +25,15 @@ export const KA = {
   'Payment / funding': 'გადახდა / დაფინანსება',
   'Other': 'სხვა',
 
+  // Site events (safety and quality)
+  'Incident': 'შემთხვევა',
+  'Near miss': 'კინაღამ შემთხვევა',
+  'Inspection': 'ინსპექცია',
+  'Toolbox talk': 'უსაფრთხოების ბრიფინგი',
+  'First aid': 'პირველადი დახმარება',
+  'Lost time': 'სამუშაო დროის დაკარგვით',
+  'Reportable': 'შესატყობინებელი',
+
   // Trades (manpower)
   'Masons': 'კალატოზები',
   'Carpenters': 'დურგლები',

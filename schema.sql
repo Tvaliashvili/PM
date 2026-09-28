@@ -491,3 +491,40 @@ alter table public.projects
   add column if not exists baseline_set_on date;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 16. Site events: safety and quality
+-- Incidents, near misses, inspections and toolbox talks. A near miss costs
+-- nothing and predicts what the next incident will be, which is why it is
+-- recorded next to the rest. severity applies to incidents only.
+-- -------------------------------------------------------------
+create table if not exists public.site_events (
+  id             uuid primary key default gen_random_uuid(),
+  project_id     uuid not null references public.projects(id) on delete cascade,
+  event_date     date not null default current_date,
+  kind           text not null default 'incident'
+                 check (kind in ('incident', 'near_miss', 'inspection', 'toolbox_talk')),
+  severity       text check (severity in ('first_aid', 'lost_time', 'reportable')),
+  title          text not null,
+  description    text,          -- Georgian
+  description_en text,          -- English
+  contractor_id  uuid references public.contractors(id) on delete set null,
+  action         text,          -- what was done about it
+  closed         boolean not null default false,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+
+create index if not exists site_events_project_date_idx
+  on public.site_events (project_id, event_date desc);
+
+drop trigger if exists set_updated_at on public.site_events;
+create trigger set_updated_at before update on public.site_events
+  for each row execute function public.set_updated_at();
+
+alter table public.site_events enable row level security;
+drop policy if exists "authenticated_full_access" on public.site_events;
+create policy "authenticated_full_access" on public.site_events
+  for all to authenticated using (true) with check (true);
+
+notify pgrst, 'reload schema';

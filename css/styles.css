@@ -334,6 +334,14 @@ html, body { background: var(--ink-950); }
 .log-card-actions { display: flex; gap: 0.25rem; white-space: nowrap; }
 .log-card-crew { margin-bottom: 0.6rem; font-size: 0.75rem; color: #64748b; }
 
+/* Open / closed, on the safety register */
+.chip-ok, .chip-open {
+  display: inline-block; padding: 0.1rem 0.5rem;
+  border-radius: 999px; font-size: 0.6875rem; font-weight: 600;
+}
+.chip-ok { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+.chip-open { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
+
 /* ---------- Site photos ---------- */
 .photo-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0; }
 .photo-tile { position: relative; width: 84px; height: 84px; }
@@ -744,6 +752,7 @@ textarea.input-dark { resize: vertical; }
 .rpt-tile-muted strong { color: #64748b; }
 /* A figure that is short of where it should be, and the note under a table. */
 .rpt-late { color: #be123c; font-weight: 700; }
+.rpt-block { display: block; margin-left: 0; }
 .rpt-foot-note { margin-top: 6px; color: #64748b; font-size: 10px; }
 .rpt-foot-note em { margin-left: 4px; }
 

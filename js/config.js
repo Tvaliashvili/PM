@@ -53,6 +53,21 @@ export const EQUIPMENT_SUGGESTIONS = [
 
 export const WEATHER_OPTIONS = ['Sunny', 'Cloudy', 'Rain', 'Heavy rain', 'Windy', 'Snow', 'Extreme heat'];
 
+// Safety and quality events (site_events.kind / .severity).
+export const SITE_EVENT_KINDS = {
+  incident:     'Incident',
+  near_miss:    'Near miss',
+  inspection:   'Inspection',
+  toolbox_talk: 'Toolbox talk',
+};
+
+// Incidents only, in order of seriousness.
+export const INCIDENT_SEVERITIES = {
+  first_aid:  'First aid',
+  lost_time:  'Lost time',
+  reportable: 'Reportable',
+};
+
 export const DELAY_CAUSES = [
   'Weather',
   'Material shortage',
