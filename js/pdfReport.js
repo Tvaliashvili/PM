@@ -151,7 +151,7 @@ function fillList(list, items) {
   }
 }
 
-function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, roomProgress, manpower, summary, progress, userEmail, money }) {
+function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, roomProgress, manpower, summary, progress, money }) {
   const page = document.getElementById('daily-report-template').content.firstElementChild.cloneNode(true);
   const set = (field, value) => { page.querySelector(`[data-field="${field}"]`).textContent = value; };
   const rooms = Boolean(project.has_rooms);
@@ -240,8 +240,6 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
   const joinNotes = (key) => logs.map((l) => l[key]).filter(Boolean).join('\n\n');
   set('notes-ka', joinNotes('notes') || ka('No site notes recorded.'));
   set('notes-en', joinNotes('notes_en') || 'No site notes recorded.');
-  const stamp = new Date().toLocaleString('en-GB');
-  set('generated', `${bi('Generated')} ${stamp}${userEmail ? ` · ${userEmail}` : ''}`);
   page.querySelector('[data-signature]').innerHTML = signatureHtml(REPORT_AUTHOR);
 
   return page;
@@ -252,7 +250,7 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
  * Builds today's bilingual report for `project` and downloads Daily_Report_[YYYY-MM-DD].pdf.
  * Returns { aiNote } - set when the PDF was saved without an AI summary.
  */
-export async function generateDailyReport({ db, project, progress, userEmail, money }) {
+export async function generateDailyReport({ db, project, progress, money }) {
   const day = todayRange();
   const { logs, delays, carriedDelays, rentals, roomProgress } =
     await fetchTodayData(db, project.id, day, { withRooms: Boolean(project.has_rooms) });
@@ -291,7 +289,7 @@ export async function generateDailyReport({ db, project, progress, userEmail, mo
     })),
   });
 
-  const page = buildReport({ project, day, logs, delays, carriedDelays, rentals, roomProgress, manpower, summary, progress, userEmail, money });
+  const page = buildReport({ project, day, logs, delays, carriedDelays, rentals, roomProgress, manpower, summary, progress, money });
   const root = document.getElementById('pdf-export-root');
   root.replaceChildren(page);
 

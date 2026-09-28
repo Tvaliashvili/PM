@@ -2661,7 +2661,7 @@ async function exportDailyReport(e) {
 
   try {
     const { aiNote } = await generateDailyReport({
-      db, project, progress: state.progress, userEmail: state.user?.email, money,
+      db, project, progress: state.progress, money,
     });
     if (aiNote) toast(`PDF saved. ${aiNote}`, 'error');
     else toast('Daily report downloaded.', 'success');
