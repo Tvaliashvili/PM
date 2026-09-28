@@ -1,5 +1,5 @@
 # Supabase CLI cache
 supabase/.temp/
 
-# Cloudflare R2 credentials - local only, never committed
+# Cloudflare R2 credentials, if ever kept locally again
 .r2.env

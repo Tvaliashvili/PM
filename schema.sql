@@ -462,21 +462,6 @@ drop policy if exists "authenticated_full_access" on public.photos;
 create policy "authenticated_full_access" on public.photos
   for all to authenticated using (true) with check (true);
 
--- The bucket itself: private, so photos are only readable through a signed
--- link the app asks for. 10 MB is far above a shrunk photo and still stops a
--- stray original from being uploaded whole.
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('site-photos', 'site-photos', false, 10485760, array['image/jpeg'])
-on conflict (id) do update
-  set public = false,
-      file_size_limit = excluded.file_size_limit,
-      allowed_mime_types = excluded.allowed_mime_types;
-
-drop policy if exists "site_photos_authenticated" on storage.objects;
-create policy "site_photos_authenticated" on storage.objects
-  for all to authenticated
-  using (bucket_id = 'site-photos')
-  with check (bucket_id = 'site-photos');
 
 notify pgrst, 'reload schema';
 
