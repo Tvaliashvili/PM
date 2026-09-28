@@ -1,18 +1,22 @@
 // =============================================================
-// Site photos - shrunk in the browser, kept in Supabase Storage
+// Site photos - shrunk in the browser, kept in Cloudflare R2
 //
 // A site phone writes 3-5 MB per shot (108 MP in high-res mode). Nothing in a
 // progress record needs that, so every photo is resized twice before it leaves
 // the phone: one 1280 px copy for the report, one 400 px thumbnail for lists.
 // A day's photos then cost about as much as a single original.
+//
+// The bytes live in R2 (10 GB free, and no charge for reading them back); the
+// photos table in Supabase holds what each one belongs to. The bucket is
+// private - the photo-url Edge Function signs every link, so the R2 keys never
+// reach the browser.
 // =============================================================
 
-export const PHOTO_BUCKET = 'site-photos';
 export const MAX_PHOTOS = 12;
+const URL_FUNCTION = 'photo-url';
 
 const FULL = { px: 1280, quality: 0.72 };
 const THUMB = { px: 400, quality: 0.6 };
-const SIGNED_FOR = 60 * 60; // seconds a signed link stays valid
 
 /** Longest side down to `px`, re-encoded as JPEG. Smaller photos are left alone. */
 async function shrink(file, { px, quality }) {
@@ -29,32 +33,63 @@ async function shrink(file, { px, quality }) {
   return blob;
 }
 
+/**
+ * Signed R2 links for `paths`, in the same order. `method` is what the link may
+ * be used for: GET to read, PUT to upload, DELETE to remove.
+ */
+async function signedUrls(db, paths, method = 'GET') {
+  if (!paths.length) return [];
+  const { data, error } = await db.functions.invoke(URL_FUNCTION, { body: { paths, method } });
+  if (error) {
+    let message = error.message;
+    try {
+      const body = await error.context?.json();
+      if (body?.error) message = body.error;
+    } catch { /* non-JSON error body */ }
+    throw new Error(message);
+  }
+  return data.urls ?? [];
+}
+
 const ownerColumn = (owner) => (owner.dailyLogId ? 'daily_log_id' : 'delay_id');
 const ownerId = (owner) => owner.dailyLogId ?? owner.delayId;
 
 /**
  * Uploads `files` against one daily log or one delay. Returns the number stored;
- * throws with a readable message if the bucket or the table refuses.
+ * throws with a readable message if R2 or the table refuses.
  */
 export async function uploadPhotos(db, { projectId, files, ...owner }) {
   const id = ownerId(owner);
   if (!id || !files.length) return 0;
-  const store = db.storage.from(PHOTO_BUCKET);
-  const rows = [];
 
+  // Shrink everything first, so one round trip covers every upload link.
+  const parts = [];
   for (const file of files) {
     const key = `${projectId}/${id}/${crypto.randomUUID()}`;
     const [full, thumb] = await Promise.all([shrink(file, FULL), shrink(file, THUMB)]);
-    const paths = { path: `${key}.jpg`, thumb_path: `${key}_t.jpg` };
-    const up = await Promise.all([
-      store.upload(paths.path, full, { contentType: 'image/jpeg' }),
-      store.upload(paths.thumb_path, thumb, { contentType: 'image/jpeg' }),
-    ]);
-    const failed = up.find((r) => r.error);
-    if (failed) throw new Error(failed.error.message);
-    rows.push({ project_id: projectId, [ownerColumn(owner)]: id, ...paths, bytes: full.size });
+    parts.push({ path: `${key}.jpg`, thumb_path: `${key}_t.jpg`, full, thumb });
   }
 
+  const paths = parts.flatMap((p) => [p.path, p.thumb_path]);
+  const urls = await signedUrls(db, paths, 'PUT');
+  if (urls.length !== paths.length) throw new Error('Photo storage did not answer.');
+
+  const blobs = parts.flatMap((p) => [p.full, p.thumb]);
+  const results = await Promise.all(urls.map((url, i) => fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'image/jpeg' },
+    body: blobs[i],
+  })));
+  const failed = results.find((r) => !r.ok);
+  if (failed) throw new Error(`Upload refused (${failed.status})`);
+
+  const rows = parts.map((p) => ({
+    project_id: projectId,
+    [ownerColumn(owner)]: id,
+    path: p.path,
+    thumb_path: p.thumb_path,
+    bytes: p.full.size,
+  }));
   const { error } = await db.from('photos').insert(rows);
   if (error) throw new Error(error.message);
   return rows.length;
@@ -78,14 +113,17 @@ export async function fetchPhotos(db, { dailyLogIds = [], delayIds = [] }) {
 /**
  * Signed links for `photos`, as a Map of photo id → url. The bucket is private,
  * so nothing is readable without one. `full` asks for the 1280 px copy.
+ *
+ * A failure here leaves thumbnails blank rather than stopping the page, so it
+ * returns what it has instead of throwing.
  */
 export async function signPhotos(db, photos, { full = false } = {}) {
   const urls = new Map();
   if (!photos.length) return urls;
-  const paths = photos.map((p) => (full ? p.path : p.thumb_path));
-  const { data, error } = await db.storage.from(PHOTO_BUCKET).createSignedUrls(paths, SIGNED_FOR);
-  if (error) return urls;
-  data.forEach((row, i) => { if (row.signedUrl) urls.set(photos[i].id, row.signedUrl); });
+  try {
+    const signed = await signedUrls(db, photos.map((p) => (full ? p.path : p.thumb_path)));
+    signed.forEach((url, i) => { if (url) urls.set(photos[i].id, url); });
+  } catch { /* the page still renders, without the pictures */ }
   return urls;
 }
 
@@ -101,6 +139,14 @@ export function photosBy(photos, key) {
   return map;
 }
 
+/** Removes the files behind `photos` from R2. The rows are somebody else's job. */
+async function removeFiles(db, photos) {
+  if (!photos.length) return;
+  const paths = photos.flatMap((p) => [p.path, p.thumb_path]);
+  const urls = await signedUrls(db, paths, 'DELETE');
+  await Promise.all(urls.map((url) => fetch(url, { method: 'DELETE' })));
+}
+
 /**
  * Clears the files of a daily log or a delay before the row itself goes. The
  * rows cascade with their owner, but the stored files would be left behind.
@@ -109,13 +155,12 @@ export async function deletePhotosFor(db, owner) {
   const photos = await fetchPhotos(db, owner.dailyLogId
     ? { dailyLogIds: [owner.dailyLogId] }
     : { delayIds: [owner.delayId] });
-  if (!photos.length) return;
-  await db.storage.from(PHOTO_BUCKET).remove(photos.flatMap((p) => [p.path, p.thumb_path]));
+  await removeFiles(db, photos);
 }
 
 /** Removes one photo: both files, then the row. */
 export async function deletePhoto(db, photo) {
-  await db.storage.from(PHOTO_BUCKET).remove([photo.path, photo.thumb_path]);
+  await removeFiles(db, [photo]);
   const { error } = await db.from('photos').delete().eq('id', photo.id);
   if (error) throw new Error(error.message);
 }

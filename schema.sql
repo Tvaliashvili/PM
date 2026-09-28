@@ -431,10 +431,14 @@ notify pgrst, 'reload schema';
 
 -- -------------------------------------------------------------
 -- 14. Site photos
--- A photo belongs to one daily log or one delay, never both. The files live
--- in the private "site-photos" bucket: path = the 1280 px copy shown in the
--- report, thumb_path = the 400 px copy shown in lists. Both are written by
--- the browser after it shrinks the original, so a photo costs ~150 KB.
+-- A photo belongs to one daily log or one delay, never both. This table holds
+-- only what each photo is of: path = the 1280 px copy shown in the report,
+-- thumb_path = the 400 px copy shown in lists. Both are written by the browser
+-- after it shrinks the original, so a photo costs ~150 KB.
+--
+-- The files themselves are in Cloudflare R2, not Supabase Storage (see the
+-- photo-url function). The bucket and policy below are left in place for
+-- anything uploaded before that move; nothing writes to them now.
 -- -------------------------------------------------------------
 create table if not exists public.photos (
   id            uuid primary key default gen_random_uuid(),
