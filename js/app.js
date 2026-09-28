@@ -2074,6 +2074,10 @@ const logCard = (l) => {
       <div class="log-card-head">
         <span class="log-card-date">${esc(formatDate(l.log_date))}</span>
         <span class="log-card-meta">${esc([l.weather, total ? `${total} on site` : ''].filter(Boolean).join(' · '))}</span>
+        <span class="log-card-actions">
+          <button type="button" class="table-action" data-log-edit="${esc(l.id)}">Edit</button>
+          <button type="button" class="table-action is-danger" data-log-delete="${esc(l.id)}">Delete</button>
+        </span>
       </div>
       ${crew.length ? `<p class="log-card-crew">${crew.map(([k, n]) => `${esc(tradeLabel(k))} ${n}`).join(' · ')}</p>` : ''}
       <div class="log-notes">
@@ -2093,7 +2097,7 @@ async function loadLogs(projectId, { more = false } = {}) {
 
   let q = db
     .from('daily_logs')
-    .select('log_date, weather, manpower, notes, notes_en', { count: 'exact' })
+    .select('id, log_date, weather, manpower, notes, notes_en, raw_text, day_rate', { count: 'exact' })
     .eq('project_id', projectId);
   if (logFilter.from) q = q.gte('log_date', logFilter.from);
   if (logFilter.to) q = q.lte('log_date', logFilter.to);
@@ -2132,6 +2136,29 @@ async function loadLogs(projectId, { more = false } = {}) {
            Show older logs (${total - shownLogs.length} more)
          </button>`
       : '');
+}
+
+async function onLogsClick(e) {
+  if (e.target.closest('#btn-log-more')) return loadLogs(state.projectId, { more: true });
+
+  const edit = e.target.closest('[data-log-edit]');
+  if (edit) return openDailyLogModal(shownLogs.find((l) => l.id === edit.dataset.logEdit));
+
+  const del = e.target.closest('[data-log-delete]');
+  if (!del) return;
+  const log = shownLogs.find((l) => l.id === del.dataset.logDelete);
+  if (!log || !confirm(`Delete the daily log of ${formatDate(log.log_date)}?`)) return;
+
+  const { error } = await db.from('daily_logs').delete().eq('id', log.id);
+  if (error) {
+    toast(`Could not delete the log: ${error.message}`, 'error');
+    return;
+  }
+  toast('Daily log deleted.', 'success');
+  shownLogs = shownLogs.filter((l) => l.id !== log.id);
+  refreshDashboard(state.projectId);
+  loadLogs(state.projectId);
+  loadSchedule(state.projectId); // daily-worker pay feeds the cash flow
 }
 
 // Typing in the search box shouldn't hit the database on every keystroke.
@@ -2311,17 +2338,30 @@ function updateDayCost() {
   }
 }
 
-function openDailyLogModal() {
+function openDailyLogModal(log = null) {
   if (!requireProject()) return;
   const form = $('#form-daily-log');
+  const f = form.elements;
   form.reset();
-  form.elements.log_date.value = todayISO();
-  form.elements.log_date.max = todayISO();
-  form.elements.day_rate.value = currentProject()?.day_rate ?? '';
+  form.dataset.logId = log?.id ?? '';
+  $('#daily-log-title').textContent = log ? 'Edit Daily Log' : 'New Daily Log';
+  f.log_date.max = todayISO();
+  if (log) {
+    f.log_date.value = log.log_date;
+    f.weather.value = log.weather || '';
+    for (const t of MANPOWER_TRADES) f[`mp_${t.key}`].value = log.manpower?.[t.key] || '';
+    f.notes.value = log.notes || '';
+    f.notes_en.value = log.notes_en || '';
+    f.raw_text.value = log.raw_text || '';
+    f.day_rate.value = log.day_rate ?? '';
+  } else {
+    f.log_date.value = todayISO();
+    f.day_rate.value = currentProject()?.day_rate ?? '';
+  }
   updateManpowerTotal();
   showFormError(form, '');
   openModal('modal-daily-log');
-  form.elements.raw_text.focus();
+  (log ? f.notes : f.raw_text).focus();
 }
 
 // Readable message from a failed supabase.functions.invoke().
@@ -2395,9 +2435,13 @@ async function saveDailyLog(e) {
     day_rate:   fd.get('day_rate') === '' ? null : Number(fd.get('day_rate')),
   };
 
+  const logId = form.dataset.logId;
+
   showFormError(form, '');
   setBusy(btn, true);
-  const { error } = await db.from('daily_logs').insert(row);
+  const { error } = logId
+    ? await db.from('daily_logs').update(row).eq('id', logId)
+    : await db.from('daily_logs').insert(row);
   setBusy(btn, false);
 
   if (error) {
@@ -2408,7 +2452,7 @@ async function saveDailyLog(e) {
   }
 
   closeModal('modal-daily-log');
-  toast('Daily log saved.', 'success');
+  toast(logId ? 'Daily log updated.' : 'Daily log saved.', 'success');
 
   // The first rate entered becomes the project's default for the next logs.
   const project = currentProject();
@@ -2667,14 +2711,12 @@ $('#projects-container').addEventListener('click', onProjectsClick);
 $('#btn-new-project').addEventListener('click', openProjectModal);
 $('#form-project').addEventListener('submit', saveProject);
 $('#btn-parse-log').addEventListener('click', processLogText);
-$('#btn-new-log-page').addEventListener('click', openDailyLogModal);
+$('#btn-new-log-page').addEventListener('click', () => openDailyLogModal());
 $('#log-from').addEventListener('change', onLogFilterChange);
 $('#log-to').addEventListener('change', onLogFilterChange);
 $('#log-search').addEventListener('input', onLogFilterChange);
 $('#btn-log-clear').addEventListener('click', clearLogFilter);
-$('#daily-logs-container').addEventListener('click', (e) => {
-  if (e.target.closest('#btn-log-more')) loadLogs(state.projectId, { more: true });
-});
+$('#daily-logs-container').addEventListener('click', onLogsClick);
 $('#form-ask').addEventListener('submit', askGemini);
 $('#form-ask').addEventListener('click', onAskSuggestion);
 $('#ask-answer').addEventListener('click', onAskLangToggle);
