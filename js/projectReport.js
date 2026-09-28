@@ -333,7 +333,7 @@ export async function buildProjectReport({
   const attention = `
     <section class="rpt-section rpt-two rpt-avoid">
       <div class="rpt-panel">
-        <h3>${L('ყურადღება მიაქციეთ', 'Needs attention')}</h3>
+        <h3>${L('საჭიროებს ყურადღებას', 'Needs attention')}</h3>
         ${alerts.length ? `
           <ul class="rpt-alert-list">
             ${alerts.map(([tone, ka, en]) => `
