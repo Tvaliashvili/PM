@@ -1080,34 +1080,6 @@ export async function buildProjectReport({
       </tbody>
     </table>` : '';
 
-  const WET = new Set(['Rain', 'Heavy rain', 'Snow', 'Extreme heat', 'Windy']);
-  const weatherDays = siteLogs.filter((l) => l.weather).length;
-  const wetDays = siteLogs.filter((l) => WET.has(l.weather)).length;
-  const weatherCount = new Map();
-  for (const l of siteLogs) {
-    if (!l.weather) continue;
-    weatherCount.set(l.weather, (weatherCount.get(l.weather) ?? 0) + 1);
-  }
-  const weatherDelayDays = contractorDelays
-    .filter((x) => x.delay_cause === 'Weather')
-    .reduce((sum, x) => sum + delayDaysLost(x, today), 0);
-
-  // The weather record is what an extension-of-time claim rests on, so it is
-  // stated as days on site, not as a share of the calendar.
-  const weatherBlock = weatherDays ? `
-    <h3 class="rpt-sub-h">${L('ამინდი', 'Weather')}</h3>
-    <div class="rpt-tiles rpt-avoid">
-      ${tile('ჩაწერილი დღე', 'Days recorded', `${weatherDays}`)}
-      ${tile('არახელსაყრელი ამინდი', 'Adverse weather', `${wetDays}`,
-    `${pctOf(wetDays, weatherDays)}% ${L('ჩანაწერების', 'of days logged')}`, wetDays ? 'warn' : 'ok')}
-      ${tile('ამინდით დაკარგული', 'Lost to weather', `${num.format(weatherDelayDays)} ${L('დღე', 'days')}`,
-    '', weatherDelayDays ? 'bad' : 'ok')}
-    </div>
-    <div class="rpt-type-chips rpt-avoid">
-      ${[...weatherCount].sort((a, b) => b[1] - a[1]).map(([w, n]) => `
-        <span class="rpt-type"><b>${n}</b> ${esc(bi(w))}</span>`).join('')}
-    </div>` : '';
-
   const delaysSection = `
     <section class="rpt-section">
       ${H('შეფერხებები (ბოლო 30 დღე)', 'Delays (last 30 days)', delays.length ? `${delayDays} ${L('დღე', 'days')}` : '')}
@@ -1149,7 +1121,6 @@ export async function buildProjectReport({
           </tbody>
         </table>` : `<p class="rpt-all-good">✓ ${L('ბოლო 30 დღეში შეფერხება არ ყოფილა', 'No delays in the last 30 days')}</p>`}
       ${blameTable}
-      ${weatherBlock}
     </section>`;
 
   // ---------- Safety and quality ----------

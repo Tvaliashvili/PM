@@ -711,7 +711,7 @@ async function loadSchedule(projectId) {
       .eq('project_id', projectId)
       .order('name'),
     db.from('daily_logs')
-      .select('log_date, manpower, day_rate, weather')
+      .select('log_date, manpower, day_rate')
       .eq('project_id', projectId)
       .order('log_date'),
     db.from('equipment_rentals')
