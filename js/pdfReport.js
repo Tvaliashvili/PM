@@ -217,18 +217,25 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
   const joinNotes = (key) => logs.map((l) => l[key]).filter(Boolean).join('\n\n');
   set('notes-ka', joinNotes('notes') || ka('No site notes recorded.'));
   set('notes-en', joinNotes('notes_en') || 'No site notes recorded.');
-  // Photos (the section goes if the day has none)
+  // Photos, two to a row. They go in a table because that is the one thing
+  // html2pdf keeps whole across a page break - a grid item it happily slices.
   if (photoUrls.length) {
-    const grid = page.querySelector('[data-photos]');
-    photoUrls.forEach((url) => {
-      const figure = document.createElement('figure');
-      figure.className = 'pdf-avoid-break'; // a photo is never split down the middle
-      const img = document.createElement('img');
-      img.crossOrigin = 'anonymous'; // html2canvas cannot draw a tainted image
-      img.src = url;
-      figure.appendChild(img);
-      grid.appendChild(figure);
-    });
+    const body = page.querySelector('[data-photos]');
+    for (let i = 0; i < photoUrls.length; i += 2) {
+      const tr = document.createElement('tr');
+      for (const url of photoUrls.slice(i, i + 2)) {
+        const td = document.createElement('td');
+        const frame = document.createElement('div');
+        const img = document.createElement('img');
+        img.crossOrigin = 'anonymous'; // html2canvas cannot draw a tainted image
+        img.src = url;
+        frame.appendChild(img);
+        td.appendChild(frame);
+        tr.appendChild(td);
+      }
+      if (tr.children.length === 1) tr.appendChild(document.createElement('td'));
+      body.appendChild(tr);
+    }
   } else {
     page.querySelector('[data-section="photos"]').remove();
   }

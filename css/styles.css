@@ -616,19 +616,14 @@ textarea.input-dark { resize: vertical; }
 .pdf-page .pdf-bi { white-space: pre-line; }
 
 /* Photos in the daily report: two to a row, each kept whole across a break. */
-/* Every photo the same size, so portrait and landscape shots sit in even rows
-   instead of leaving gaps. The box crops; it never stretches the photo. */
-.pdf-photos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.pdf-photos figure {
-  margin: 0;
-  height: 118px;
-  overflow: hidden;
-  border-radius: 4px;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}
+/* Photos sit in a table: a row is the one unit html2pdf will not split, and
+   every frame is the same size, so portrait and landscape shots line up. The
+   frame crops; it never stretches the photo. */
+.pdf-photos { width: 100%; border-collapse: separate; border-spacing: 0 8px; }
+.pdf-photos td { width: 50%; padding: 0; border: 0; vertical-align: top; }
+.pdf-photos td + td { padding-left: 8px; }
+.pdf-photos td > div { height: 118px; overflow: hidden; border-radius: 4px; }
 .pdf-photos img { display: block; width: 100%; min-height: 100%; }
-.pdf-photos figcaption { margin-top: 3px; font-size: 9px; color: #64748b; }
 /* A heading stays with the photos (or the table) it introduces. */
 .pdf-page h2 { page-break-after: avoid; break-after: avoid; }
 
