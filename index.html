@@ -1269,6 +1269,10 @@
             <textarea name="description_en" rows="3" class="input-dark w-full"></textarea>
           </label>
         </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <button type="button" id="btn-translate-variation" class="btn btn-secondary">Translate with Gemini</button>
+          <p class="text-xs text-slate-500">Write in either language - Gemini fixes the Georgian and fills in the other. Also runs on save if one is empty.</p>
+        </div>
         <p class="form-error hidden" data-error></p>
       </div>
       <div class="modal-footer">
@@ -1319,6 +1323,10 @@
             <span class="form-label">Detail - English</span>
             <textarea name="description_en" rows="3" class="input-dark w-full"></textarea>
           </label>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <button type="button" id="btn-translate-event" class="btn btn-secondary">Translate with Gemini</button>
+          <p class="text-xs text-slate-500">Write in either language - Gemini fixes the Georgian and fills in the other. Also runs on save if one is empty.</p>
         </div>
         <label class="block">
           <span class="form-label">Action taken</span>

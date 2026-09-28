@@ -2822,6 +2822,15 @@ async function saveVariation(e) {
 
   showFormError(form, '');
   setBusy(btn, true);
+
+  // One language filled in: let Gemini write the other before saving.
+  if (needsTranslation(form)) {
+    const err = await translateBilingual(form, [row.ref, row.title].filter(Boolean).join(' - '));
+    if (err) toast(`Saved without translation - ${err}`, 'error');
+    row.description = form.elements.description.value.trim() || null;
+    row.description_en = form.elements.description_en.value.trim() || null;
+  }
+
   const { error } = id
     ? await db.from('variations').update(row).eq('id', id)
     : await db.from('variations').insert({ ...row, project_id: state.projectId });
@@ -2991,6 +3000,15 @@ async function saveEvent(e) {
 
   showFormError(form, '');
   setBusy(btn, true);
+
+  // One language filled in: let Gemini write the other before saving.
+  if (needsTranslation(form)) {
+    const err = await translateBilingual(form, [eventKind(row.kind), row.title].filter(Boolean).join(': '));
+    if (err) toast(`Saved without translation - ${err}`, 'error');
+    row.description = form.elements.description.value.trim() || null;
+    row.description_en = form.elements.description_en.value.trim() || null;
+  }
+
   const { error } = id
     ? await db.from('site_events').update(row).eq('id', id)
     : await db.from('site_events').insert({ ...row, project_id: state.projectId });
@@ -3108,10 +3126,16 @@ function syncDelayStatus() {
 }
 
 // Fills the delay description in both languages via Gemini. Returns an error message, or '' on success.
-async function translateDelayText(form) {
+/**
+ * Fills a form's Georgian and English description from whichever one is
+ * written: Gemini corrects the Georgian and writes the other. `context` is a
+ * line of background (the cause, the incident, what was instructed) so the
+ * wording suits the record. Returns an error message, or '' on success.
+ */
+async function translateBilingual(form, context = '') {
   const f = form.elements;
   const { data, error } = await db.functions.invoke('translate-delay', {
-    body: { ka: f.description.value, en: f.description_en.value, cause: f.delay_cause.value },
+    body: { ka: f.description.value, en: f.description_en.value, cause: context || null },
   });
   if (error) return functionErrorMessage(error);
   f.description.value = data.ka;
@@ -3119,18 +3143,25 @@ async function translateDelayText(form) {
   return '';
 }
 
-async function onTranslateDelay() {
-  const form = $('#form-delay');
+/** One language written and not the other: let Gemini fill the gap on save. */
+const needsTranslation = (form) => {
+  const f = form.elements;
+  return !f.description.value.trim() !== !f.description_en.value.trim();
+};
+
+/** The Translate button on the delay, event and variation forms. */
+async function onTranslate(formId, buttonId, context) {
+  const form = $(formId);
   const f = form.elements;
   if (!f.description.value.trim() && !f.description_en.value.trim()) {
     showFormError(form, 'Write the description in Georgian or English first.');
     f.description.focus();
     return;
   }
-  const btn = $('#btn-translate-delay');
+  const btn = $(buttonId);
   showFormError(form, '');
   setBusy(btn, true, 'Translating…');
-  const err = await translateDelayText(form);
+  const err = await translateBilingual(form, context(form.elements));
   setBusy(btn, false);
   if (err) showFormError(form, `Gemini couldn't translate: ${err}`);
 }
@@ -3158,8 +3189,8 @@ async function saveDelay(e) {
 
   // One language filled in: let Gemini write the other before saving.
   const f = form.elements;
-  if (!f.description.value.trim() !== !f.description_en.value.trim()) {
-    const err = await translateDelayText(form);
+  if (needsTranslation(form)) {
+    const err = await translateBilingual(form, f.delay_cause.value);
     if (err) toast(`Saved without translation - ${err}`, 'error');
   }
 
@@ -3288,7 +3319,12 @@ setProjectActionsEnabled(false);
 $('#btn-new-delay').addEventListener('click', () => openDelayModal());
 $('#form-daily-log').addEventListener('submit', saveDailyLog);
 $('#form-delay').addEventListener('submit', saveDelay);
-$('#btn-translate-delay').addEventListener('click', onTranslateDelay);
+$('#btn-translate-delay').addEventListener('click', () => onTranslate('#form-delay', '#btn-translate-delay',
+  (f) => f.delay_cause.value));
+$('#btn-translate-event').addEventListener('click', () => onTranslate('#form-event', '#btn-translate-event',
+  (f) => [eventKind(f.kind.value), f.title.value].filter(Boolean).join(': ')));
+$('#btn-translate-variation').addEventListener('click', () => onTranslate('#form-variation', '#btn-translate-variation',
+  (f) => [f.ref.value, f.title.value].filter(Boolean).join(' - ')));
 $('#delay-status').addEventListener('change', syncDelayStatus);
 $('#delays-table').addEventListener('click', onDelaysTableClick);
 $('#btn-add-rental').addEventListener('click', () => openRentalModal());
