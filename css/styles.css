@@ -331,6 +331,7 @@ html, body { background: var(--ink-950); }
 .log-card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 0.75rem; margin-bottom: 0.5rem; }
 .log-card-date { font-weight: 600; color: #fff; }
 .log-card-meta { margin-left: auto; font-size: 0.75rem; color: #94a3b8; }
+.log-card-actions { display: flex; gap: 0.25rem; white-space: nowrap; }
 .log-card-crew { margin-bottom: 0.6rem; font-size: 0.75rem; color: #64748b; }
 .log-notes { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .log-notes p { white-space: pre-wrap; font-size: 0.85rem; color: #cbd5e1; }
@@ -537,7 +538,10 @@ textarea.input-dark { resize: vertical; }
   padding-bottom: 12px;
   border-bottom: 3px solid #f59e0b;
 }
-.pdf-header-date { text-align: right; }
+.pdf-header > div:first-child { min-width: 0; }
+.pdf-header-date { text-align: right; flex: none; }
+.pdf-header-date [data-field="date-ka"],
+.pdf-header-date [data-field="date-en"] { white-space: nowrap; }
 .pdf-eyebrow {
   font-size: 10px;
   font-weight: 600;

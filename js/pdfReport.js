@@ -154,7 +154,10 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
 
   // Site details
   const workers = manpower.reduce((sum, [, n]) => sum + n, 0);
-  const daysLost = delays.reduce((sum, d) => sum + delayDaysLost(d, day.date), 0);
+  // Every delay the report lists counts here - the ones carried over from an
+  // earlier day are still today's problem.
+  const allDelays = [...delays, ...carriedDelays];
+  const daysLost = allDelays.reduce((sum, d) => sum + delayDaysLost(d, day.date), 0);
   const weather = [...new Set(logs.map((l) => l.weather).filter(Boolean))].map(bi).join(', ');
 
   set('project', biName(project.name, project.name_ka));
@@ -165,7 +168,7 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
   set('date-en', dateEn(day.date));
   set('weather', weather || bi('Not recorded'));
   set('manpower-total', workers);
-  set('delay-count', delays.length);
+  set('delay-count', allDelays.length);
   set('delay-days', daysLost.toLocaleString('en-GB'));
   if (rooms) set('total-flats', project.total_flats ?? '-');
   set('progress', progress?.count
@@ -175,11 +178,7 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
   // Executive summary - Georgian and English columns
   fillList(page.querySelector('[data-list="summary-ka"]'), summary.ka);
   fillList(page.querySelector('[data-list="summary-en"]'), summary.en);
-  set('summary-note', {
-    ai: bi('Summary written by Gemini from the log and delay entries in this report.'),
-    error: summary.note,
-    none: '',
-  }[summary.source]);
+  set('summary-note', summary.source === 'error' ? summary.note : '');
 
   // Manpower
   const mpRows = page.querySelector('[data-rows="manpower"]');
