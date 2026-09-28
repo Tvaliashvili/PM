@@ -2828,14 +2828,11 @@ async function exportDailyReport(e) {
   exporting = true;
   btn.disabled = true;
   label.textContent = 'Generating…';
-  toast('Building today\'s report - the AI summary can take a few seconds.');
+  toast('Building today\'s report…');
 
   try {
-    const { aiNote } = await generateDailyReport({
-      db, project, progress: state.progress, money,
-    });
-    if (aiNote) toast(`PDF saved. ${aiNote}`, 'error');
-    else toast('Daily report downloaded.', 'success');
+    await generateDailyReport({ db, project, progress: state.progress, money });
+    toast('Daily report downloaded.', 'success');
   } catch (err) {
     toast(err.message || 'Could not generate the report.', 'error');
   } finally {

@@ -430,7 +430,7 @@
             <div class="panel">
               <h2 class="panel-title">Daily Site Report</h2>
               <p class="text-sm text-slate-400 mb-4">
-                Today's weather, manpower, delays and site notes, with a 3-point executive summary written by Gemini.
+                Today's weather, manpower, delays, site notes and photos, in Georgian and English.
                 Downloads as <span class="text-slate-300">Daily_Report_ProjectName_YYYY-MM-DD.pdf</span>.
               </p>
               <button id="btn-report-daily" class="btn btn-primary"><span>Generate Daily Report</span></button>
@@ -480,20 +480,6 @@
         <div data-rooms-only><span>დასრულებული ოთახები<em>Rooms finished</em></span><strong data-field="total-flats"></strong></div>
         <div><span>პროგრესი (გეგმა)<em>Progress (planned)</em></span><strong data-field="progress"></strong></div>
       </div>
-
-      <section class="pdf-section pdf-avoid-break" data-section="summary">
-        <h2>მოკლე შეჯამება <em>Executive Summary</em></h2>
-        <div class="pdf-summary-cols">
-          <div>
-            <p class="pdf-lang">ქართული</p>
-            <ul class="pdf-summary" data-list="summary-ka"></ul>
-          </div>
-          <div>
-            <p class="pdf-lang">English</p>
-            <ul class="pdf-summary" data-list="summary-en"></ul>
-          </div>
-        </div>
-      </section>
 
       <section class="pdf-section pdf-avoid-break">
         <h2>სამუშაო ძალა <em>Manpower</em></h2>

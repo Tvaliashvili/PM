@@ -605,8 +605,6 @@ textarea.input-dark { resize: vertical; }
 .pdf-facts strong { display: block; font-size: 14px; color: #0f172a; }
 
 .pdf-section { margin-top: 18px; }
-.pdf-summary { padding-left: 18px; list-style: disc; }
-.pdf-summary li { margin-bottom: 6px; }
 .pdf-note { margin-top: 6px; font-size: 10px; font-style: italic; color: #64748b; }
 .pdf-notes { white-space: pre-wrap; }
 

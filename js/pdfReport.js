@@ -1,14 +1,11 @@
 // =============================================================
 // Daily PDF report - bilingual (Georgian / English)
-// Today's daily_logs + delays → Gemini summary in both languages
-// (via Edge Function) → html2pdf
+// Today's daily_logs + delays → html2pdf
 // =============================================================
 import { MANPOWER_TRADES, REPORT_AUTHOR, DAY_WORKER_KEY } from './config.js';
 import { rentalEnd, delayIsOngoing, delayDaysLost } from './schedule.js';
-import { ka, bi, biName, dateKa, dateEn, signatureHtml, roomLabel, roomLabelBi } from './bilingual.js';
+import { ka, bi, biName, dateKa, dateEn, signatureHtml, roomLabelBi } from './bilingual.js';
 import { fetchPhotos, signPhotos } from './photos.js';
-
-const SUMMARY_FUNCTION = 'daily-summary';
 
 // ---------- Helpers ----------
 function todayRange() {
@@ -32,9 +29,7 @@ const fileSafe = (name) => (name || 'Project')
 
 const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key.replace(/_/g, ' ');
 
-// English label (sent to Gemini) and bilingual label (printed). Both leave the
-// block out in a building that has none.
-const flatLabel = roomLabel;
+// Bilingual room label; left out in a building that has none.
 const flatLabelBi = roomLabelBi;
 
 // Daily workers' pay for the day: headcount × the log's day rate.
@@ -116,26 +111,7 @@ async function fetchPhotoUrls(db, { logs, delays, carriedDelays }) {
   return photos.map((p) => urls.get(p.id)).filter(Boolean);
 }
 
-// ---------- 2. AI summary (both languages) ----------
-async function fetchSummary(db, payload) {
-  if (!payload.daily_logs.length && !payload.delays.length) {
-    const none = 'No daily log or delays were recorded for this project today.';
-    return { ka: [ka(none)], en: [none], source: 'none' };
-  }
-
-  const { data, error } = await db.functions.invoke(SUMMARY_FUNCTION, { body: payload });
-  if (error) {
-    let message = error.message;
-    try {
-      const body = await error.context?.json();
-      if (body?.error) message = body.error;
-    } catch { /* non-JSON error body */ }
-    return { ka: [], en: [], source: 'error', note: `${bi('AI summary unavailable')}: ${message}` };
-  }
-  return { ka: data.ka ?? [], en: data.en ?? [], source: 'ai' };
-}
-
-// ---------- 3. Populate the printable template ----------
+// ---------- 2. Populate the printable template ----------
 function addRow(tbody, cells) {
   const tr = document.createElement('tr');
   for (const { text, className } of cells) {
@@ -157,15 +133,7 @@ function addEmptyRow(tbody, colspan, text) {
   tbody.appendChild(tr);
 }
 
-function fillList(list, items) {
-  for (const text of items) {
-    const li = document.createElement('li');
-    li.textContent = text;
-    list.appendChild(li);
-  }
-}
-
-function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, roomProgress, photoUrls = [], manpower, summary, progress, money }) {
+function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, roomProgress, photoUrls = [], manpower, progress, money }) {
   const page = document.getElementById('daily-report-template').content.firstElementChild.cloneNode(true);
   const set = (field, value) => { page.querySelector(`[data-field="${field}"]`).textContent = value; };
   const rooms = Boolean(project.has_rooms);
@@ -198,16 +166,6 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
   set('progress', progress?.count
     ? `${progress.actualPct}% (${ka('plan')}/plan ${progress.plannedPct}%)`
     : bi('No timetable'));
-
-  // Executive summary - Georgian and English columns. If Gemini could not be
-  // reached the section goes altogether: an apology to the client reads worse
-  // than no summary, and the app says what happened.
-  if (summary.source === 'error') {
-    page.querySelector('[data-section="summary"]').remove();
-  } else {
-    fillList(page.querySelector('[data-list="summary-ka"]'), summary.ka);
-    fillList(page.querySelector('[data-list="summary-en"]'), summary.en);
-  }
 
   // Manpower
   const mpRows = page.querySelector('[data-rows="manpower"]');
@@ -283,49 +241,15 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
 // ---------- 4. Export ----------
 /**
  * Builds today's bilingual report for `project` and downloads Daily_Report_[YYYY-MM-DD].pdf.
- * Returns { aiNote } - set when the PDF was saved without an AI summary.
  */
 export async function generateDailyReport({ db, project, progress, money }) {
   const day = todayRange();
   const { logs, delays, carriedDelays, rentals, roomProgress } =
     await fetchTodayData(db, project.id, day, { withRooms: Boolean(project.has_rooms) });
-  const pay = dayWorkerPay(logs);
   const manpower = mergeManpower(logs);
 
-  const summary = await fetchSummary(db, {
-    date: day.date,
-    project: {
-      // spelled by hand in both languages, like the client
-      name: { en: project.name, ka: project.name_ka },
-      location: { en: project.location, ka: project.location_ka },
-      // the company that hired us - the report's main reader; spelled by hand in both languages
-      client: { en: project.client_name, ka: project.client_name_ka },
-      ...(project.has_rooms ? { total_rooms: roomProgress.total, rooms_finished: roomProgress.done } : {}),
-    },
-    // Timetable position (progress is weighted by planned duration).
-    schedule: progress?.count ? {
-      progress_pct: progress.actualPct,
-      planned_by_today_pct: progress.plannedPct,
-      overdue_activities: progress.overdue.map((t) => ({ activity: t.name, activity_ka: t.name_ka || null, days_late: t.daysLate })),
-    } : null,
-    daily_logs: logs.map((l) => ({ weather: l.weather, notes_ka: l.notes, notes_en: l.notes_en })),
-    manpower: Object.fromEntries(manpower.map(([trade, n]) => [tradeLabel(trade), n])),
-    ...(pay.workers ? { daily_workers_pay: { workers: pay.workers, rate: pay.rate, total: pay.pay, currency: project.currency } } : {}),
-    ...(rentals.length ? {
-      equipment_on_hire: rentals.map((r) => ({ equipment: r.equipment, equipment_ka: r.equipment_ka || null, daily_price: Number(r.daily_rate), until: rentalEnd(r) })),
-    } : {}),
-    delays: [...delays, ...carriedDelays].map((d) => ({
-      cause: d.delay_cause,
-      ...(project.has_rooms ? { location: flatLabel(d.flats) } : {}),
-      duration_days: delayDaysLost(d, day.date),
-      ongoing: delayIsOngoing(d),
-      description_ka: d.description,
-      description_en: d.description_en,
-    })),
-  });
-
   const photoUrls = await fetchPhotoUrls(db, { logs, delays, carriedDelays });
-  const page = buildReport({ project, day, logs, delays, carriedDelays, rentals, roomProgress, photoUrls, manpower, summary, progress, money });
+  const page = buildReport({ project, day, logs, delays, carriedDelays, rentals, roomProgress, photoUrls, manpower, progress, money });
   const root = document.getElementById('pdf-export-root');
   root.replaceChildren(page);
 
@@ -353,5 +277,4 @@ export async function generateDailyReport({ db, project, progress, money }) {
     root.replaceChildren();
   }
 
-  return { aiNote: summary.source === 'error' ? summary.note : null };
 }
