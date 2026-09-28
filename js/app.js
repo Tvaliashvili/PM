@@ -3044,7 +3044,7 @@ async function setBaseline() {
     ? `This project was baselined on ${formatDate(already)}.
 
 `
-      + 'Setting it again replaces the approved programme with today's dates, and the drift recorded since then is lost. Continue?'
+      + `Setting it again replaces the approved programme with today's dates, and the drift recorded since then is lost. Continue?`
     : `Freeze today's planned dates for ${dated.length} activities as the approved programme?
 
 `
