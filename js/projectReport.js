@@ -701,7 +701,7 @@ export async function buildProjectReport({
     if (!s?.items) return chip({ ka: 'სამუშაო არ აქვს', en: 'No work yet', tone: 'muted' });
     if (s.overdue) return chip({ ka: 'ვადაგადაცილება', en: 'Overdue', tone: 'bad' });
     if (s.late) return chip({ ka: 'დაგვიანება', en: 'Late', tone: 'warn' },
-      ` · ${s.avgDaysLate} დღე`, ` · ${s.avgDaysLate}d`);
+      ` · ${s.avgDaysLate} დღე`, ` · ${s.avgDaysLate} ${s.avgDaysLate === 1 ? 'day' : 'days'}`);
     if (s.onTime) return chip({ ka: 'ვადაში', en: 'On time', tone: 'ok' });
     return chip({ ka: 'მიმდინარე', en: 'Ongoing', tone: 'info' });
   };
