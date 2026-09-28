@@ -548,6 +548,11 @@
         </div>
       </section>
 
+      <section class="pdf-section" data-section="photos">
+        <h2>ფოტოები <em>Photos</em></h2>
+        <div class="pdf-photos" data-photos></div>
+      </section>
+
       <div class="pdf-avoid-break" data-signature></div>
     </div>
   </template>
@@ -972,6 +977,14 @@
                       placeholder="English version appears here"></textarea>
           </label>
         </div>
+        <div class="photo-picker" data-picker="log">
+          <span class="form-label">Photos <span class="text-slate-500">(up to 12, shrunk before upload)</span></span>
+          <div class="photo-grid" data-photo-list></div>
+          <label class="photo-add">
+            <input type="file" accept="image/*" multiple hidden data-photo-input>
+            <span>+ Add photos</span>
+          </label>
+        </div>
         <p class="form-error hidden" data-error></p>
       </div>
       <div class="modal-footer">
@@ -1130,6 +1143,14 @@
           <button type="button" id="btn-translate-delay" class="btn btn-secondary">Translate with Gemini</button>
           <p class="text-xs text-slate-500">Write in either language - Gemini fixes the Georgian and fills in the other. Also runs on save if one is empty.</p>
         </div>
+        <div class="photo-picker" data-picker="delay">
+          <span class="form-label">Photos <span class="text-slate-500">(up to 12, shrunk before upload)</span></span>
+          <div class="photo-grid" data-photo-list></div>
+          <label class="photo-add">
+            <input type="file" accept="image/*" multiple hidden data-photo-input>
+            <span>+ Add photos</span>
+          </label>
+        </div>
         <p class="form-error hidden" data-error></p>
       </div>
       <div class="modal-footer">
@@ -1137,6 +1158,17 @@
         <button type="submit" class="btn btn-primary">Save Delay</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Photo viewer -->
+  <dialog id="modal-photo" class="modal modal-photo" aria-label="Photo">
+    <div class="photo-view">
+      <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      <button type="button" class="photo-nav photo-prev" data-photo-step="-1" aria-label="Previous">&#8249;</button>
+      <img id="photo-view-img" alt="">
+      <button type="button" class="photo-nav photo-next" data-photo-step="1" aria-label="Next">&#8250;</button>
+      <p id="photo-view-note" class="photo-view-note"></p>
+    </div>
   </dialog>
 
   <!-- Toasts -->

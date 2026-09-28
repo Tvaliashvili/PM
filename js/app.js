@@ -16,6 +16,9 @@ import {
   delayIsOngoing, delayDaysLost, delayStart,
 } from './schedule.js';
 import { ka, roomLabel } from './bilingual.js';
+import {
+  MAX_PHOTOS, uploadPhotos, fetchPhotos, signPhotos, photosBy, deletePhoto, deletePhotosFor,
+} from './photos.js';
 
 // ---------- Supabase ----------
 const isConfigured = !SUPABASE_URL.includes('YOUR-') && !SUPABASE_KEY.includes('YOUR-');
@@ -1058,6 +1061,7 @@ async function refreshDashboard(projectId) {
   state.delays = delays.data;
   renderRecentLogs(logs.data);
   renderRecentDelays(delays.data.slice(0, 5));
+  await loadDelayPhotos();
   renderDelays();
 }
 
@@ -1075,6 +1079,18 @@ function barList(entries, unit) {
       <span class="bar-list-track"><span class="bar-list-fill" style="width:${(v / max) * 100}%"></span></span>
       <span class="bar-list-value">${v} ${unit}</span>
     </div>`).join('')}</div>`;
+}
+
+// Photos filed against a delay: delay id → [{ id, url }] (url = signed thumbnail).
+let delayPhotos = new Map();
+
+async function loadDelayPhotos() {
+  const photos = await fetchPhotos(db, { delayIds: state.delays.map((d) => d.id) });
+  const urls = await signPhotos(db, photos);
+  delayPhotos = new Map();
+  for (const [delayId, rows] of photosBy(photos, 'delay_id')) {
+    delayPhotos.set(delayId, rows.map((p) => ({ ...p, url: urls.get(p.id) || '' })));
+  }
 }
 
 function renderDelays() {
@@ -1153,6 +1169,7 @@ function renderDelays() {
           ${d.description_en ? `<p>${esc(d.description_en)}</p>` : ''}
           ${d.description ? `<p class="text-slate-500">${esc(d.description)}</p>` : ''}
           ${!d.description && !d.description_en ? '<span class="text-slate-500">-</span>' : ''}
+          ${photoStrip(delayPhotos.get(d.id), d.id)}
         </td>
         <td class="text-right whitespace-nowrap">
           <button type="button" class="table-action" data-delay-edit="${esc(d.id)}">Edit</button>
@@ -1176,6 +1193,12 @@ function renderDelays() {
 }
 
 async function onDelaysTableClick(e) {
+  const open = e.target.closest('[data-photo-open]');
+  if (open) {
+    const [delayId, index] = open.dataset.photoOpen.split(':');
+    return openPhotoFrom(delayPhotos.get(delayId) || [], Number(index));
+  }
+
   const edit = e.target.closest('[data-delay-edit]');
   if (edit) {
     openDelayModal(state.delays.find((d) => d.id === edit.dataset.delayEdit));
@@ -1186,6 +1209,7 @@ async function onDelaysTableClick(e) {
   const delay = state.delays.find((d) => d.id === del.dataset.delayDelete);
   if (!delay || !confirm(`Delete the ${delay.delay_cause} delay of ${formatDate(delayDate(delay))} `
     + `(${delayDaysLost(delay)} days${delayIsOngoing(delay) ? ', still ongoing' : ''})?`)) return;
+  await deletePhotosFor(db, { delayId: delay.id });
   const { error } = await db.from('delays').delete().eq('id', delay.id);
   if (error) {
     toast(`Could not delete: ${error.message}`, 'error');
@@ -2065,6 +2089,17 @@ let shownLogs = [];                                   // logs on screen, newest 
 // PostgREST reads commas and brackets as syntax inside .or() - keep them out.
 const searchTerm = (v) => v.replace(/[(),*%\\]/g, ' ').trim();
 
+// Photos of the logs on screen: log id → [{ id, url }] (url = signed thumbnail).
+let logPhotos = new Map();
+
+const photoStrip = (photos, owner) => (photos?.length ? `
+  <div class="photo-strip">
+    ${photos.map((p, i) => `
+      <button type="button" class="photo-thumb" data-photo-open="${esc(owner)}:${i}">
+        <img src="${esc(p.url)}" alt="" loading="lazy">
+      </button>`).join('')}
+  </div>` : '');
+
 const logCard = (l) => {
   const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key;
   const crew = Object.entries(l.manpower || {}).filter(([, n]) => n > 0);
@@ -2084,6 +2119,7 @@ const logCard = (l) => {
         <p><span class="log-lang">ქართული</span>${esc(l.notes || '-')}</p>
         <p><span class="log-lang">English</span>${esc(l.notes_en || '-')}</p>
       </div>
+      ${photoStrip(logPhotos.get(l.id), l.id)}
     </article>`;
 };
 
@@ -2130,6 +2166,7 @@ async function loadLogs(projectId, { more = false } = {}) {
     return;
   }
 
+  await loadLogPhotos();
   el.innerHTML = shownLogs.map(logCard).join('')
     + (shownLogs.length < total
       ? `<button type="button" id="btn-log-more" class="btn btn-secondary w-full">
@@ -2144,11 +2181,18 @@ async function onLogsClick(e) {
   const edit = e.target.closest('[data-log-edit]');
   if (edit) return openDailyLogModal(shownLogs.find((l) => l.id === edit.dataset.logEdit));
 
+  const open = e.target.closest('[data-photo-open]');
+  if (open) {
+    const [logId, index] = open.dataset.photoOpen.split(':');
+    return openPhotoFrom(logPhotos.get(logId) || [], Number(index));
+  }
+
   const del = e.target.closest('[data-log-delete]');
   if (!del) return;
   const log = shownLogs.find((l) => l.id === del.dataset.logDelete);
   if (!log || !confirm(`Delete the daily log of ${formatDate(log.log_date)}?`)) return;
 
+  await deletePhotosFor(db, { dailyLogId: log.id }); // the rows cascade, the files do not
   const { error } = await db.from('daily_logs').delete().eq('id', log.id);
   if (error) {
     toast(`Could not delete the log: ${error.message}`, 'error');
@@ -2159,6 +2203,23 @@ async function onLogsClick(e) {
   refreshDashboard(state.projectId);
   loadLogs(state.projectId);
   loadSchedule(state.projectId); // daily-worker pay feeds the cash flow
+}
+
+// Signed thumbnails for the logs on screen, in one round trip.
+async function loadLogPhotos() {
+  const ids = shownLogs.map((l) => l.id);
+  const photos = await fetchPhotos(db, { dailyLogIds: ids });
+  const urls = await signPhotos(db, photos);
+  logPhotos = new Map();
+  for (const [logId, rows] of photosBy(photos, 'daily_log_id')) {
+    logPhotos.set(logId, rows.map((p) => ({ ...p, url: urls.get(p.id) || '' })));
+  }
+}
+
+// A thumbnail opens the full-size photo, signed on the way.
+async function openPhotoFrom(photos, index) {
+  const urls = await signPhotos(db, photos, { full: true });
+  openPhotoViewer(photos.map((p) => urls.get(p.id)).filter(Boolean), index);
 }
 
 // Typing in the search box shouldn't hit the database on every keystroke.
@@ -2338,6 +2399,106 @@ function updateDayCost() {
   }
 }
 
+// =============================================================
+// Photos on a daily log or a delay
+// =============================================================
+// One picker per modal. `existing` are photos already stored (with a signed
+// thumbnail), `pending` are files chosen but not yet uploaded, `removed` are
+// stored photos the user struck out - all three are settled on save.
+const pickers = new Map();
+
+function picker(name) {
+  if (!pickers.has(name)) {
+    const root = $(`[data-picker="${name}"]`);
+    pickers.set(name, { root, list: $('[data-photo-list]', root), existing: [], pending: [], removed: [] });
+  }
+  return pickers.get(name);
+}
+
+async function resetPicker(name, owner = null) {
+  const p = picker(name);
+  p.pending.forEach((f) => URL.revokeObjectURL(f.url));
+  p.existing = [];
+  p.pending = [];
+  p.removed = [];
+  renderPicker(name);
+  if (!owner) return;
+  const photos = await fetchPhotos(db, owner);
+  const urls = await signPhotos(db, photos);
+  p.existing = photos.map((photo) => ({ photo, url: urls.get(photo.id) || '' }));
+  renderPicker(name);
+}
+
+function renderPicker(name) {
+  const p = picker(name);
+  const tile = (src, key, index) => `
+    <div class="photo-tile">
+      <img src="${esc(src)}" alt="">
+      <button type="button" class="photo-drop" data-photo-drop="${key}:${index}" aria-label="Remove photo">&times;</button>
+    </div>`;
+  p.list.innerHTML = p.existing.map((e, i) => tile(e.url, 'kept', i)).join('')
+    + p.pending.map((f, i) => tile(f.url, 'new', i)).join('');
+  const count = p.existing.length + p.pending.length;
+  $('.photo-add', p.root).classList.toggle('hidden', count >= MAX_PHOTOS);
+}
+
+function addPhotoFiles(name, files) {
+  const p = picker(name);
+  const room = MAX_PHOTOS - (p.existing.length + p.pending.length);
+  const picked = [...files].filter((f) => f.type.startsWith('image/')).slice(0, Math.max(0, room));
+  if (files.length > picked.length) toast(`Only ${MAX_PHOTOS} photos fit on one entry.`, 'error');
+  for (const file of picked) p.pending.push({ file, url: URL.createObjectURL(file) });
+  renderPicker(name);
+}
+
+function onPickerClick(e) {
+  const drop = e.target.closest('[data-photo-drop]');
+  if (!drop) return;
+  const name = drop.closest('[data-picker]').dataset.picker;
+  const p = picker(name);
+  const [kind, index] = drop.dataset.photoDrop.split(':');
+  if (kind === 'kept') {
+    p.removed.push(p.existing.splice(Number(index), 1)[0].photo);
+  } else {
+    URL.revokeObjectURL(p.pending[Number(index)].url);
+    p.pending.splice(Number(index), 1);
+  }
+  renderPicker(name);
+}
+
+/** Uploads what was added and deletes what was struck out. Returns an error message, or ''. */
+async function commitPhotos(name, owner) {
+  const p = picker(name);
+  try {
+    for (const photo of p.removed) await deletePhoto(db, photo);
+    await uploadPhotos(db, { projectId: state.projectId, files: p.pending.map((f) => f.file), ...owner });
+    p.pending.forEach((f) => URL.revokeObjectURL(f.url));
+    p.pending = [];
+    p.removed = [];
+    return '';
+  } catch (err) {
+    return err.message;
+  }
+}
+
+// ---------- Photo viewer ----------
+let viewer = { urls: [], index: 0 };
+
+function openPhotoViewer(urls, index = 0) {
+  viewer = { urls, index };
+  showPhoto(0);
+  openModal('modal-photo');
+}
+
+function showPhoto(step) {
+  const { urls } = viewer;
+  if (!urls.length) return;
+  viewer.index = (viewer.index + step + urls.length) % urls.length;
+  $('#photo-view-img').src = urls[viewer.index];
+  $('#photo-view-note').textContent = urls.length > 1 ? `${viewer.index + 1} / ${urls.length}` : '';
+  $$('#modal-photo .photo-nav').forEach((b) => b.classList.toggle('hidden', urls.length < 2));
+}
+
 function openDailyLogModal(log = null) {
   if (!requireProject()) return;
   const form = $('#form-daily-log');
@@ -2359,6 +2520,7 @@ function openDailyLogModal(log = null) {
     f.day_rate.value = currentProject()?.day_rate ?? '';
   }
   updateManpowerTotal();
+  resetPicker('log', log ? { dailyLogId: log.id } : null);
   showFormError(form, '');
   openModal('modal-daily-log');
   (log ? f.notes : f.raw_text).focus();
@@ -2439,17 +2601,21 @@ async function saveDailyLog(e) {
 
   showFormError(form, '');
   setBusy(btn, true);
-  const { error } = logId
-    ? await db.from('daily_logs').update(row).eq('id', logId)
-    : await db.from('daily_logs').insert(row);
-  setBusy(btn, false);
+  const { data: saved, error } = logId
+    ? await db.from('daily_logs').update(row).eq('id', logId).select('id').single()
+    : await db.from('daily_logs').insert(row).select('id').single();
 
   if (error) {
+    setBusy(btn, false);
     showFormError(form, error.code === '23505'
       ? `A log for ${formatDate(row.log_date)} already exists for this project.`
       : error.message);
     return;
   }
+
+  const photoError = await commitPhotos('log', { dailyLogId: saved.id });
+  setBusy(btn, false);
+  if (photoError) toast(`The log was saved, but the photos were not: ${photoError}`, 'error');
 
   closeModal('modal-daily-log');
   toast(logId ? 'Daily log updated.' : 'Daily log saved.', 'success');
@@ -2493,6 +2659,7 @@ function openDelayModal(delay = null) {
   }
   f.delay_status.value = delay && delayIsOngoing(delay) ? 'ongoing' : 'finished';
   syncDelayStatus();
+  resetPicker('delay', delay ? { delayId: delay.id } : null);
   showFormError(form, '');
   openModal('modal-delay');
 }
@@ -2575,15 +2742,19 @@ async function saveDelay(e) {
     created_at:     new Date(`${fd.get('delay_date')}T12:00`).toISOString(),
   };
 
-  const { error } = id
-    ? await db.from('delays').update(row).eq('id', id)
-    : await db.from('delays').insert({ ...row, project_id: state.projectId });
-  setBusy(btn, false);
+  const { data: saved, error } = id
+    ? await db.from('delays').update(row).eq('id', id).select('id').single()
+    : await db.from('delays').insert({ ...row, project_id: state.projectId }).select('id').single();
 
   if (error) {
+    setBusy(btn, false);
     showFormError(form, error.message);
     return;
   }
+
+  const photoError = await commitPhotos('delay', { delayId: saved.id });
+  setBusy(btn, false);
+  if (photoError) toast(`The delay was saved, but the photos were not: ${photoError}`, 'error');
 
   closeModal('modal-delay');
   toast(id ? 'Delay updated.' : 'Delay recorded.', 'success');
@@ -2717,6 +2888,17 @@ $('#log-to').addEventListener('change', onLogFilterChange);
 $('#log-search').addEventListener('input', onLogFilterChange);
 $('#btn-log-clear').addEventListener('click', clearLogFilter);
 $('#daily-logs-container').addEventListener('click', onLogsClick);
+$$('[data-picker]').forEach((root) => {
+  root.addEventListener('click', onPickerClick);
+  $('[data-photo-input]', root).addEventListener('change', (e) => {
+    addPhotoFiles(root.dataset.picker, e.target.files);
+    e.target.value = ''; // picking the same file twice should still add it
+  });
+});
+$('#modal-photo').addEventListener('click', (e) => {
+  const step = e.target.closest('[data-photo-step]');
+  if (step) showPhoto(Number(step.dataset.photoStep));
+});
 $('#form-ask').addEventListener('submit', askGemini);
 $('#form-ask').addEventListener('click', onAskSuggestion);
 $('#ask-answer').addEventListener('click', onAskLangToggle);

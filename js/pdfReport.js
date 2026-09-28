@@ -6,6 +6,7 @@
 import { MANPOWER_TRADES, REPORT_AUTHOR, DAY_WORKER_KEY } from './config.js';
 import { rentalEnd, delayIsOngoing, delayDaysLost } from './schedule.js';
 import { ka, bi, biName, dateKa, dateEn, signatureHtml, roomLabel, roomLabelBi } from './bilingual.js';
+import { fetchPhotos, signPhotos } from './photos.js';
 
 const SUMMARY_FUNCTION = 'daily-summary';
 
@@ -66,13 +67,13 @@ function mergeManpower(logs) {
 async function fetchTodayData(db, projectId, day, { withRooms = false } = {}) {
   const [logs, delays, rentals, rooms] = await Promise.all([
     db.from('daily_logs')
-      .select('log_date, weather, manpower, notes, notes_en, day_rate')
+      .select('id, log_date, weather, manpower, notes, notes_en, day_rate')
       .eq('project_id', projectId)
       .eq('log_date', day.date),
     // Logged today, plus anything still running from an earlier day - an open
     // delay is today's problem too.
     db.from('delays')
-      .select('delay_cause, duration_days, resolved_on, description, description_en, created_at, flats(block, floor, flat_number)')
+      .select('id, delay_cause, duration_days, resolved_on, description, description_en, created_at, flats(block, floor, flat_number)')
       .eq('project_id', projectId)
       .lt('created_at', day.endISO)
       .or(`created_at.gte.${day.startISO},duration_days.is.null`)
@@ -100,6 +101,19 @@ async function fetchTodayData(db, projectId, day, { withRooms = false } = {}) {
     done: rooms.data.filter((r) => r.status === 'finished' || r.status === 'handed_over').length,
   };
   return { logs: logs.data, delays: today, carriedDelays: carried, rentals: onHire, roomProgress };
+}
+
+/**
+ * The day's photos, as signed links to the 1280 px copies: the logs' own, plus
+ * anything filed against the delays this report lists.
+ */
+async function fetchPhotoUrls(db, { logs, delays, carriedDelays }) {
+  const photos = await fetchPhotos(db, {
+    dailyLogIds: logs.map((l) => l.id),
+    delayIds: [...delays, ...carriedDelays].map((d) => d.id),
+  });
+  const urls = await signPhotos(db, photos, { full: true });
+  return photos.map((p) => urls.get(p.id)).filter(Boolean);
 }
 
 // ---------- 2. AI summary (both languages) ----------
@@ -151,7 +165,7 @@ function fillList(list, items) {
   }
 }
 
-function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, roomProgress, manpower, summary, progress, money }) {
+function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, roomProgress, photoUrls = [], manpower, summary, progress, money }) {
   const page = document.getElementById('daily-report-template').content.firstElementChild.cloneNode(true);
   const set = (field, value) => { page.querySelector(`[data-field="${field}"]`).textContent = value; };
   const rooms = Boolean(project.has_rooms);
@@ -240,6 +254,21 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
   const joinNotes = (key) => logs.map((l) => l[key]).filter(Boolean).join('\n\n');
   set('notes-ka', joinNotes('notes') || ka('No site notes recorded.'));
   set('notes-en', joinNotes('notes_en') || 'No site notes recorded.');
+  // Photos (the section goes if the day has none)
+  if (photoUrls.length) {
+    const grid = page.querySelector('[data-photos]');
+    photoUrls.forEach((url) => {
+      const figure = document.createElement('figure');
+      const img = document.createElement('img');
+      img.crossOrigin = 'anonymous'; // html2canvas cannot draw a tainted image
+      img.src = url;
+      figure.appendChild(img);
+      grid.appendChild(figure);
+    });
+  } else {
+    page.querySelector('[data-section="photos"]').remove();
+  }
+
   page.querySelector('[data-signature]').innerHTML = signatureHtml(REPORT_AUTHOR);
 
   return page;
@@ -289,12 +318,20 @@ export async function generateDailyReport({ db, project, progress, money }) {
     })),
   });
 
-  const page = buildReport({ project, day, logs, delays, carriedDelays, rentals, roomProgress, manpower, summary, progress, money });
+  const photoUrls = await fetchPhotoUrls(db, { logs, delays, carriedDelays });
+  const page = buildReport({ project, day, logs, delays, carriedDelays, rentals, roomProgress, photoUrls, manpower, summary, progress, money });
   const root = document.getElementById('pdf-export-root');
   root.replaceChildren(page);
 
   try {
     await document.fonts?.ready; // make sure the Georgian font is loaded before rendering
+    // A photo still loading would be drawn as a blank box.
+    await Promise.all([...page.querySelectorAll('img')].map((img) => (
+      img.complete ? img.decode().catch(() => {}) : new Promise((done) => {
+        img.addEventListener('load', done, { once: true });
+        img.addEventListener('error', done, { once: true });
+      })
+    )));
     await window.html2pdf()
       .set({
         margin: [10, 10, 12, 10], // mm: top, right, bottom, left

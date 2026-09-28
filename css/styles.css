@@ -333,6 +333,42 @@ html, body { background: var(--ink-950); }
 .log-card-meta { margin-left: auto; font-size: 0.75rem; color: #94a3b8; }
 .log-card-actions { display: flex; gap: 0.25rem; white-space: nowrap; }
 .log-card-crew { margin-bottom: 0.6rem; font-size: 0.75rem; color: #64748b; }
+
+/* ---------- Site photos ---------- */
+.photo-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0; }
+.photo-tile { position: relative; width: 84px; height: 84px; }
+.photo-tile img { width: 100%; height: 100%; object-fit: cover; border-radius: 0.375rem; }
+.photo-drop {
+  position: absolute; top: -6px; right: -6px;
+  width: 20px; height: 20px; line-height: 18px;
+  border-radius: 999px; border: 1px solid #0f172a;
+  background: #1e293b; color: #e2e8f0; font-size: 14px;
+}
+.photo-drop:hover { background: #be123c; color: #fff; }
+.photo-add {
+  display: inline-block; padding: 0.4rem 0.75rem;
+  border: 1px dashed #475569; border-radius: 0.5rem;
+  font-size: 0.8125rem; color: #94a3b8; cursor: pointer;
+}
+.photo-add:hover { border-color: #64748b; color: #e2e8f0; }
+.photo-strip { display: flex; flex-wrap: wrap; gap: 0.375rem; margin-top: 0.6rem; }
+.photo-thumb { width: 64px; height: 64px; border-radius: 0.375rem; overflow: hidden; }
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.photo-thumb:hover { outline: 2px solid #38bdf8; }
+
+.modal-photo { width: min(60rem, calc(100vw - 2rem)); padding: 0; background: #0f172a; }
+.photo-view { position: relative; display: flex; flex-direction: column; align-items: center; padding: 2.5rem 1rem 1rem; }
+.photo-view img { max-width: 100%; max-height: calc(100vh - 10rem); border-radius: 0.375rem; }
+.photo-view .modal-close { position: absolute; top: 0.5rem; right: 0.75rem; z-index: 1; }
+.photo-view-note { margin-top: 0.5rem; font-size: 0.75rem; color: #94a3b8; }
+.photo-nav {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  padding: 0.25rem 0.75rem; border-radius: 0.375rem;
+  background: rgba(15, 23, 42, 0.7); color: #e2e8f0; font-size: 1.75rem; line-height: 1;
+}
+.photo-prev { left: 0.5rem; }
+.photo-next { right: 0.5rem; }
+.photo-nav:hover { background: rgba(30, 41, 59, 0.95); }
 .log-notes { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .log-notes p { white-space: pre-wrap; font-size: 0.85rem; color: #cbd5e1; }
 .log-notes .log-lang { display: block; margin-bottom: 0.2rem; font-size: 0.65rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--brand-400); }
@@ -580,6 +616,12 @@ textarea.input-dark { resize: vertical; }
 .pdf-page .num { text-align: right; font-variant-numeric: tabular-nums; }
 .pdf-page .pdf-empty { color: #64748b; font-style: italic; text-align: center; }
 .pdf-page .pdf-bi { white-space: pre-line; }
+
+/* Photos in the daily report: two to a row, each kept whole across a break. */
+.pdf-photos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pdf-photos figure { margin: 0; page-break-inside: avoid; break-inside: avoid; }
+.pdf-photos img { width: 100%; border-radius: 4px; }
+.pdf-photos figcaption { margin-top: 3px; font-size: 9px; color: #64748b; }
 
 /* ---------- Document sign-off (all generated documents) ---------- */
 .doc-signature {

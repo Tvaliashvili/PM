@@ -428,3 +428,50 @@ alter table public.delays add column if not exists resolved_on date;
 alter table public.delays alter column duration_days drop not null;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 14. Site photos
+-- A photo belongs to one daily log or one delay, never both. The files live
+-- in the private "site-photos" bucket: path = the 1280 px copy shown in the
+-- report, thumb_path = the 400 px copy shown in lists. Both are written by
+-- the browser after it shrinks the original, so a photo costs ~150 KB.
+-- -------------------------------------------------------------
+create table if not exists public.photos (
+  id            uuid primary key default gen_random_uuid(),
+  project_id    uuid not null references public.projects(id) on delete cascade,
+  daily_log_id  uuid references public.daily_logs(id) on delete cascade,
+  delay_id      uuid references public.delays(id) on delete cascade,
+  path          text not null,
+  thumb_path    text not null,
+  caption       text,
+  bytes         integer,
+  created_at    timestamptz not null default now(),
+  constraint photos_one_owner check (num_nonnulls(daily_log_id, delay_id) = 1)
+);
+
+create index if not exists photos_daily_log_idx on public.photos (daily_log_id);
+create index if not exists photos_delay_idx     on public.photos (delay_id);
+create index if not exists photos_project_idx   on public.photos (project_id);
+
+alter table public.photos enable row level security;
+drop policy if exists "authenticated_full_access" on public.photos;
+create policy "authenticated_full_access" on public.photos
+  for all to authenticated using (true) with check (true);
+
+-- The bucket itself: private, so photos are only readable through a signed
+-- link the app asks for. 10 MB is far above a shrunk photo and still stops a
+-- stray original from being uploaded whole.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('site-photos', 'site-photos', false, 10485760, array['image/jpeg'])
+on conflict (id) do update
+  set public = false,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "site_photos_authenticated" on storage.objects;
+create policy "site_photos_authenticated" on storage.objects
+  for all to authenticated
+  using (bucket_id = 'site-photos')
+  with check (bucket_id = 'site-photos');
+
+notify pgrst, 'reload schema';
