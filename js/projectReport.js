@@ -338,6 +338,56 @@ export async function buildProjectReport({
       </div>
     </section>`;
 
+  // ---------- Drift since the approved programme ----------
+  // Planned dates move as work slips, so "on time" always means on time
+  // against today's plan. The baseline is what the client approved; the gap
+  // between the two is the question they actually ask.
+  const drifted = tasks
+    .filter((t) => t.baseline_finish && t.planned_finish !== t.baseline_finish)
+    .map((t) => ({ t, days: dayDiff(t.baseline_finish, t.planned_finish) }))
+    .sort((a, b) => b.days - a.days);
+  const baselined = tasks.filter((t) => t.baseline_finish);
+  const projectDrift = baselined.length
+    ? dayDiff(
+      baselined.map((t) => t.baseline_finish).sort().at(-1),
+      baselined.map((t) => t.planned_finish).sort().at(-1),
+    )
+    : 0;
+
+  const driftSection = !baselined.length ? '' : `
+    <section class="rpt-section rpt-avoid">
+      ${H('გადახრა დამტკიცებული გრაფიკიდან', 'Drift since baseline',
+    project.baseline_set_on ? `${L('დამტკიცდა', 'approved')} ${d(project.baseline_set_on)}` : '')}
+      <div class="rpt-tiles rpt-tiles-2 rpt-avoid">
+        ${tile('დასრულების თარიღი გადაიწია', 'Completion moved by',
+    `${projectDrift > 0 ? '+' : ''}${projectDrift} ${L('დღით', projectDrift === 1 || projectDrift === -1 ? 'day' : 'days')}`,
+    '', projectDrift > 0 ? 'bad' : 'ok')}
+        ${tile('ამოცანა გადაიწია', 'Activities moved', `${drifted.length} / ${baselined.length}`,
+    '', drifted.length ? 'warn' : 'ok')}
+      </div>
+      ${drifted.length ? `
+        <table class="rpt-compact">
+          <thead>
+            <tr>
+              <th>${L('სამუშაო', 'Work item')}</th><th>${L('კონტრაქტორი', 'Contractor')}</th>
+              <th>${L('დამტკიცებული დასრულება', 'Baseline finish')}</th>
+              <th>${L('ახლანდელი', 'Now')}</th><th class="num">${L('სხვაობა', 'Moved')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${drifted.map(({ t, days }) => `
+              <tr>
+                <td>${esc(taskBi(t))}</td>
+                <td>${t.contractor_id ? esc(nameOf(t.contractor_id)) : '-'}</td>
+                <td>${d(t.baseline_finish)}</td>
+                <td>${d(t.planned_finish)}</td>
+                <td class="num ${days > 0 ? 'rpt-late' : ''}">${days > 0 ? '+' : ''}${days}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`
+    : `<p class="rpt-all-good">✓ ${L('გრაფიკი დამტკიცების შემდეგ არ შეცვლილა', 'No dates have moved since the programme was approved')}</p>`}
+    </section>`;
+
   // ---------- Timeline (Gantt) ----------
   let gantt = none;
   if (tasks.length) {
@@ -1026,7 +1076,7 @@ export async function buildProjectReport({
 
   const page = document.createElement('div');
   page.className = 'pdf-page rpt';
-  page.innerHTML = header + glance + attention + notMoving + timeline + roadAhead
+  page.innerHTML = header + glance + attention + notMoving + driftSection + timeline + roadAhead
     + costSection + contractorsSection + unitsSection + logsSection + delaysSection + footer;
   return page;
 }

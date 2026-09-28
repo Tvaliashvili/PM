@@ -475,3 +475,19 @@ create policy "site_photos_authenticated" on storage.objects
   with check (bucket_id = 'site-photos');
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 15. Baseline: the programme as it was approved
+-- Planned dates get revised when work slips, which is normal - but once they
+-- move, the slippage disappears from every report. The baseline is a frozen
+-- copy of the planned dates, written once and never edited, so drift since
+-- approval stays visible.
+-- -------------------------------------------------------------
+alter table public.schedule_tasks
+  add column if not exists baseline_start  date,
+  add column if not exists baseline_finish date;
+
+alter table public.projects
+  add column if not exists baseline_set_on date;
+
+notify pgrst, 'reload schema';

@@ -112,7 +112,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-view-report', '#btn-add-unit', '#btn-add-task', '#btn-add-contractor', '#btn-add-rental',
+  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-view-report', '#btn-add-unit', '#btn-add-task', '#btn-baseline', '#btn-add-contractor', '#btn-add-rental',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -226,7 +226,7 @@ function showSetupNotice() {
 async function loadProjects() {
   const { data, error } = await db
     .from('projects')
-    .select('id, name, name_ka, location, location_ka, client_name, client_name_ka, total_flats, has_rooms, day_rate, created_at, start_date, end_date, currency')
+    .select('id, name, name_ka, location, location_ka, client_name, client_name_ka, total_flats, has_rooms, day_rate, created_at, start_date, end_date, currency, baseline_set_on')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -689,7 +689,7 @@ const paidOn = (taskId) => sumOf(state.payments.filter((p) => p.task_id === task
 async function loadSchedule(projectId) {
   const [tasks, payments, delays, contractors, siteLogs, rentals] = await Promise.all([
     db.from('schedule_tasks')
-      .select('id, name, name_ka, planned_start, planned_finish, done, done_at, progress_pct, contractor_id, quantity, unit, rate, budget')
+      .select('id, name, name_ka, planned_start, planned_finish, baseline_start, baseline_finish, done, done_at, progress_pct, contractor_id, quantity, unit, rate, budget')
       .eq('project_id', projectId)
       .order('planned_start')
       .order('planned_finish'),
@@ -2631,6 +2631,50 @@ async function saveDailyLog(e) {
   loadSchedule(state.projectId); // daily-worker pay feeds the cash flow
 }
 
+// ---------- Baseline ----------
+/**
+ * Freezes today's planned dates as the approved programme. Everything after
+ * this is measured against it, so re-setting it throws away the drift recorded
+ * so far - which is why it asks twice the second time.
+ */
+async function setBaseline() {
+  if (!requireProject()) return;
+  const project = currentProject();
+  const dated = state.tasks.filter((t) => t.planned_start && t.planned_finish);
+  if (!dated.length) {
+    toast('Add activities with dates first - a baseline is a copy of the planned dates.', 'error');
+    return;
+  }
+  const already = project.baseline_set_on;
+  const question = already
+    ? `This project was baselined on ${formatDate(already)}.
+
+`
+      + 'Setting it again replaces the approved programme with today's dates, and the drift recorded since then is lost. Continue?'
+    : `Freeze today's planned dates for ${dated.length} activities as the approved programme?
+
+`
+      + 'From now on the report shows how far the dates have moved since this point.';
+  if (!confirm(question)) return;
+
+  const btn = $('#btn-baseline');
+  setBusy(btn, true, 'Saving…');
+  const rows = dated.map((t) => ({ id: t.id, baseline_start: t.planned_start, baseline_finish: t.planned_finish }));
+  const { error } = await db.from('schedule_tasks').upsert(rows, { onConflict: 'id' });
+  const { error: projectError } = error
+    ? {}
+    : await db.from('projects').update({ baseline_set_on: todayISO() }).eq('id', project.id);
+  setBusy(btn, false);
+
+  if (error || projectError) {
+    toast(`Could not set the baseline: ${(error ?? projectError).message}`, 'error');
+    return;
+  }
+  project.baseline_set_on = todayISO();
+  toast(`Baseline set for ${dated.length} activities.`, 'success');
+  loadSchedule(state.projectId);
+}
+
 // ---------- Delay ----------
 function openDelayModal(delay = null) {
   if (!requireProject()) return;
@@ -2866,6 +2910,7 @@ $('#units-table').addEventListener('click', onUnitsTableClick);
 $('#btn-add-unit').addEventListener('click', () => openUnitModal(null));
 $('#form-unit').addEventListener('submit', saveUnit);
 $('#btn-add-task').addEventListener('click', () => openTaskModal(null));
+$('#btn-baseline').addEventListener('click', setBaseline);
 $('#form-task').addEventListener('submit', saveTask);
 $('#form-task').addEventListener('input', onTaskInput);
 $('#schedule-table').addEventListener('change', onScheduleChange);

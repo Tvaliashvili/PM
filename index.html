@@ -219,10 +219,15 @@
                 Set each item's % complete - 100% means finished. Progress is weighted by planned duration; items below 100% after their finish date are overdue.
               </p>
             </div>
-            <button id="btn-add-task" class="btn btn-primary">
-              <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
-              Add Activity
-            </button>
+            <div class="flex flex-wrap items-center gap-2">
+              <button id="btn-baseline" class="btn btn-secondary" title="Freeze today's planned dates as the approved programme">
+                Set Baseline
+              </button>
+              <button id="btn-add-task" class="btn btn-primary">
+                <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
+                Add Activity
+              </button>
+            </div>
           </div>
           <div class="space-y-4">
             <div id="schedule-summary" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
