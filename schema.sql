@@ -53,7 +53,7 @@ create index if not exists flats_project_id_idx on public.flats (project_id);
 -- -------------------------------------------------------------
 -- 3. daily_logs
 -- manpower example:
--- {"masons":6,"carpenters":3,"electricians":2,"labourers":10}
+-- {"masons":6,"carpenters":3,"electricians":2,"day_workers":10}
 -- -------------------------------------------------------------
 create table if not exists public.daily_logs (
   id          uuid primary key default gen_random_uuid(),
