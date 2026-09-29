@@ -983,7 +983,6 @@ export async function buildProjectReport({
   const workersOf = (l) => Object.values(l.manpower || {}).reduce((s, n) => s + Number(n || 0), 0);
   const series = [...logs].reverse(); // oldest → newest
   const peak = Math.max(1, ...series.map(workersOf));
-  const avg = series.length ? Math.round(series.reduce((s, l) => s + workersOf(l), 0) / series.length) : 0;
   const manpowerChart = series.length > 1 ? `
     <div class="rpt-columns rpt-avoid">
       ${series.map((l) => {
@@ -995,8 +994,7 @@ export async function buildProjectReport({
             <span class="rpt-col-label">${dm(l.log_date)}</span>
           </div>`;
       }).join('')}
-    </div>
-    <p class="rpt-muted rpt-col-note">${L('საშუალოდ', 'Average')} <b>${avg}</b> · ${L('მაქსიმუმი', 'Peak')} <b>${peak}</b> ${L('მუშა ობიექტზე', 'workers on site')}</p>` : '';
+    </div>` : '';
 
   // ---------- Labour: what the work has cost in worker-days ----------
   // Headcount alone says nothing; set against the share of work complete it
@@ -1014,33 +1012,23 @@ export async function buildProjectReport({
   // flat 0 for a rate that is the whole point of the tile.
   const perPointText = perPoint >= 10 ? num.format(Math.round(perPoint)) : perPoint.toFixed(1);
 
-  // The last four weeks against everything before them: the direction of
-  // travel matters more than the average.
-  const fourWeeksAgo = addDays(today, -28);
-  const recent = siteLogs.filter((l) => l.log_date >= fourWeeksAgo);
-  const recentAvg = recent.length
-    ? Math.round(recent.reduce((sum, l) => (
-      sum + Object.values(l.manpower || {}).reduce((n, v) => n + Number(v || 0), 0)
-    ), 0) / recent.length)
-    : 0;
+  // How many are on site on a day that was worked - not spread over the idle
+  // ones, which would read low for no reason anyone would recognise.
   const allAvg = daysWorked ? Math.round(siteWorkerDays / daysWorked) : 0;
 
   const labourBlock = siteWorkerDays ? `
     <h3 class="rpt-sub-h">${L('სამუშაო ძალის ხარჯვა', 'Labour spent')}</h3>
     <div class="rpt-tiles rpt-avoid">
-      ${tile('კაც-დღე დღემდე', 'Worker-days to date', num.format(siteWorkerDays),
-    `${daysWorked} ${L('სამუშაო დღე', 'days worked')} · ${L('საშუალოდ', 'avg')} ${allAvg}/${L('დღე', 'day')}`)}
+      ${/* The average is what a reader pictures: how many men are on site on a
+           working day. The total it comes from goes underneath, since the two
+           tiles beside it are worked out from that. */ ''}
+      ${tile('საშუალო დასწრება', 'Average on site', num.format(allAvg),
+    `${L('მუშა დღეში', 'workers a day')} · ${num.format(siteWorkerDays)} ${L('კაც-დღე', 'worker-days')} ${L('სულ', 'in all')}`)}
       ${tile('კაც-დღე 1%-ზე', 'Worker-days per 1%', perPoint ? perPointText : '-',
     progress.actualPct ? `${progress.actualPct}% ${L('შესრულებული', 'complete')}` : '')}
       ${tile('დარჩენილი (პროგნოზი)', 'Still to come (forecast)', toCome ? num.format(toCome) : '-',
     L('ამავე ტემპით', 'at the same rate'))}
-    </div>
-    <p class="rpt-muted rpt-col-note">
-      ${L('საშუალო ბოლო 4 კვირაში', 'Average over the last 4 weeks')} <b>${recentAvg}</b> ·
-      ${L('პროექტის საშუალო', 'project average')} <b>${allAvg}</b>
-      ${recentAvg && allAvg && recentAvg < allAvg * 0.8
-    ? `· ${chip({ ka: 'ობიექტზე ხალხი შემცირდა', en: 'Fewer people on site', tone: 'warn' })}` : ''}
-    </p>` : '';
+    </div>` : '';
 
   const logsSection = `
     <section class="rpt-section">
