@@ -3,7 +3,8 @@
 // Today's daily_logs + delays → html2pdf
 // =============================================================
 import {
-  MANPOWER_TRADES, REPORT_AUTHOR, DAY_WORKER_KEY, SITE_EVENT_KINDS, INCIDENT_SEVERITIES,
+  MANPOWER_TRADES, REPORT_AUTHOR, DAY_WORKER_KEY,
+  SITE_EVENT_KINDS, INCIDENT_SEVERITIES, VARIATION_STATUSES,
 } from './config.js';
 import { rentalEnd, delayIsOngoing, delayDaysLost } from './schedule.js';
 import { ka, bi, biName, dateKa, dateEn, signatureHtml, roomLabelBi } from './bilingual.js';
@@ -87,19 +88,23 @@ async function fetchTodayData(db, projectId, day, { withRooms = false } = {}) {
       ? db.from('flats').select('status').eq('project_id', projectId)
       : Promise.resolve({ data: [] }),
     // An incident is the thing nobody should hear about a week late, so it goes
-    // in the day's own report rather than waiting for the project one.
+    // in the day's own report. Like a delay, one that is still open comes back
+    // every day until it is closed out - the contractor reads it each morning.
     db.from('site_events')
-      .select('kind, severity, title, description, description_en, action, closed, contractors(name, name_ka)')
+      .select('event_date, kind, severity, title, description, description_en, action, closed, contractors(name, name_ka)')
       .eq('project_id', projectId)
-      .eq('event_date', day.date)
-      .order('created_at'),
-    // Instructed today. The value and the pricing live in the variation
-    // register; what matters here is the date the instruction was given.
+      .lte('event_date', day.date)
+      .or(`event_date.eq.${day.date},closed.is.false`)
+      .order('event_date'),
+    // The value and the pricing live in the variation register; what matters
+    // here is the instruction. It stays in the report until it is settled one
+    // way or the other - still instructed or priced means still outstanding.
     db.from('variations')
-      .select('ref, title, description, description_en, contractors(name, name_ka)')
+      .select('ref, title, description, description_en, instructed_on, status, contractors(name, name_ka)')
       .eq('project_id', projectId)
-      .eq('instructed_on', day.date)
-      .order('created_at'),
+      .lte('instructed_on', day.date)
+      .or(`instructed_on.eq.${day.date},status.in.(instructed,priced)`)
+      .order('instructed_on'),
   ]);
 
   const failed = [logs, delays, rentals, rooms, events, variations].find((r) => r.error);
@@ -239,8 +244,9 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
     addEmptyRow(delayRows, rooms ? 4 : 3, bi('No delays recorded today.'));
   }
 
-  // Safety and quality, and variations instructed - both sections drop out on a
-  // day that had none, so a quiet report doesn't carry two empty tables.
+  // Safety and quality, and variations instructed. Anything still unresolved is
+  // repeated every day, tagged with the date it started, exactly as a delay is.
+  // Both sections drop out when there is nothing to carry.
   if (events.length) {
     const eventRows = page.querySelector('[data-rows="events"]');
     events.forEach((e) => addRow(eventRows, [
@@ -248,9 +254,11 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
       { text: [e.title, e.description, e.description_en].filter(Boolean).join('\n'), className: 'pdf-bi' },
       { text: biName(e.contractors?.name, e.contractors?.name_ka) || '-' },
       { text: e.action || '-' },
-      { text: e.severity
-        ? `${bi(INCIDENT_SEVERITIES[e.severity] ?? e.severity)} · ${bi(e.closed ? 'Closed' : 'Open')}`
-        : bi(e.closed ? 'Closed' : 'Open') },
+      { text: [
+        e.severity ? bi(INCIDENT_SEVERITIES[e.severity] ?? e.severity) : '',
+        bi(e.closed ? 'Closed' : 'Open'),
+        e.event_date < day.date ? sinceBi(e.event_date) : '',
+      ].filter(Boolean).join(' · ') },
     ]));
   } else {
     page.querySelector('[data-section="events"]').remove();
@@ -262,6 +270,10 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
       { text: v.ref || '-' },
       { text: [v.title, v.description, v.description_en].filter(Boolean).join('\n'), className: 'pdf-bi' },
       { text: biName(v.contractors?.name, v.contractors?.name_ka) || '-' },
+      { text: [
+        bi(VARIATION_STATUSES[v.status] ?? v.status),
+        v.instructed_on < day.date ? sinceBi(v.instructed_on) : '',
+      ].filter(Boolean).join(' · ') },
     ]));
   } else {
     page.querySelector('[data-section="variations"]').remove();
