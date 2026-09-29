@@ -677,9 +677,12 @@ textarea.input-dark { resize: vertical; }
   display: block;
   width: 130px;
   height: auto;
-  /* About a third of the mark hangs below, so the rule runs through the ink
-     rather than sitting under it. */
-  margin: 0 0 -30px 8px;
+  /* The writing sits in the top third of the image and the rest is the tail of
+     the last stroke. Drawn 130px wide the image is ~85px tall, and the writing
+     rests at about 30px from its top - so the rule is pulled up to meet it and
+     the pen appears to have been put to the line. The tail carries on below,
+     the way a descender does. */
+  margin: 0 0 -55px 8px;
 }
 .doc-signature-line {
   padding-top: 4px;
