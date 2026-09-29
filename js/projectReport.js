@@ -1018,7 +1018,8 @@ export async function buildProjectReport({
 
   const labourBlock = siteWorkerDays ? `
     <h3 class="rpt-sub-h">${L('სამუშაო ძალის ხარჯვა', 'Labour spent')}</h3>
-    <div class="rpt-tiles rpt-avoid">
+    ${/* The day's logs follow straight after, so this row needs a gap under it. */ ''}
+    <div class="rpt-tiles rpt-tiles-end rpt-avoid">
       ${/* The average is what a reader pictures: how many men are on site on a
            working day. The total it comes from goes underneath, since the two
            tiles beside it are worked out from that. */ ''}
