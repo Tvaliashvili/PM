@@ -9,7 +9,7 @@ import {
 import { rentalEnd, delayIsOngoing, delayDaysLost } from './schedule.js';
 import { ka, bi, biName, dateKa, dateEn, signatureHtml, roomLabelBi } from './bilingual.js';
 import { fetchPhotos, signPhotos } from './photos.js';
-import { insertPageBreaks } from './paginate.js';
+import { continuousFormat, renderScale } from './pdfPage.js';
 
 // ---------- Helpers ----------
 function todayRange() {
@@ -317,18 +317,17 @@ export async function generateDailyReport({ db, project, progress }) {
         img.addEventListener('error', done, { once: true });
       })
     )));
-    // Measured only once everything above has settled - the photos change the
-    // height of the page, and a break placed before they load lands wrong.
+    // Measured only once everything above has settled: the photos decide how
+    // tall the page is, and they are only their real size once loaded.
     const margin = [10, 10, 12, 10]; // mm: top, right, bottom, left
-    insertPageBreaks(page, margin);
     await window.html2pdf()
       .set({
         margin,
         filename: `Daily_Report_${fileSafe(project.name)}_${day.date}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'] },
+        html2canvas: { scale: renderScale(page), useCORS: true, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format: continuousFormat(page, margin), orientation: 'portrait' },
+        pagebreak: { mode: [] }, // one page: there is nothing to break
       })
       .from(page)
       .save();

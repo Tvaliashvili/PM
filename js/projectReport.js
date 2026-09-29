@@ -10,7 +10,7 @@ import {
 } from './schedule.js';
 import { bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
 import { MANPOWER_TRADES, REPORT_AUTHOR } from './config.js';
-import { insertPageBreaks } from './paginate.js';
+import { continuousFormat, renderScale } from './pdfPage.js';
 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -1211,31 +1211,23 @@ export async function downloadProjectReport(page, project) {
   await document.fonts?.ready; // Georgian font must be loaded before rendering
   const today = iso(new Date());
   const margin = [10, 10, 12, 10]; // mm: top, right, bottom, left
-  // The breaks are worked out on a copy, off-screen: the preview the user is
-  // looking at keeps its own spacing and gains no blank gaps.
+  // Rendered from a copy, off-screen, so the preview on screen is left alone.
   const root = document.getElementById('pdf-export-root');
   const printed = page.cloneNode(true);
   root.replaceChildren(printed);
-  insertPageBreaks(printed, margin);
   try {
-    await renderPdf(printed, margin, `Project_Report_${fileSafe(project.name)}_${today}.pdf`);
+    await window.html2pdf()
+      .set({
+        margin,
+        filename: `Project_Report_${fileSafe(project.name)}_${today}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: renderScale(printed), useCORS: true, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format: continuousFormat(printed, margin), orientation: 'portrait' },
+        pagebreak: { mode: [] }, // one page: there is nothing to break
+      })
+      .from(printed)
+      .save();
   } finally {
     root.replaceChildren();
   }
-}
-
-function renderPdf(page, margin, filename) {
-  return window.html2pdf()
-    .set({
-      margin,
-      filename,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      // The breaks are already spaced out by insertPageBreaks(); html2pdf is
-      // only asked to cut on the grid it was given.
-      pagebreak: { mode: ['css', 'legacy'] },
-    })
-    .from(page)
-    .save();
 }
