@@ -7,86 +7,120 @@
 // page and half on the next - and half a line of Georgian reads as a different
 // word, not as a clipped one.
 //
-// So the cuts are placed here instead, before anything is rendered: every
-// element that has to stay whole is measured against the page grid, and a
-// spacer pushes it onto the next page when it would straddle a boundary.
+// So the cuts are placed here instead, before anything is rendered: the page is
+// measured against the real page grid and a spacer pushes anything that would
+// straddle a boundary onto the next page.
 // =============================================================
 
 const A4 = { width: 210, height: 297 }; // mm, portrait
 
-/** Anything in here is never cut through the middle. Document order matters. */
+// Never cut through the middle. `.rpt-avoid` is the report's own marker for
+// this, so the list below only adds what it does not already cover.
 const KEEP_WHOLE = [
-  'h1', 'h2', 'h3',
-  '.rpt-h', '.rpt-sub-h', '.rpt-legend', '.rpt-chart', '.rpt-tile', '.rpt-panel',
-  '.rpt-card', '.rpt-tiles', '.rpt-ring-box', '.rpt-log', '.rpt-bar-row',
-  '.pdf-facts', '.pdf-avoid-break', '.doc-signature',
+  '.rpt-avoid', '.pdf-avoid-break',
+  'h1', 'h2', 'h3', '.rpt-h', '.rpt-sub-h', '.rpt-legend',
+  '.rpt-tile', '.rpt-panel', '.rpt-card', '.rpt-hbar', '.rpt-g-row', '.rpt-chart',
+  '.pdf-facts', '.doc-signature',
   'tr', 'p',
 ].join(',');
 
-/** True for a parent that lays its children out itself, where a spacer div
- *  would become another column or cell rather than empty space. */
+// A heading alone at the foot of a page, with its table overleaf, reads as a
+// mistake. It travels with this much of whatever follows it.
+const KEEP_WITH_NEXT = 'h1,h2,h3,.rpt-h,.rpt-sub-h';
+const LEAD_PX = 64;
+
+/** A parent that lays out its own children, where a spacer would become a cell. */
 const isTracked = (el) => {
-  const display = el.nodeType === 1 ? getComputedStyle(el).display : '';
+  if (!el || el.nodeType !== 1) return true;
+  const { display } = getComputedStyle(el);
   return display.includes('flex') || display.includes('grid');
 };
 
-const spacerOf = (height, template) => {
-  // A spacer between table rows has to be a row itself, or the table breaks.
-  if (template.tagName === 'TR') {
-    const tr = document.createElement('tr');
-    const td = document.createElement('td');
-    td.colSpan = template.children.length || 1;
-    td.style.cssText = `height:${height}px;padding:0;border:0;background:none`;
-    tr.appendChild(td);
-    return tr;
+/** A spacer between table rows has to be a row itself, or the table breaks. */
+function spacerOf(height, before) {
+  if (before.tagName !== 'TR') {
+    const div = document.createElement('div');
+    div.style.cssText = `height:${height}px`;
+    return div;
   }
-  const div = document.createElement('div');
-  div.style.cssText = `height:${height}px`;
-  return div;
-};
+  const tr = document.createElement('tr');
+  const td = document.createElement('td');
+  td.colSpan = before.children.length || 1;
+  td.style.cssText = `height:${height}px;padding:0;border:0;background:none`;
+  tr.appendChild(td);
+  return tr;
+}
 
 /**
- * Inserts spacers into `page` so that no kept-whole element is cut by a page
- * break. Call it once the page is laid out in the document and the fonts have
- * loaded - it measures, so nothing may move afterwards.
+ * What to move to push `el` down. A row in a table head takes the whole table
+ * with it, because a spacer row inside <thead> pulls the header apart; an item
+ * in a grid or flex row takes the row, since a spacer there becomes a cell.
+ */
+function movable(el) {
+  if (el.tagName === 'TR' && el.closest('thead')) return el.closest('table') ?? el;
+  let target = el;
+  while (target.parentNode?.nodeType === 1 && target.parentNode !== document.body
+    && isTracked(target.parentNode)) {
+    target = target.parentNode;
+  }
+  return target;
+}
+
+/**
+ * Inserts spacers into `page` so nothing is cut by a page break. Call it once
+ * the page is laid out in the document and the fonts have loaded - it measures,
+ * so nothing may move afterwards.
  *
- * @param {HTMLElement} page      the rendered report, already in the DOM
- * @param {number[]} marginMm     html2pdf's margin: [top, right, bottom, left]
+ * @param {HTMLElement} page   the rendered report, already in the DOM
+ * @param {number[]} marginMm  html2pdf's margin: [top, right, bottom, left]
  */
 export function insertPageBreaks(page, marginMm) {
   const [mTop, mRight, mBottom, mLeft] = marginMm;
   const width = page.getBoundingClientRect().width;
   if (!width) return; // not laid out - leave it to html2pdf rather than guess
 
-  // The page is drawn at `width` px across and scaled to fit the printable
-  // width, so one page of height is that same scale applied to the mm left
-  // between the top and bottom margins.
+  // The page is drawn `width` px across and scaled to the printable width, so
+  // one page of height is that scale applied to the mm between the margins.
   const pxPerMm = width / (A4.width - mLeft - mRight);
   const pageHeight = (A4.height - mTop - mBottom) * pxPerMm;
   if (!(pageHeight > 0)) return;
 
-  for (const el of page.querySelectorAll(KEEP_WHOLE)) {
-    // Read fresh each time: a spacer inserted for an earlier element has
-    // already moved everything below it.
-    const pageTop = page.getBoundingClientRect().top;
-    const box = el.getBoundingClientRect();
-    const top = box.top - pageTop;
-    const height = box.height;
-    // Taller than a page, or empty: it has to be cut somewhere regardless.
-    if (height <= 0 || height > pageHeight) continue;
+  const topOf = (el) => el.getBoundingClientRect().top - page.getBoundingClientRect().top;
 
+  /** Pushes `el` to the top of the next page if `needs` px will not fit. */
+  const push = (el, needs) => {
+    const top = topOf(el);
+    if (needs <= 0 || needs > pageHeight) return; // cannot help: too tall either way
     const startsOn = Math.floor(top / pageHeight);
-    // A hair off the bottom edge is a rounding artefact, not a second page.
-    const endsOn = Math.floor((top + height - 1) / pageHeight);
-    if (startsOn === endsOn) continue;
+    // A hair over the edge is a rounding artefact, not a second page.
+    const endsOn = Math.floor((top + needs - 1) / pageHeight);
+    if (startsOn === endsOn) return;
 
-    // A spacer dropped into a flex or grid parent becomes another cell and
-    // wrecks the row instead of moving it. Those parents are kept whole in
-    // their own right, so this one is left to be carried along by its box.
-    const parent = el.parentNode;
-    if (!parent || isTracked(parent)) continue;
+    const target = movable(el);
+    const parent = target.parentNode;
+    if (!parent || parent.nodeType !== 1) return;
 
-    const gap = (startsOn + 1) * pageHeight - top;
-    parent.insertBefore(spacerOf(gap, el), el);
+    // The whole row is taller than a page, so moving it solves nothing. Push
+    // the one item instead: a margin still shifts it inside its own track.
+    if (target !== el && target.getBoundingClientRect().height > pageHeight) {
+      const gap = (startsOn + 1) * pageHeight - top;
+      if (gap > 0) el.style.marginTop = `${gap}px`;
+      return;
+    }
+
+    const gap = (startsOn + 1) * pageHeight - topOf(target);
+    if (gap > 0) parent.insertBefore(spacerOf(gap, target), target);
+  };
+
+  // Headings first, each carrying the start of whatever it introduces, so the
+  // later keep-whole pass measures what the reader will actually see.
+  for (const el of page.querySelectorAll(KEEP_WITH_NEXT)) {
+    const next = el.nextElementSibling;
+    const lead = next ? Math.min(next.getBoundingClientRect().height, LEAD_PX) : 0;
+    push(el, el.getBoundingClientRect().height + lead);
+  }
+
+  for (const el of page.querySelectorAll(KEEP_WHOLE)) {
+    push(el, el.getBoundingClientRect().height);
   }
 }
