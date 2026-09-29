@@ -708,7 +708,7 @@ async function loadSchedule(projectId) {
       .eq('project_id', projectId)
       .order('name'),
     db.from('daily_logs')
-      .select('log_date, manpower, day_rate')
+      .select('log_date, manpower, day_rate, crew:daily_manpower(contractor_id, trade, workers)')
       .eq('project_id', projectId)
       .order('log_date'),
     db.from('equipment_rentals')
@@ -2141,8 +2141,17 @@ const photoStrip = (photos, owner) => (photos?.length ? `
 
 const logCard = (l) => {
   const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key;
-  const crew = Object.entries(l.manpower || {}).filter(([, n]) => n > 0);
-  const total = crew.reduce((sum, [, n]) => sum + Number(n), 0);
+  const nameOf = (id) => state.contractors.find((c) => c.id === id)?.name ?? 'Direct labour';
+  // Grouped by whoever brought them, which is the question the day answers now.
+  const byContractor = new Map();
+  for (const c of l.crew ?? []) {
+    if (!(Number(c.workers) > 0)) continue;
+    const name = nameOf(c.contractor_id);
+    if (!byContractor.has(name)) byContractor.set(name, []);
+    byContractor.get(name).push(`${tradeLabel(c.trade)} ${c.workers}`);
+  }
+  const crew = [...byContractor].map(([name, parts]) => `${name}: ${parts.join(', ')}`);
+  const total = (l.crew ?? []).reduce((sum, c) => sum + (Number(c.workers) || 0), 0);
   return `
     <article class="log-card">
       <div class="log-card-head">
@@ -2153,7 +2162,7 @@ const logCard = (l) => {
           <button type="button" class="table-action is-danger" data-log-delete="${esc(l.id)}">Delete</button>
         </span>
       </div>
-      ${crew.length ? `<p class="log-card-crew">${crew.map(([k, n]) => `${esc(tradeLabel(k))} ${n}`).join(' · ')}</p>` : ''}
+      ${crew.length ? `<p class="log-card-crew">${crew.map((line) => esc(line)).join(' &middot; ')}</p>` : ''}
       <div class="log-notes">
         <p><span class="log-lang">ქართული</span>${esc(l.notes || '-')}</p>
         <p><span class="log-lang">English</span>${esc(l.notes_en || '-')}</p>
@@ -2172,7 +2181,8 @@ async function loadLogs(projectId, { more = false } = {}) {
 
   let q = db
     .from('daily_logs')
-    .select('id, log_date, weather, manpower, notes, notes_en, raw_text, day_rate', { count: 'exact' })
+    .select('id, log_date, weather, manpower, notes, notes_en, raw_text, day_rate, '
+      + 'crew:daily_manpower(contractor_id, trade, workers)', { count: 'exact' })
     .eq('project_id', projectId);
   if (logFilter.from) q = q.gte('log_date', logFilter.from);
   if (logFilter.to) q = q.lte('log_date', logFilter.to);
@@ -2380,13 +2390,14 @@ function initModals() {
   $('#log-weather').innerHTML = '<option value="">- Select -</option>'
     + WEATHER_OPTIONS.map((w) => `<option value="${esc(w)}">${esc(w)}</option>`).join('');
 
-  $('#manpower-fields').innerHTML = MANPOWER_TRADES.map((t) => `
-    <label class="block">
-      <span class="form-label">${esc(t.label)}</span>
-      <input type="number" name="mp_${t.key}" min="0" step="1" inputmode="numeric" placeholder="0"
-             class="input-dark w-full">
-    </label>
-  `).join('');
+  $('#btn-add-crew').addEventListener('click', () => addCrewRow());
+  $('#crew-rows').addEventListener('click', (e) => {
+    if (!e.target.closest('[data-crew-remove]')) return;
+    e.target.closest('.crew-row').remove();
+    if (!$$('#crew-rows .crew-row').length) addCrewRow();
+    updateManpowerTotal();
+  });
+  $('#crew-rows').addEventListener('change', updateManpowerTotal);
 
   $('#delay-cause').innerHTML = DELAY_CAUSES.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
 
@@ -2414,8 +2425,68 @@ function requireProject() {
 }
 
 // ---------- Daily log ----------
+// ---------- Crew on site: one line per contractor and trade ----------
+/** The contractors to choose from, plus labour engaged directly. */
+function crewContractorOptions(selected) {
+  const chosen = selected ?? '';
+  const direct = `<option value=""${chosen === '' ? ' selected' : ''}>Direct labour</option>`;
+  return direct + state.contractors.map((c) => (
+    `<option value="${esc(c.id)}"${c.id === chosen ? ' selected' : ''}>${esc(c.name)}</option>`
+  )).join('');
+}
+
+function addCrewRow(entry = {}) {
+  const row = document.createElement('div');
+  row.className = 'crew-row';
+  row.innerHTML = `
+    <select class="select-dark" data-crew="contractor">${crewContractorOptions(entry.contractor_id)}</select>
+    <select class="select-dark" data-crew="trade">
+      ${MANPOWER_TRADES.map((t) => (
+    `<option value="${esc(t.key)}"${t.key === entry.trade ? ' selected' : ''}>${esc(t.label)}</option>`
+  )).join('')}
+    </select>
+    <input type="number" min="0" step="1" inputmode="numeric" placeholder="0" class="input-dark"
+           data-crew="workers" value="${entry.workers ? esc(String(entry.workers)) : ''}">
+    <button type="button" class="table-action" data-crew-remove aria-label="Remove this line">&times;</button>`;
+  $('#crew-rows').appendChild(row);
+  updateManpowerTotal();
+}
+
+/** Fills the form from saved rows; an empty log starts with one blank line. */
+function renderCrewRows(entries) {
+  $('#crew-rows').replaceChildren();
+  if (entries?.length) entries.forEach(addCrewRow);
+  else addCrewRow();
+}
+
+/** What the form holds now, with the blank and zeroed lines dropped. */
+function readCrewRows() {
+  return $$('#crew-rows .crew-row').map((row) => ({
+    contractor_id: $('[data-crew="contractor"]', row).value || null,
+    trade: $('[data-crew="trade"]', row).value,
+    workers: parseInt($('[data-crew="workers"]', row).value, 10) || 0,
+  })).filter((e) => e.workers > 0);
+}
+
+/** The day's headcount by trade, whoever brought them. */
+function crewByTrade(entries) {
+  const totals = {};
+  for (const e of entries) totals[e.trade] = (totals[e.trade] || 0) + e.workers;
+  return totals;
+}
+
+/** Replaces a log's crew lines with what the form holds. */
+async function saveCrew(logId, crew) {
+  const { error } = await db.from('daily_manpower').delete().eq('daily_log_id', logId);
+  if (error) return error;
+  if (!crew.length) return null;
+  const rows = crew.map((e) => ({ daily_log_id: logId, ...e }));
+  return (await db.from('daily_manpower').insert(rows)).error;
+}
+
 function updateManpowerTotal() {
-  const total = $$('#manpower-fields input').reduce((sum, i) => sum + (parseInt(i.value, 10) || 0), 0);
+  const total = $$('#crew-rows [data-crew="workers"]')
+    .reduce((sum, i) => sum + (parseInt(i.value, 10) || 0), 0);
   $('#manpower-total').textContent = total;
   updateDayCost();
 }
@@ -2423,7 +2494,7 @@ function updateManpowerTotal() {
 // "5 daily workers × ₾80 = ₾400" under the rate field.
 function updateDayCost() {
   const f = $('#form-daily-log').elements;
-  const workers = parseInt(f[`mp_${DAY_WORKER_KEY}`].value, 10) || 0;
+  const workers = crewByTrade(readCrewRows())[DAY_WORKER_KEY] || 0;
   const rate = f.day_rate.value === '' ? null : Number(f.day_rate.value);
   const el = $('#day-cost');
   if (!workers) {
@@ -2553,7 +2624,7 @@ function openDailyLogModal(log = null) {
   if (log) {
     f.log_date.value = log.log_date;
     f.weather.value = log.weather || '';
-    for (const t of MANPOWER_TRADES) f[`mp_${t.key}`].value = log.manpower?.[t.key] || '';
+    renderCrewRows(log.crew);
     f.notes.value = log.notes || '';
     f.notes_en.value = log.notes_en || '';
     f.raw_text.value = log.raw_text || '';
@@ -2561,6 +2632,7 @@ function openDailyLogModal(log = null) {
   } else {
     f.log_date.value = todayISO();
     f.day_rate.value = currentProject()?.day_rate ?? '';
+    renderCrewRows([]);
   }
   updateManpowerTotal();
   resetPicker('log', log ? { dailyLogId: log.id } : null);
@@ -2609,7 +2681,11 @@ async function processLogText() {
 
   if (data.date && data.date <= todayISO()) f.log_date.value = data.date;
   f.weather.value = data.weather || '';
-  for (const t of MANPOWER_TRADES) f[`mp_${t.key}`].value = data.manpower?.[t.key] || '';
+  // Gemini reads a headcount by trade; it has no way of knowing whose men they
+  // were, so they arrive as direct labour and the contractor is set by hand.
+  renderCrewRows(MANPOWER_TRADES
+    .map((t) => ({ contractor_id: null, trade: t.key, workers: Number(data.manpower?.[t.key]) || 0 }))
+    .filter((e) => e.workers > 0));
   f.notes.value = data.notes_ka || '';
   f.notes_en.value = data.notes_en || '';
   updateManpowerTotal();
@@ -2622,11 +2698,11 @@ async function saveDailyLog(e) {
   const btn  = $('[type=submit]', form);
   const fd   = new FormData(form);
 
-  const manpower = {};
-  for (const t of MANPOWER_TRADES) {
-    const n = parseInt(fd.get(`mp_${t.key}`), 10);
-    if (n > 0) manpower[t.key] = n;
-  }
+  const crew = readCrewRows();
+  // daily_logs.manpower is kept as the day's total by trade. It is derived from
+  // the crew lines, never typed: the edge functions and the older figures still
+  // read it, and two places to enter the same count would soon disagree.
+  const manpower = crewByTrade(crew);
 
   const row = {
     project_id: state.projectId,
@@ -2653,6 +2729,15 @@ async function saveDailyLog(e) {
     showFormError(form, error.code === '23505'
       ? `A log for ${formatDate(row.log_date)} already exists for this project.`
       : error.message);
+    return;
+  }
+
+  // The crew lines are replaced wholesale: simpler than working out which of
+  // them changed, and the day is only ever a handful of rows.
+  const crewError = await saveCrew(saved.id, crew);
+  if (crewError) {
+    setBusy(btn, false);
+    showFormError(form, `The log was saved, but the crew lines were not: ${crewError.message}`);
     return;
   }
 

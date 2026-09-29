@@ -6,7 +6,7 @@
 import {
   taskState, completionOf, costPosition, contractorPerformance, plannedSpendByMonth, actualSpendByMonth,
   siteCostsByMonth, rentalTotal, rentalEnd, delayIsOngoing, delayDaysLost,
-  stalledTasks, forecastFinish, durationDays,
+  stalledTasks, forecastFinish, durationDays, contractorManDays,
 } from './schedule.js';
 import { bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
 import { MANPOWER_TRADES, REPORT_AUTHOR } from './config.js';
@@ -151,6 +151,7 @@ export async function buildProjectReport({
   const { logs, delays, events, variations } = await fetchExtras(db, project.id, today);
   const cost = costPosition(tasks, payments, today, siteCosts);
   const perf = contractorPerformance(tasks, contractorDelays, payments, today); // all-time delays
+  const manDays = contractorManDays(siteLogs); // who actually put men on the job
   const rooms = Boolean(project.has_rooms); // sites like a stadium have no rooms
   const contractorById = new Map(contractors.map((c) => [c.id, c]));
   const nameOf = (id) => {
@@ -852,6 +853,7 @@ export async function buildProjectReport({
             const budget = s?.budget ?? 0;
             const paid = s?.paid ?? 0;
             const held = retentionByContractor.get(c.id) ?? 0;
+            const crew = manDays.get(c.id);
             return `
               <article class="rpt-card rpt-avoid">
                 <div class="rpt-card-head">
@@ -874,6 +876,12 @@ export async function buildProjectReport({
                   <span>${L('გადახდილი', 'Paid')} <b>${m(paid)}</b>${budget ? ` / ${m(budget)}` : ''}</span>
                   <span>${L('შეფერხება', 'Delays')} <b>${s?.delayDays ?? 0}</b> ${L('დღე', 'days')}</span>
                 </div>
+                ${crew ? `
+                  <p class="rpt-card-contact">
+                    ${L('კაც-დღე', 'Man-days')} <b>${num.format(crew.days)}</b>
+                    · ${L('ობიექტზე', 'on site')} <b>${crew.onSite}</b> ${L('დღე', 'days')}
+                    ${crew.onSite ? `· ${L('საშუალოდ', 'avg')} <b>${(crew.days / crew.onSite).toFixed(1)}</b> ${L('კაცი/დღე', 'men/day')}` : ''}
+                  </p>` : ''}
                 ${held ? `<p class="rpt-card-contact">${L('დაკავებული გარანტია', 'Retention held')} <b>${m(held)}</b></p>` : ''}
                 ${budget ? `<div class="rpt-minibar"><i style="width:${clamp(pctOf(paid, budget))}%"></i></div>` : ''}
                 ${c.phone || c.email ? `<p class="rpt-card-contact">${esc([c.contact_person, c.phone, c.email].filter(Boolean).join(' · '))}</p>` : ''}

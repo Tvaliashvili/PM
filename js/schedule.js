@@ -222,6 +222,38 @@ export function costPosition(tasks, payments, todayIso, siteCosts = []) {
 }
 
 /**
+ * Man-days per contractor across the logs given, keyed by contractor_id
+ * ('' = labour engaged directly). One worker on site for one day is one
+ * man-day, so this is what a contractor has actually put into the job - the
+ * figure that tells you whether a late trade was ever manned to finish.
+ *
+ * Each entry: { days, byTrade: { [trade]: days }, onSite }
+ *   onSite - the number of days that contractor had anyone on site at all
+ */
+export function contractorManDays(logs) {
+  const stats = new Map();
+  const entry = (id) => {
+    const key = id ?? '';
+    if (!stats.has(key)) stats.set(key, { days: 0, byTrade: {}, onSite: 0 });
+    return stats.get(key);
+  };
+
+  for (const log of logs) {
+    const seen = new Set();
+    for (const c of log.crew ?? []) {
+      const workers = Number(c.workers) || 0;
+      if (workers <= 0) continue;
+      const s = entry(c.contractor_id);
+      s.days += workers;
+      s.byTrade[c.trade] = (s.byTrade[c.trade] || 0) + workers;
+      seen.add(c.contractor_id ?? '');
+    }
+    for (const key of seen) entry(key).onSite += 1;
+  }
+  return stats;
+}
+
+/**
  * Per-contractor performance on one project. Keyed by contractor_id ('' = unassigned).
  * Each entry: { items, onTime, late, avgDaysLate, overdue, open, delayDays, budget, paid }
  *   onTime/late - finished items, split by whether done_at was after planned_finish

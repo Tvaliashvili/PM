@@ -574,6 +574,8 @@ textarea.input-dark { resize: vertical; }
 }
 .pdf-muted  { color: #64748b; }
 .pdf-strong { font-weight: 700; }
+/* A trade listed under the contractor who brought it. */
+.pdf-indent { color: #475569; font-size: 0.95em; }
 
 .pdf-facts {
   display: grid;
@@ -1161,3 +1163,15 @@ textarea.input-dark { resize: vertical; }
 .bar-list-track { height: 0.6rem; border-radius: 999px; background: var(--ink-700); overflow: hidden; }
 .bar-list-fill { display: block; height: 100%; border-radius: 999px; background: #f43f5e; }
 .bar-list-value { text-align: right; font-weight: 600; color: #fda4af; font-variant-numeric: tabular-nums; }
+
+/* A crew line in the daily log: contractor, trade, headcount, remove. */
+.crew-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.2fr) 5.5rem auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+@media (max-width: 640px) {
+  .crew-row { grid-template-columns: 1fr 1fr; }
+  .crew-row > :last-child { justify-self: end; }
+}

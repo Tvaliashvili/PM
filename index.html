@@ -1043,8 +1043,13 @@
           </label>
         </div>
         <fieldset>
-          <legend class="form-label">Manpower on site · Total <span id="manpower-total" class="text-white">0</span></legend>
-          <div id="manpower-fields" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+          <legend class="form-label">Crew on site · Total <span id="manpower-total" class="text-white">0</span></legend>
+          <div id="crew-rows" class="space-y-2"></div>
+          <button type="button" id="btn-add-crew" class="btn btn-secondary btn-sm mt-2">+ Add crew</button>
+          <p class="text-xs text-slate-500 mt-2">
+            One line per contractor and trade, so the reports can say whose men were on site.
+            Leave the contractor as <span class="text-slate-300">Direct labour</span> for anyone not working through one.
+          </p>
         </fieldset>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
           <label class="block">

@@ -49,11 +49,33 @@ function mergeManpower(logs) {
   return Object.entries(totals).filter(([, n]) => n > 0);
 }
 
+/**
+ * The day's crew grouped by whoever brought them: [{ name, trades, total }].
+ * Direct labour comes last, under its own heading, because it belongs to no
+ * contractor and should not be mistaken for one.
+ */
+function crewByContractor(logs) {
+  const groups = new Map();
+  for (const log of logs) {
+    for (const c of log.crew ?? []) {
+      const workers = Number(c.workers) || 0;
+      if (workers <= 0) continue;
+      const name = biName(c.contractors?.name, c.contractors?.name_ka) || bi('Direct labour');
+      if (!groups.has(name)) groups.set(name, { name, trades: new Map(), total: 0, direct: !c.contractors });
+      const g = groups.get(name);
+      g.trades.set(c.trade, (g.trades.get(c.trade) || 0) + workers);
+      g.total += workers;
+    }
+  }
+  return [...groups.values()].sort((a, b) => (a.direct === b.direct ? b.total - a.total : a.direct - b.direct));
+}
+
 // ---------- 1. Query today's data ----------
 async function fetchTodayData(db, projectId, day, { withRooms = false } = {}) {
   const [logs, delays, rentals, rooms, events, variations] = await Promise.all([
     db.from('daily_logs')
-      .select('id, log_date, weather, manpower, notes, notes_en, day_rate')
+      .select('id, log_date, weather, manpower, notes, notes_en, day_rate, '
+        + 'crew:daily_manpower(trade, workers, contractors(name, name_ka))')
       .eq('project_id', projectId)
       .eq('log_date', day.date),
     // Logged today, plus anything still running from an earlier day - an open
@@ -189,7 +211,22 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
   // headcount here only invited the two to be read as the same number.
   const mpRows = page.querySelector('[data-rows="manpower"]');
   if (manpower.length) {
-    manpower.forEach(([trade, n]) => addRow(mpRows, [{ text: bi(tradeLabel(trade)) }, { text: n, className: 'num' }]));
+    // Grouped by contractor where the crew was recorded that way, so the day
+    // says whose men were on site and not only how many.
+    const groups = crewByContractor(logs);
+    if (groups.length) {
+      for (const g of groups) {
+        addRow(mpRows, [
+          { text: g.name, className: 'pdf-strong' },
+          { text: g.total, className: 'num pdf-strong' },
+        ]);
+        for (const [trade, n] of g.trades) {
+          addRow(mpRows, [{ text: bi(tradeLabel(trade)), className: 'pdf-indent' }, { text: n, className: 'num' }]);
+        }
+      }
+    } else {
+      manpower.forEach(([trade, n]) => addRow(mpRows, [{ text: bi(tradeLabel(trade)) }, { text: n, className: 'num' }]));
+    }
     addRow(mpRows, [{ text: bi('Total'), className: 'pdf-strong' }, { text: workers, className: 'num pdf-strong' }]);
   } else {
     addEmptyRow(mpRows, 2, bi('No manpower recorded.'));
