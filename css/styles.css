@@ -596,19 +596,18 @@ textarea.input-dark { resize: vertical; }
 .pdf-notes { white-space: pre-wrap; }
 
 .pdf-page table { width: 100%; border-collapse: collapse; font-size: 11px; }
-/* Cells sit in the middle of their row: a short entry next to a long one no
-   longer hangs from the top of a tall row. Running prose stays left-aligned -
-   centred paragraphs are hard to read - and figures stay right, so the digits
-   line up down the column. */
+/* Every cell sits in the middle of its row and centred across it, prose and
+   figures included: a short entry next to a long one no longer hangs from the
+   top of a tall row. */
 .pdf-page th, .pdf-page td {
   border: 1px solid #cbd5e1;
   padding: 6px 8px;
   text-align: center;
   vertical-align: middle;
 }
-.pdf-page .pdf-bi, .pdf-page .pdf-notes, .pdf-page .rpt-prose { text-align: left; }
 .pdf-page th { background: #f1f5f9; font-weight: 600; }
-.pdf-page .num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Figures keep tabular digits so they stay the same width down the column. */
+.pdf-page .num { font-variant-numeric: tabular-nums; }
 .pdf-page .pdf-empty { color: #64748b; font-style: italic; text-align: center; }
 .pdf-page .pdf-bi { white-space: pre-line; }
 
