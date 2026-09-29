@@ -611,15 +611,20 @@ textarea.input-dark { resize: vertical; }
 .pdf-page .pdf-empty { color: #64748b; font-style: italic; text-align: center; }
 .pdf-page .pdf-bi { white-space: pre-line; }
 
-/* Photos in the daily report: two to a row, each kept whole across a break. */
-/* Photos sit in a table: a row is the one unit html2pdf will not split, and
-   every frame is the same size, so portrait and landscape shots line up. The
-   frame crops; it never stretches the photo. */
-.pdf-photos { width: 100%; border-collapse: separate; border-spacing: 0 8px; }
+/* Photos sit in a table, two to a row: the row is the unit that stays whole
+   across a page break.
+   Each photo keeps its own proportions and is never cropped. The frame used to
+   be a fixed height that cropped the overflow, but html2canvas does not clip
+   reliably, so the full-height picture spilled over the one beneath it. Half a
+   column wide, a landscape shot comes out about 230px tall, which is the size
+   these were drawn at anyway. */
+.pdf-photos { width: 100%; border-collapse: separate; border-spacing: 0 10px; }
 .pdf-photos td { width: 50%; padding: 0; border: 0; vertical-align: top; }
-.pdf-photos td + td { padding-left: 8px; }
-.pdf-photos td > div { height: 118px; overflow: hidden; border-radius: 4px; }
-.pdf-photos img { display: block; width: 100%; min-height: 100%; }
+.pdf-photos td + td { padding-left: 10px; }
+.pdf-photos td > div { overflow: hidden; border-radius: 4px; line-height: 0; }
+/* Width alone decides the size; the height follows the picture's own shape.
+   Nothing is cropped, so nothing depends on clipping working. */
+.pdf-photos img { display: block; width: 100%; height: auto; border-radius: 4px; }
 /* A heading stays with the photos (or the table) it introduces, and is never
    sliced through the middle - half a line of Georgian reads as other letters. */
 .pdf-page h2, .pdf-page h3 {
