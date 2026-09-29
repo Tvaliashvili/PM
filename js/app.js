@@ -1975,9 +1975,7 @@ function renderContractors() {
           <p class="text-white font-medium">${esc(c.name)}${c.name_ka ? ` <span class="text-slate-400 font-normal">· ${esc(c.name_ka)}</span>` : ''}</p>
           <p class="text-xs text-slate-500">${contact(c)}</p>
         </td>
-        <td class="num">${s?.items
-          ? `<button type="button" class="link-count" data-contractor-jobs="${esc(c.id)}" title="See the jobs assigned">${s.items}</button>`
-          : 0}</td>
+        <td class="num">${s?.items ?? 0}</td>
         <td class="num">${s?.onTime ?? 0}</td>
         <td class="num">${s?.late ? `${s.late} <span class="text-slate-500">(avg ${s.avgDaysLate} d)</span>` : 0}</td>
         <td class="num">${s?.overdue ? `<span class="variance-over">${s.overdue}</span>` : 0}</td>

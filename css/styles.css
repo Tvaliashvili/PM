@@ -194,16 +194,6 @@ html, body { background: var(--ink-950); }
 }
 .task-pct-hint { display: block; margin-top: 0.25rem; font-size: 0.65rem; color: #64748b; }
 .task-pct-hint.is-behind { color: #fb7185; }
-/* Contractor jobs count: opens the jobs pop-up */
-.link-count {
-  padding: 0 0.4rem;
-  border-radius: 0.3rem;
-  color: #34d399;
-  font-weight: 600;
-  text-decoration: underline dotted;
-  text-underline-offset: 3px;
-}
-.link-count:hover { background: var(--ink-700); color: #6ee7b7; }
 .task-check {
   width: 1.1rem;
   height: 1.1rem;
