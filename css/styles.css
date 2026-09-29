@@ -665,9 +665,17 @@ textarea.input-dark { resize: vertical; }
 .doc-signature-title-en { font-size: 11px; color: #64748b; white-space: nowrap; }
 .doc-signature-name span,
 .doc-signature-title span { font-weight: 400; color: #64748b; }
+/* The signature sits on the line, not above it. The mark is in normal flow, so
+   it can never spill into the title however tall it is; the negative margin
+   beneath pulls the line up under the ink, the way a pen crosses it. */
+.doc-signature-sign { width: 220px; margin-top: 16px; }
+.doc-signature-mark {
+  display: block;
+  width: 120px;
+  height: auto;
+  margin: 0 0 -12px 8px;
+}
 .doc-signature-line {
-  width: 220px;
-  margin-top: 34px;
   padding-top: 4px;
   border-top: 1px solid #94a3b8;
   font-size: 10px;

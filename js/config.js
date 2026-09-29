@@ -1,6 +1,7 @@
 // =============================================================
 // CPMG PM - configuration
 // =============================================================
+import { SIGNATURE_PNG } from './signatureImage.js';
 
 // Supabase Dashboard > Project Settings > API.
 // Use the anon (public) key only - never the service_role key.
@@ -88,12 +89,14 @@ export const DELAY_CAUSES = [
   'Other',
 ];
 
-// Sign-off printed at the end of every generated document.
+// Sign-off printed at the end of every generated document. `signature` is drawn
+// over the signing line; leave it out and the line is left blank to sign by hand.
 export const REPORT_AUTHOR = {
   name:    'Sandro Tvaliashvili',
   nameKa:  'სანდრო თვალიაშვილი',
   title:   'Data Analytics Project Manager',
   titleKa: 'მონაცემთა ანალიტიკის პროექტის მენეჯერი',
+  signature: SIGNATURE_PNG,
 };
 
 // Units for a work item's quantity (quantity × rate = budget).
