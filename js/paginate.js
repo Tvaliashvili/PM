@@ -14,20 +14,28 @@
 
 const A4 = { width: 210, height: 297 }; // mm, portrait
 
-// Never cut through the middle. `.rpt-avoid` is the report's own marker for
-// this, so the list below only adds what it does not already cover.
+// The one thing that must never happen is a line of text cut through the
+// middle, because half a line of Georgian reads as different letters. So this
+// list is small units of writing - a row, a heading, a paragraph, a tile - and
+// nothing larger. A table or a timetable longer than a page has to break
+// somewhere; protecting its rows is what keeps the break between the lines
+// rather than through them.
 const KEEP_WHOLE = [
-  '.rpt-avoid', '.pdf-avoid-break',
-  'h1', 'h2', 'h3', '.rpt-h', '.rpt-sub-h', '.rpt-legend',
-  '.rpt-tile', '.rpt-panel', '.rpt-card', '.rpt-hbar', '.rpt-g-row', '.rpt-chart',
-  '.pdf-facts', '.doc-signature',
-  'tr', 'p',
+  'tr', 'p', 'li',
+  'h1', 'h2', 'h3', '.rpt-h', '.rpt-sub-h',
+  '.rpt-tile', '.rpt-hbar', '.rpt-g-row', '.rpt-card', '.rpt-legend-item',
+  '.pdf-facts > div', '.doc-signature',
 ].join(',');
 
-// A heading alone at the foot of a page, with its table overleaf, reads as a
-// mistake. It travels with this much of whatever follows it.
+// Anything taller than this is a block, not a line of writing. Moving one
+// wholesale buys a tidy edge at the price of half a blank page, so it is left
+// to break and its rows are kept whole instead.
+const KEEP_WHOLE_LIMIT = 0.3;
+
+// A heading is no use at the foot of a page with its table overleaf, so it
+// travels with roughly the first two rows of whatever it introduces.
 const KEEP_WITH_NEXT = 'h1,h2,h3,.rpt-h,.rpt-sub-h';
-const LEAD_PX = 64;
+const LEAD_PX = 110;
 
 /** A parent that lays out its own children, where a spacer would become a cell. */
 const isTracked = (el) => {
@@ -120,7 +128,10 @@ export function insertPageBreaks(page, marginMm) {
     push(el, el.getBoundingClientRect().height + lead);
   }
 
+  const limit = pageHeight * KEEP_WHOLE_LIMIT;
   for (const el of page.querySelectorAll(KEEP_WHOLE)) {
-    push(el, el.getBoundingClientRect().height);
+    const { height } = el.getBoundingClientRect();
+    if (height > limit) continue; // a block, not a line: let it break
+    push(el, height);
   }
 }
