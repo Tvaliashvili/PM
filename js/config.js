@@ -49,6 +49,7 @@ export const MANPOWER_TRADES = [
   { key: 'plumbers',     label: 'Plumbers' },
   { key: 'tilers',       label: 'Tilers' },
   { key: 'painters',     label: 'Painters' },
+  { key: 'window_fitters', label: 'Window & door fitters' },
   { key: 'day_workers',  label: 'Daily workers' }, // paid a fixed rate per day (see DAY_WORKER_KEY)
   { key: 'guards',       label: 'Guards' },        // likewise, at their own rate (see GUARD_KEY)
 ];

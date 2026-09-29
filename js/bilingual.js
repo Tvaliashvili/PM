@@ -48,6 +48,7 @@ export const KA = {
   'Plumbers': 'სანტექნიკოსები',
   'Tilers': 'მეფილეები',
   'Painters': 'მღებავები',
+  'Window & door fitters': 'ფანჯრებისა და კარების მემონტაჟეები',
   'Daily workers': 'დღიური მუშები',
   'Guards': 'დარაჯები',
 
