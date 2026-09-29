@@ -115,7 +115,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-daily-print', '#btn-report-project', '#btn-report-project-print', '#btn-view-report', '#btn-add-unit', '#btn-add-task', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental',
+  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-daily-print', '#btn-report-project', '#btn-report-project-print', '#btn-add-unit', '#btn-add-task', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -3327,7 +3327,6 @@ async function saveDelay(e) {
 // PDF export
 // =============================================================
 // ---------- Full project report (viewer + PDF) ----------
-let reportPage = null;
 
 /** The report page for the open project, built from what is already loaded. */
 function projectReportArgs(project) {
@@ -3373,42 +3372,6 @@ async function exportProjectReport(e) {
     exporting = false;
     btn.disabled = !state.projectId;
     label.textContent = original;
-  }
-}
-
-async function openProjectReport() {
-  if (!requireProject()) return;
-  const project = currentProject();
-  const root = $('#report-root');
-  const pdfBtns = [$('#btn-report-pdf'), $('#btn-report-pdf-print')];
-  reportPage = null;
-  pdfBtns.forEach((b) => { b.disabled = true; });
-  root.innerHTML = '<p class="rpt-loading">Building report…</p>';
-  $('#report-title').textContent = `Project Report - ${project.name}`;
-  openModal('modal-report');
-
-  try {
-    const page = await buildProjectReport(projectReportArgs(project));
-    if (project.id !== state.projectId) return;
-    root.replaceChildren(page);
-    reportPage = page;
-    pdfBtns.forEach((b) => { b.disabled = false; });
-  } catch (err) {
-    root.innerHTML = `<p class="rpt-loading">${esc(err.message || 'Could not build the report.')}</p>`;
-  }
-}
-
-async function downloadReport(printable) {
-  if (!reportPage) return;
-  const btn = printable ? $('#btn-report-pdf-print') : $('#btn-report-pdf');
-  setBusy(btn, true, 'Saving…');
-  try {
-    await downloadProjectReport(reportPage, currentProject(), { printable });
-    toast(printable ? 'Project report downloaded for print.' : 'Project report downloaded.', 'success');
-  } catch (err) {
-    toast(err.message || 'Could not save the PDF.', 'error');
-  } finally {
-    setBusy(btn, false);
   }
 }
 
@@ -3518,9 +3481,6 @@ $('#btn-report-daily').addEventListener('click', exportDailyReport);
 $('#btn-report-daily-print').addEventListener('click', exportDailyReport);
 $('#btn-report-project').addEventListener('click', exportProjectReport);
 $('#btn-report-project-print').addEventListener('click', exportProjectReport);
-$('#btn-view-report').addEventListener('click', openProjectReport);
-$('#btn-report-pdf').addEventListener('click', () => downloadReport(false));
-$('#btn-report-pdf-print').addEventListener('click', () => downloadReport(true));
 
 if (db) {
   $('#form-login').addEventListener('submit', signIn);
