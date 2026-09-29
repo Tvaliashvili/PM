@@ -1128,7 +1128,6 @@ export async function buildProjectReport({
   // otherwise, so it leads with the plain figures and lists only what is open.
   const EVENT_KIND = {
     incident: { ka: 'შემთხვევა', en: 'Incident' },
-    near_miss: { ka: 'კინაღამ შემთხვევა', en: 'Near miss' },
     inspection: { ka: 'ინსპექცია', en: 'Inspection' },
     toolbox_talk: { ka: 'უსაფრთხოების ბრიფინგი', en: 'Toolbox talk' },
   };
@@ -1138,7 +1137,6 @@ export async function buildProjectReport({
     reportable: { ka: 'შესატყობინებელი', en: 'Reportable' },
   };
   const incidents = events.filter((e) => e.kind === 'incident');
-  const nearMisses = events.filter((e) => e.kind === 'near_miss');
   const inspections = events.filter((e) => e.kind === 'inspection');
   const openEvents = events.filter((e) => !e.closed);
   const lastIncident = incidents[0]?.event_date;
@@ -1148,7 +1146,7 @@ export async function buildProjectReport({
   const safetySection = !events.length ? '' : `
     <section class="rpt-section rpt-avoid">
       ${H('უსაფრთხოება და ხარისხი', 'Safety & Quality', `${events.length} ${L('ჩანაწერი', 'records')}`)}
-      <div class="rpt-tiles rpt-tiles-4 rpt-avoid">
+      <div class="rpt-tiles rpt-avoid">
         ${tile('დღე შემთხვევის გარეშე', 'Days without an incident', daysClear == null ? '-' : `${daysClear}`,
           lastIncident ? `${L('ბოლო', 'last')} ${d(lastIncident)}` : L('არცერთი', 'none recorded'),
           incidents.length ? '' : 'ok')}
@@ -1156,8 +1154,6 @@ export async function buildProjectReport({
           incidents.filter((e) => e.severity === 'lost_time' || e.severity === 'reportable').length
             ? `${incidents.filter((e) => e.severity === 'lost_time' || e.severity === 'reportable').length} ${L('მძიმე', 'serious')}`
             : '', incidents.length ? 'bad' : 'ok')}
-        ${tile('კინაღამ შემთხვევა', 'Near misses', `${nearMisses.length}`,
-          L('გაფრთხილება', 'each one a warning'))}
         ${tile('ინსპექცია', 'Inspections', `${inspections.length}`, '', 'muted')}
       </div>
       ${openEvents.length ? `
@@ -1168,18 +1164,21 @@ export async function buildProjectReport({
               <th>${L('თარიღი', 'Date')}</th><th>${L('ტიპი', 'Type')}</th>
               <th>${L('რა მოხდა', 'What happened')}</th>
               <th>${L('კონტრაქტორი', 'Contractor')}</th><th>${L('ზომა', 'Action')}</th>
+              <th>${L('სტატუსი', 'Status')}</th>
             </tr>
           </thead>
           <tbody>
             ${openEvents.map((e) => `
               <tr>
                 <td>${d(e.event_date)}</td>
-                <td>${L(EVENT_KIND[e.kind]?.ka ?? e.kind, EVENT_KIND[e.kind]?.en ?? e.kind)}${e.severity
-                  ? ` ${chip({ ...SEVERITY[e.severity], tone: 'bad' })}` : ''}</td>
+                <td>${L(EVENT_KIND[e.kind]?.ka ?? e.kind, EVENT_KIND[e.kind]?.en ?? e.kind)}</td>
                 <td>${esc(e.title)}${e.description || e.description_en
                   ? `<em class="rpt-block">${esc(e.description_en || e.description)}</em>` : ''}</td>
                 <td>${e.contractor_id ? esc(nameOf(e.contractor_id)) : '-'}</td>
                 <td>${e.action ? esc(e.action) : '-'}</td>
+                <td>${e.severity
+                  ? chip({ ...SEVERITY[e.severity], tone: 'bad' })
+                  : chip({ ka: 'ღიაა', en: 'Open', tone: 'warn' })}</td>
               </tr>`).join('')}
           </tbody>
         </table>`

@@ -483,16 +483,15 @@ notify pgrst, 'reload schema';
 
 -- -------------------------------------------------------------
 -- 16. Site events: safety and quality
--- Incidents, near misses, inspections and toolbox talks. A near miss costs
--- nothing and predicts what the next incident will be, which is why it is
--- recorded next to the rest. severity applies to incidents only.
+-- Incidents, inspections and toolbox talks, with what was done about each one.
+-- severity applies to incidents only.
 -- -------------------------------------------------------------
 create table if not exists public.site_events (
   id             uuid primary key default gen_random_uuid(),
   project_id     uuid not null references public.projects(id) on delete cascade,
   event_date     date not null default current_date,
   kind           text not null default 'incident'
-                 check (kind in ('incident', 'near_miss', 'inspection', 'toolbox_talk')),
+                 check (kind in ('incident', 'inspection', 'toolbox_talk')),
   severity       text check (severity in ('first_aid', 'lost_time', 'reportable')),
   title          text not null,
   description    text,          -- Georgian
@@ -503,6 +502,13 @@ create table if not exists public.site_events (
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now()
 );
+
+-- 'near_miss' was dropped as a kind. A table created before that still allows
+-- it, so any row left over is removed before the narrower check goes on.
+delete from public.site_events where kind = 'near_miss';
+alter table public.site_events drop constraint if exists site_events_kind_check;
+alter table public.site_events add constraint site_events_kind_check
+  check (kind in ('incident', 'inspection', 'toolbox_talk'));
 
 create index if not exists site_events_project_date_idx
   on public.site_events (project_id, event_date desc);

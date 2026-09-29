@@ -33,7 +33,6 @@ export const KA = {
 
   // Site events (safety and quality)
   'Incident': 'შემთხვევა',
-  'Near miss': 'კინაღამ შემთხვევა',
   'Inspection': 'ინსპექცია',
   'Toolbox talk': 'უსაფრთხოების ბრიფინგი',
   'First aid': 'პირველადი დახმარება',
@@ -103,6 +102,8 @@ export const KA = {
 
   // Report phrases
   'Site-wide': 'მთელი ობიექტი',
+  'Ongoing': 'მიმდინარე',
+  'since': 'დაწყებული',
   'Not recorded': 'არ არის ჩაწერილი',
   'Total': 'სულ',
   'No manpower recorded.': 'სამუშაო ძალა არ არის ჩაწერილი.',

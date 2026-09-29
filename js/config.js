@@ -65,7 +65,6 @@ export const WEATHER_OPTIONS = ['Sunny', 'Cloudy', 'Rain', 'Heavy rain', 'Windy'
 // Safety and quality events (site_events.kind / .severity).
 export const SITE_EVENT_KINDS = {
   incident:     'Incident',
-  near_miss:    'Near miss',
   inspection:   'Inspection',
   toolbox_talk: 'Toolbox talk',
 };

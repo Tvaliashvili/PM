@@ -29,6 +29,9 @@ const fileSafe = (name) => (name || 'Project')
 
 const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key.replace(/_/g, ' ');
 
+// "დაწყებული <ka date> / since <en date>" - a delay carried over from an earlier day.
+const sinceBi = (iso) => `${ka('since')} ${dateKa(iso)} / since ${dateEn(iso)}`;
+
 // Bilingual room label; left out in a building that has none.
 const flatLabelBi = roomLabelBi;
 
@@ -201,8 +204,7 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
   const carried = new Set(carriedDelays);
   if (delays.length || carriedDelays.length) {
     [...delays, ...carriedDelays].forEach((d) => addRow(delayRows, [
-      { text: bi(d.delay_cause)
-        + (carried.has(d) ? ` (${bi('since')} ${dateEn(d.created_at.slice(0, 10))})` : '') },
+      { text: bi(d.delay_cause) + (carried.has(d) ? ` (${sinceBi(d.created_at.slice(0, 10))})` : '') },
       ...(rooms ? [{ text: flatLabelBi(d.flats) }] : []),
       { text: delayIsOngoing(d)
         ? `${delayDaysLost(d, day.date).toLocaleString('en-GB')} · ${bi('Ongoing')}`

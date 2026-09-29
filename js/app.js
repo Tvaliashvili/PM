@@ -2885,7 +2885,6 @@ async function loadEvents(projectId) {
 function renderEvents() {
   const events = state.events;
   const incidents = events.filter((e) => e.kind === 'incident');
-  const nearMisses = events.filter((e) => e.kind === 'near_miss');
   const open = events.filter((e) => !e.closed);
   const serious = incidents.filter(seriousEvent).length;
   // The figure everyone on a site knows: counted from the last incident, or
@@ -2899,14 +2898,12 @@ function renderEvents() {
       lastIncident ? `last one ${formatDate(lastIncident)}` : 'no incident recorded'),
     statTile('Incidents', String(incidents.length),
       serious ? `${serious} serious` : 'none serious', incidents.length ? 'negative' : ''),
-    statTile('Near misses', String(nearMisses.length),
-      nearMisses.length ? 'each one is a warning' : 'none recorded'),
     statTile('Open actions', String(open.length),
       open.length ? 'not closed out' : 'all closed', open.length ? 'negative' : ''),
   ].join('');
 
   if (!events.length) {
-    $('#events-table').innerHTML = '<div class="empty-state">Nothing recorded yet - log incidents, near misses, inspections and toolbox talks here.</div>';
+    $('#events-table').innerHTML = '<div class="empty-state">Nothing recorded yet - log incidents, inspections and toolbox talks here.</div>';
     return;
   }
 
