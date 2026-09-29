@@ -115,7 +115,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-view-report', '#btn-add-unit', '#btn-add-task', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental',
+  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-daily-print', '#btn-view-report', '#btn-add-unit', '#btn-add-task', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -3244,9 +3244,9 @@ async function openProjectReport() {
   if (!requireProject()) return;
   const project = currentProject();
   const root = $('#report-root');
-  const pdfBtn = $('#btn-report-pdf');
+  const pdfBtns = [$('#btn-report-pdf'), $('#btn-report-pdf-print')];
   reportPage = null;
-  pdfBtn.disabled = true;
+  pdfBtns.forEach((b) => { b.disabled = true; });
   root.innerHTML = '<p class="rpt-loading">Building report…</p>';
   $('#report-title').textContent = `Project Report - ${project.name}`;
   openModal('modal-report');
@@ -3269,19 +3269,19 @@ async function openProjectReport() {
     if (project.id !== state.projectId) return;
     root.replaceChildren(page);
     reportPage = page;
-    pdfBtn.disabled = false;
+    pdfBtns.forEach((b) => { b.disabled = false; });
   } catch (err) {
     root.innerHTML = `<p class="rpt-loading">${esc(err.message || 'Could not build the report.')}</p>`;
   }
 }
 
-async function downloadReport() {
+async function downloadReport(printable) {
   if (!reportPage) return;
-  const btn = $('#btn-report-pdf');
+  const btn = printable ? $('#btn-report-pdf-print') : $('#btn-report-pdf');
   setBusy(btn, true, 'Saving…');
   try {
-    await downloadProjectReport(reportPage, currentProject());
-    toast('Project report downloaded.', 'success');
+    await downloadProjectReport(reportPage, currentProject(), { printable });
+    toast(printable ? 'Project report downloaded for print.' : 'Project report downloaded.', 'success');
   } catch (err) {
     toast(err.message || 'Could not save the PDF.', 'error');
   } finally {
@@ -3294,6 +3294,7 @@ let exporting = false;
 async function exportDailyReport(e) {
   if (exporting || !requireProject()) return;
   const btn = e.currentTarget;
+  const printable = btn.id === 'btn-report-daily-print';
   const label = btn.querySelector('span') ?? btn;
   const original = label.textContent;
   const project = state.projects.find((p) => p.id === state.projectId);
@@ -3304,7 +3305,7 @@ async function exportDailyReport(e) {
   toast('Building today\'s report…');
 
   try {
-    await generateDailyReport({ db, project, progress: state.progress });
+    await generateDailyReport({ db, project, progress: state.progress, printable });
     toast('Daily report downloaded.', 'success');
   } catch (err) {
     toast(err.message || 'Could not generate the report.', 'error');
@@ -3391,8 +3392,10 @@ $('#btn-edit-project').addEventListener('click', openEditProjectModal);
 $('#form-edit-project').addEventListener('submit', saveEditProject);
 $('#form-delete-project').addEventListener('submit', confirmDeleteProject);
 $('#btn-report-daily').addEventListener('click', exportDailyReport);
+$('#btn-report-daily-print').addEventListener('click', exportDailyReport);
 $('#btn-view-report').addEventListener('click', openProjectReport);
-$('#btn-report-pdf').addEventListener('click', downloadReport);
+$('#btn-report-pdf').addEventListener('click', () => downloadReport(false));
+$('#btn-report-pdf-print').addEventListener('click', () => downloadReport(true));
 
 if (db) {
   $('#form-login').addEventListener('submit', signIn);

@@ -10,7 +10,7 @@ import {
 } from './schedule.js';
 import { bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
 import { MANPOWER_TRADES, REPORT_AUTHOR } from './config.js';
-import { continuousFormat, renderScale } from './pdfPage.js';
+import { savePdf } from './pdfSave.js';
 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -1207,26 +1207,15 @@ const fileSafe = (name) => (name || 'Project')
   .slice(0, 60) || 'Project';
 
 /** Saves a page built by buildProjectReport() as Project_Report_<name>_<date>.pdf. */
-export async function downloadProjectReport(page, project) {
-  await document.fonts?.ready; // Georgian font must be loaded before rendering
+export async function downloadProjectReport(page, project, { printable = false } = {}) {
   const today = iso(new Date());
-  const margin = [10, 10, 12, 10]; // mm: top, right, bottom, left
-  // Rendered from a copy, off-screen, so the preview on screen is left alone.
+  // Rendered from a copy, off-screen: the printable version has spacers put
+  // into it, and the preview on screen should not gain those blank gaps.
   const root = document.getElementById('pdf-export-root');
   const printed = page.cloneNode(true);
   root.replaceChildren(printed);
   try {
-    await window.html2pdf()
-      .set({
-        margin,
-        filename: `Project_Report_${fileSafe(project.name)}_${today}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: renderScale(printed), useCORS: true, backgroundColor: '#ffffff' },
-        jsPDF: { unit: 'mm', format: continuousFormat(printed, margin), orientation: 'portrait' },
-        pagebreak: { mode: [] }, // one page: there is nothing to break
-      })
-      .from(printed)
-      .save();
+    await savePdf(printed, `Project_Report_${fileSafe(project.name)}_${today}.pdf`, { printable });
   } finally {
     root.replaceChildren();
   }

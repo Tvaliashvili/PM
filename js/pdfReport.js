@@ -9,7 +9,7 @@ import {
 import { rentalEnd, delayIsOngoing, delayDaysLost } from './schedule.js';
 import { ka, bi, biName, dateKa, dateEn, signatureHtml, roomLabelBi } from './bilingual.js';
 import { fetchPhotos, signPhotos } from './photos.js';
-import { continuousFormat, renderScale } from './pdfPage.js';
+import { savePdf } from './pdfSave.js';
 
 // ---------- Helpers ----------
 function todayRange() {
@@ -294,7 +294,7 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
 /**
  * Builds today's bilingual report for `project` and downloads Daily_Report_[YYYY-MM-DD].pdf.
  */
-export async function generateDailyReport({ db, project, progress }) {
+export async function generateDailyReport({ db, project, progress, printable = false }) {
   const day = todayRange();
   const { logs, delays, carriedDelays, rentals, roomProgress, events, variations } =
     await fetchTodayData(db, project.id, day, { withRooms: Boolean(project.has_rooms) });
@@ -309,30 +309,8 @@ export async function generateDailyReport({ db, project, progress }) {
   root.replaceChildren(page);
 
   try {
-    await document.fonts?.ready; // make sure the Georgian font is loaded before rendering
-    // A photo still loading would be drawn as a blank box.
-    await Promise.all([...page.querySelectorAll('img')].map((img) => (
-      img.complete ? img.decode().catch(() => {}) : new Promise((done) => {
-        img.addEventListener('load', done, { once: true });
-        img.addEventListener('error', done, { once: true });
-      })
-    )));
-    // Measured only once everything above has settled: the photos decide how
-    // tall the page is, and they are only their real size once loaded.
-    const margin = [10, 10, 12, 10]; // mm: top, right, bottom, left
-    await window.html2pdf()
-      .set({
-        margin,
-        filename: `Daily_Report_${fileSafe(project.name)}_${day.date}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: renderScale(page), useCORS: true, backgroundColor: '#ffffff' },
-        jsPDF: { unit: 'mm', format: continuousFormat(page, margin), orientation: 'portrait' },
-        pagebreak: { mode: [] }, // one page: there is nothing to break
-      })
-      .from(page)
-      .save();
+    await savePdf(page, `Daily_Report_${fileSafe(project.name)}_${day.date}.pdf`, { printable });
   } finally {
     root.replaceChildren();
   }
-
 }

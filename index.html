@@ -490,8 +490,12 @@
               <p class="text-sm text-slate-400 mb-4">
                 Today's weather, manpower, delays, site notes and photos, in Georgian and English.
                 Downloads as <span class="text-slate-300">Daily_Report_ProjectName_YYYY-MM-DD.pdf</span>.
+                One long page to read on screen, or A4 sheets to print.
               </p>
-              <button id="btn-report-daily" class="btn btn-primary"><span>Generate Daily Report</span></button>
+              <div class="flex flex-wrap gap-2">
+                <button id="btn-report-daily" class="btn btn-primary"><span>Generate Daily Report</span></button>
+                <button id="btn-report-daily-print" class="btn btn-secondary"><span>Printable (A4)</span></button>
+              </div>
             </div>
             <div class="panel">
               <h2 class="panel-title">Project Report</h2>
@@ -781,6 +785,7 @@
       <h2 id="report-title">Project Report</h2>
       <div class="flex items-center gap-2">
         <button type="button" id="btn-report-pdf" class="btn btn-primary btn-sm" disabled>Download PDF</button>
+        <button type="button" id="btn-report-pdf-print" class="btn btn-secondary btn-sm" disabled>Printable (A4)</button>
         <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
       </div>
     </div>
