@@ -996,49 +996,31 @@ export async function buildProjectReport({
       }).join('')}
     </div>` : '';
 
-  // ---------- Labour: what the work has cost in worker-days ----------
-  // Headcount alone says nothing; set against the share of work complete it
-  // says how much labour the rest of the job still needs. Everyone on site
-  // counts, not just the daily workers, because everyone takes a day.
+  // ---------- Labour: how many are on site on a working day ----------
+  // Everyone counts, not just the daily workers, because everyone takes a day.
   const siteWorkerDays = siteLogs.reduce((sum, l) => (
     sum + Object.values(l.manpower || {}).reduce((n, v) => n + Number(v || 0), 0)
   ), 0);
+  // Days that were actually worked - spreading the total over idle days would
+  // read low for no reason anyone would recognise.
   const daysWorked = siteLogs.filter((l) => (
     Object.values(l.manpower || {}).some((v) => Number(v) > 0)
   )).length;
-  const perPoint = progress.actualPct ? siteWorkerDays / progress.actualPct : 0;
-  const toCome = perPoint ? Math.round(perPoint * (100 - progress.actualPct)) : 0;
-  // Early on this is well under one, and rounding it to a whole number prints a
-  // flat 0 for a rate that is the whole point of the tile.
-  const perPointText = perPoint >= 10 ? num.format(Math.round(perPoint)) : perPoint.toFixed(1);
-
-  // How many are on site on a day that was worked - not spread over the idle
-  // ones, which would read low for no reason anyone would recognise.
   const allAvg = daysWorked ? Math.round(siteWorkerDays / daysWorked) : 0;
 
-  const labourBlock = siteWorkerDays ? `
-    ${/* Wrapped, because the day's logs follow straight after and the gap has
-         to sit on the block rather than on the row of tiles inside it. */ ''}
-    <div class="rpt-labour">
-    <h3 class="rpt-sub-h">${L('სამუშაო ძალის ხარჯვა', 'Labour spent')}</h3>
-    <div class="rpt-tiles rpt-avoid">
-      ${/* The average is what a reader pictures: how many men are on site on a
-           working day. The total it comes from goes underneath, since the two
-           tiles beside it are worked out from that. */ ''}
-      ${tile('საშუალო დასწრება', 'Average on site', num.format(allAvg),
-    `${L('მუშა დღეში', 'workers a day')} · ${num.format(siteWorkerDays)} ${L('კაც-დღე', 'worker-days')} ${L('სულ', 'in all')}`)}
-      ${tile('კაც-დღე 1%-ზე', 'Worker-days per 1%', perPoint ? perPointText : '-',
-    progress.actualPct ? `${progress.actualPct}% ${L('შესრულებული', 'complete')}` : '')}
-      ${tile('დარჩენილი (პროგნოზი)', 'Still to come (forecast)', toCome ? num.format(toCome) : '-',
-    L('ამავე ტემპით', 'at the same rate'))}
-    </div>
+  // The average stands beside the chart it summarises, rather than under a
+  // heading of its own: the bars show the shape, the tile gives the figure.
+  const activityBlock = series.length > 1 || siteWorkerDays ? `
+    <div class="rpt-activity rpt-avoid">
+      ${manpowerChart || '<div></div>'}
+      ${siteWorkerDays ? tile('საშუალო დასწრება', 'Average on site', num.format(allAvg),
+    `${L('მუშა დღეში', 'workers a day')} · ${num.format(siteWorkerDays)} ${L('კაც-დღე', 'worker-days')} ${L('სულ', 'in all')}`) : ''}
     </div>` : '';
 
   const logsSection = `
     <section class="rpt-section">
       ${H('ობიექტზე აქტივობა', 'Site Activity', series.length ? `${series.length} ${L('ჩანაწერი', 'logs')}` : '')}
-      ${manpowerChart}
-      ${labourBlock}
+      ${activityBlock}
       ${logs.length ? logs.slice(0, 5).map((l) => {
         const crew = Object.entries(l.manpower || {}).filter(([, n]) => n > 0);
         const total = workersOf(l);

@@ -746,8 +746,16 @@ textarea.input-dark { resize: vertical; }
 
 .rpt-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .rpt-tiles-4 { grid-template-columns: repeat(4, 1fr); margin-bottom: 10px; }
-/* The labour figures, with the day's logs following straight underneath. */
-.rpt-labour { margin-bottom: 20px; }
+/* The manpower chart with its average beside it, the day's logs underneath. */
+.rpt-activity {
+  display: grid;
+  grid-template-columns: 1fr 210px;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 20px;
+}
+.rpt-activity .rpt-columns { margin: 0; }
+.rpt-activity .rpt-tile { margin: 0; }
 .rpt-tile {
   padding: 10px 12px;
   border: 1px solid #e2e8f0;
