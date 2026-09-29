@@ -372,23 +372,26 @@ export async function buildProjectReport({
     .map((t) => ({ t, days: dayDiff(t.baseline_finish, t.planned_finish) }))
     .sort((a, b) => b.days - a.days);
   const baselined = tasks.filter((t) => t.baseline_finish);
-  const projectDrift = baselined.length
-    ? dayDiff(
-      baselined.map((t) => t.baseline_finish).sort().at(-1),
-      baselined.map((t) => t.planned_finish).sort().at(-1),
-    )
-    : 0;
+  // When the project finishes is when its last activity finishes, so this is
+  // the last approved finish against the last planned one. An activity in the
+  // middle of the programme can slip a long way without touching either: that
+  // is why this can read 0 while the table below lists work that has moved.
+  const baseEnd = baselined.map((t) => t.baseline_finish).sort().at(-1);
+  const plannedEnd = baselined.map((t) => t.planned_finish).sort().at(-1);
+  const projectDrift = baselined.length ? dayDiff(baseEnd, plannedEnd) : 0;
 
   const driftSection = !baselined.length ? '' : `
     <section class="rpt-section rpt-avoid">
       ${H('გადახრა დამტკიცებული გრაფიკიდან', 'Drift since baseline',
     project.baseline_set_on ? `${L('დამტკიცდა', 'approved')} ${d(project.baseline_set_on)}` : '')}
       <div class="rpt-tiles rpt-tiles-2 rpt-avoid">
-        ${/* The unit goes in the sub-line: a tile's value is escaped, so the
-             bilingual markup would be printed rather than rendered. */ ''}
+        ${/* The unit and the two dates go in the sub-line: a tile's value is
+             escaped, so the bilingual markup would print rather than render -
+             and the dates are what show why the figure is what it is. */ ''}
         ${tile('დასრულების თარიღი გადაიწია', 'Completion moved by',
     `${projectDrift > 0 ? '+' : ''}${projectDrift}`,
-    L('დღით', Math.abs(projectDrift) === 1 ? 'day' : 'days'), projectDrift > 0 ? 'bad' : 'ok')}
+    `${L('დღით', Math.abs(projectDrift) === 1 ? 'day' : 'days')} · ${d(baseEnd)} → ${d(plannedEnd)}`,
+    projectDrift > 0 ? 'bad' : 'ok')}
         ${tile('ამოცანა გადაიწია', 'Activities moved', `${drifted.length} / ${baselined.length}`,
     '', drifted.length ? 'warn' : 'ok')}
       </div>
