@@ -625,3 +625,17 @@ where m.value ~ '^[0-9]+$' and m.value::int > 0
 on conflict do nothing;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 20. Guards (დარაჯი)
+-- A guard is on the client's account in the same way a daily worker is: paid a
+-- fixed rate for the day, outside any contractor's price. Counted as its own
+-- trade in the crew, and priced from its own rate - a guard's day is not worth
+-- a labourer's. projects.guard_rate is the default the log form starts from.
+-- -------------------------------------------------------------
+alter table public.projects
+  add column if not exists guard_rate numeric(10,2) check (guard_rate is null or guard_rate >= 0);
+alter table public.daily_logs
+  add column if not exists guard_rate numeric(10,2) check (guard_rate is null or guard_rate >= 0);
+
+notify pgrst, 'reload schema';

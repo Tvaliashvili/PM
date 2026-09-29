@@ -4,7 +4,7 @@
 import {
   SUPABASE_URL, SUPABASE_KEY, CURRENCIES, DEFAULT_CURRENCY,
   UNIT_TYPES, UNIT_STATUSES,
-  MANPOWER_TRADES, WEATHER_OPTIONS, DELAY_CAUSES, DAY_WORKER_KEY, EQUIPMENT_SUGGESTIONS,
+  MANPOWER_TRADES, WEATHER_OPTIONS, DELAY_CAUSES, DAY_WORKER_KEY, GUARD_KEY, EQUIPMENT_SUGGESTIONS,
   SITE_EVENT_KINDS, INCIDENT_SEVERITIES, VARIATION_STATUSES,
   BOQ_UNITS, CONTRACTOR_TRADES,
 } from './config.js';
@@ -13,7 +13,7 @@ import { buildProjectReport, downloadProjectReport } from './projectReport.js';
 import {
   scheduleProgress, taskState, durationDays, completionOf, expectedPct,
   plannedSpendByMonth, actualSpendByMonth, costPosition, contractorPerformance,
-  labourCosts, rentalCosts, rentalTotal, rentalEnd, siteCostsByMonth,
+  labourCosts, guardCosts, rentalCosts, rentalTotal, rentalEnd, siteCostsByMonth,
   delayIsOngoing, delayDaysLost, delayStart,
 } from './schedule.js';
 import { ka, roomLabel } from './bilingual.js';
@@ -229,7 +229,7 @@ function showSetupNotice() {
 async function loadProjects() {
   const { data, error } = await db
     .from('projects')
-    .select('id, name, name_ka, location, location_ka, client_name, client_name_ka, total_flats, has_rooms, day_rate, created_at, start_date, end_date, currency, baseline_set_on, retention_pct')
+    .select('id, name, name_ka, location, location_ka, client_name, client_name_ka, total_flats, has_rooms, day_rate, guard_rate, created_at, start_date, end_date, currency, baseline_set_on, retention_pct')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -708,7 +708,7 @@ async function loadSchedule(projectId) {
       .eq('project_id', projectId)
       .order('name'),
     db.from('daily_logs')
-      .select('log_date, manpower, day_rate, crew:daily_manpower(contractor_id, trade, workers)')
+      .select('log_date, manpower, day_rate, guard_rate, crew:daily_manpower(contractor_id, trade, workers)')
       .eq('project_id', projectId)
       .order('log_date'),
     db.from('equipment_rentals')
@@ -729,7 +729,11 @@ async function loadSchedule(projectId) {
   state.contractors = contractors.data;
   state.siteLogs = siteLogs.data;
   state.rentals = rentals.data;
-  state.siteCosts = [...labourCosts(state.siteLogs, DAY_WORKER_KEY), ...rentalCosts(state.rentals)];
+  state.siteCosts = [
+    ...labourCosts(state.siteLogs, DAY_WORKER_KEY),
+    ...guardCosts(state.siteLogs, GUARD_KEY),
+    ...rentalCosts(state.rentals),
+  ];
   renderScheduleViews();
 }
 
@@ -1367,6 +1371,7 @@ function openEditProjectModal() {
   f.currency.value = project.currency ?? DEFAULT_CURRENCY;
   f.has_rooms.checked = hasRooms(project);
   f.day_rate.value = project.day_rate ?? '';
+  f.guard_rate.value = project.guard_rate ?? '';
   f.retention_pct.value = Number(project.retention_pct) || '';
   showFormError(form, '');
   openModal('modal-edit-project');
@@ -1391,6 +1396,7 @@ async function saveEditProject(e) {
     currency: fd.get('currency') || DEFAULT_CURRENCY,
     has_rooms: fd.has('has_rooms'),
     day_rate: fd.get('day_rate') === '' ? null : Number(fd.get('day_rate')),
+    guard_rate: fd.get('guard_rate') === '' ? null : Number(fd.get('guard_rate')),
     retention_pct: Number(fd.get('retention_pct') || 0),
   };
   if (row.start_date && row.end_date && row.end_date < row.start_date) {
@@ -1450,6 +1456,7 @@ function renderCosts() {
   const breakdown = [
     `Contracts ${money.format(c.contracts)}`,
     c.labour ? `daily workers ${money.format(c.labour)}` : '',
+    c.guard ? `guards ${money.format(c.guard)}` : '',
     c.rental ? `rentals ${money.format(c.rental)}` : '',
   ].filter(Boolean).join(' · ');
   $('#cash-summary').innerHTML = [
@@ -1473,11 +1480,12 @@ function renderCosts() {
       ? `Cost: ${money.format(over)} more has been paid to contractors than the value of work done (advances or overspend).`
       : `Cost: contract payments are ${money.format(-over)} below the value of work done.`);
   }
-  if (c.labour || c.rental) {
+  if (c.labour || c.guard || c.rental) {
     const extra = [
       c.labour ? `${money.format(c.labour)} on daily workers` : '',
+      c.guard ? `${money.format(c.guard)} on guards` : '',
       c.rental ? `${money.format(c.rental)} on equipment rentals` : '',
-    ].filter(Boolean).join(' and ');
+    ].filter(Boolean).join(', ');
     lines.push(`On top of contracts: ${extra} so far.`);
   }
   $('#cash-position').textContent = lines.join(' ');
@@ -1549,17 +1557,18 @@ function renderCosts() {
   const cell = (v) => (v ? money.format(v) : '<span class="text-slate-500">-</span>');
   let cumPlanned = 0;
   let cumSpent = 0;
-  const totals = { p: 0, a: 0, labour: 0, rental: 0 };
+  const totals = { p: 0, a: 0, labour: 0, guard: 0, rental: 0 };
   const monthRows = months.map((ym) => {
     const p = planned.get(ym) ?? 0;
     const a = actual.get(ym) ?? 0;
-    const { labour = 0, rental = 0 } = site.get(ym) ?? {};
-    const spent = a + labour + rental;
+    const { labour = 0, guard = 0, rental = 0 } = site.get(ym) ?? {};
+    const spent = a + labour + guard + rental;
     cumPlanned += p;
     cumSpent += spent;
     totals.p += p;
     totals.a += a;
     totals.labour += labour;
+    totals.guard += guard;
     totals.rental += rental;
     return `
       <tr class="${ym === thisMonth ? 'is-current' : ''}">
@@ -1567,6 +1576,7 @@ function renderCosts() {
         <td class="num">${money.format(p)}</td>
         <td class="num">${cell(a)}</td>
         <td class="num">${cell(labour)}</td>
+        <td class="num">${cell(guard)}</td>
         <td class="num">${cell(rental)}</td>
         <td class="num font-semibold text-white">${cell(spent)}</td>
         <td class="num">${money.format(cumPlanned)}</td>
@@ -1579,7 +1589,7 @@ function renderCosts() {
       <thead>
         <tr>
           <th>Month</th><th class="num">Planned</th><th class="num">Contracts paid</th><th class="num">Daily workers</th>
-          <th class="num">Rentals</th><th class="num">Total spent</th>
+          <th class="num">Guards</th><th class="num">Rentals</th><th class="num">Total spent</th>
           <th class="num">Cumulative planned</th><th class="num">Cumulative spent</th>
         </tr>
       </thead>
@@ -1590,8 +1600,9 @@ function renderCosts() {
           <td class="num">${money.format(totals.p)}</td>
           <td class="num">${money.format(totals.a)}</td>
           <td class="num">${money.format(totals.labour)}</td>
+          <td class="num">${money.format(totals.guard)}</td>
           <td class="num">${money.format(totals.rental)}</td>
-          <td class="num">${money.format(totals.a + totals.labour + totals.rental)}</td>
+          <td class="num">${money.format(totals.a + totals.labour + totals.guard + totals.rental)}</td>
           <td colspan="2"></td>
         </tr>
       </tfoot>
@@ -2181,7 +2192,7 @@ async function loadLogs(projectId, { more = false } = {}) {
 
   let q = db
     .from('daily_logs')
-    .select('id, log_date, weather, manpower, notes, notes_en, raw_text, day_rate, '
+    .select('id, log_date, weather, manpower, notes, notes_en, raw_text, day_rate, guard_rate, '
       + 'crew:daily_manpower(contractor_id, trade, workers)', { count: 'exact' })
     .eq('project_id', projectId);
   if (logFilter.from) q = q.gte('log_date', logFilter.from);
@@ -2491,21 +2502,26 @@ function updateManpowerTotal() {
   updateDayCost();
 }
 
-// "5 daily workers × ₾80 = ₾400" under the rate field.
+// "5 daily workers × ₾80 = ₾400" under each rate field.
 function updateDayCost() {
-  const f = $('#form-daily-log').elements;
-  // Only the client's own: a contractor's daily workers are paid by that
-  // contractor, out of the price of their work, and are not a cost here.
-  const workers = readCrewRows()
-    .filter((e) => !e.contractor_id && e.trade === DAY_WORKER_KEY)
+  // Only the client's own: a contractor's men are paid by that contractor, out
+  // of the price of their work, and are not a cost here.
+  const own = (trade) => readCrewRows()
+    .filter((e) => !e.contractor_id && e.trade === trade)
     .reduce((sum, e) => sum + e.workers, 0);
-  const rate = f.day_rate.value === '' ? null : Number(f.day_rate.value);
-  const el = $('#day-cost');
+  rateLine('#day-cost', 'day_rate', own(DAY_WORKER_KEY), 'daily worker');
+  rateLine('#guard-cost', 'guard_rate', own(GUARD_KEY), 'guard');
+}
+
+function rateLine(selector, rateField, workers, noun) {
+  const f = $('#form-daily-log').elements;
+  const rate = f[rateField].value === '' ? null : Number(f[rateField].value);
+  const el = $(selector);
   if (!workers) {
-    el.textContent = 'No daily workers of the client’s own entered.';
+    el.textContent = `No ${noun}s of the client’s own entered.`;
     el.className = 'text-sm text-slate-500 pb-2';
   } else if (rate == null) {
-    el.textContent = `${workers} daily worker${workers === 1 ? '' : 's'} on the client's account - enter the rate to count their pay.`;
+    el.textContent = `${workers} ${noun}${workers === 1 ? '' : 's'} on the client's account - enter the rate to count their pay.`;
     el.className = 'text-sm text-amber-400 pb-2';
   } else {
     el.textContent = `${workers} × ${money2.format(rate)} = ${money.format(workers * rate)} today`;
@@ -2633,9 +2649,11 @@ function openDailyLogModal(log = null) {
     f.notes_en.value = log.notes_en || '';
     f.raw_text.value = log.raw_text || '';
     f.day_rate.value = log.day_rate ?? '';
+    f.guard_rate.value = log.guard_rate ?? '';
   } else {
     f.log_date.value = todayISO();
     f.day_rate.value = currentProject()?.day_rate ?? '';
+    f.guard_rate.value = currentProject()?.guard_rate ?? '';
     renderCrewRows([]);
   }
   updateManpowerTotal();
@@ -2718,6 +2736,7 @@ async function saveDailyLog(e) {
     notes_en:   fd.get('notes_en').trim() || null,
     raw_text:   fd.get('raw_text').trim() || null,
     day_rate:   fd.get('day_rate') === '' ? null : Number(fd.get('day_rate')),
+    guard_rate: fd.get('guard_rate') === '' ? null : Number(fd.get('guard_rate')),
   };
 
   const logId = form.dataset.logId;
@@ -2752,11 +2771,14 @@ async function saveDailyLog(e) {
   closeModal('modal-daily-log');
   toast(logId ? 'Daily log updated.' : 'Daily log saved.', 'success');
 
-  // The first rate entered becomes the project's default for the next logs.
+  // The first rate of each kind becomes the project's default for later logs.
   const project = currentProject();
-  if (project && project.day_rate == null && row.day_rate != null) {
-    const { error: rateError } = await db.from('projects').update({ day_rate: row.day_rate }).eq('id', project.id);
-    if (!rateError) project.day_rate = row.day_rate;
+  const defaults = {};
+  if (project?.day_rate == null && row.day_rate != null) defaults.day_rate = row.day_rate;
+  if (project?.guard_rate == null && row.guard_rate != null) defaults.guard_rate = row.guard_rate;
+  if (project && Object.keys(defaults).length) {
+    const { error: rateError } = await db.from('projects').update(defaults).eq('id', project.id);
+    if (!rateError) Object.assign(project, defaults);
   }
   refreshDashboard(state.projectId);
   loadLogs(state.projectId);

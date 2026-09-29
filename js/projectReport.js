@@ -184,7 +184,9 @@ export async function buildProjectReport({
   const status = verdict(gap, progress.count);
   const spentSub = [
     cost.budget ? `${pctOf(cost.spent, cost.budget)}% ${L('ბიუჯეტის', 'of budget')}` : '',
-    cost.labour || cost.rental ? `${L('მ.შ. დღიური მუშები და ქირა', 'incl. daily workers & rentals')} ${m(cost.labour + cost.rental)}` : '',
+    cost.labour || cost.guard || cost.rental
+      ? `${L('მ.შ. ობიექტის ხარჯები', 'incl. site costs')} ${m(cost.labour + cost.guard + cost.rental)}`
+      : '',
   ].filter(Boolean).join('<br>');
   const delayDays = delays.reduce((s, x) => s + delayDaysLost(x, today), 0);
   const ongoingDelays = delays.filter(delayIsOngoing);
@@ -623,7 +625,8 @@ export async function buildProjectReport({
   const planned = plannedSpendByMonth(tasks);
   const actual = actualSpendByMonth(payments);
   const site = siteCostsByMonth(siteCosts, today);
-  const spentIn = (k) => (actual.get(k) ?? 0) + (site.get(k)?.labour ?? 0) + (site.get(k)?.rental ?? 0);
+  const spentIn = (k) => (actual.get(k) ?? 0)
+    + (site.get(k)?.labour ?? 0) + (site.get(k)?.guard ?? 0) + (site.get(k)?.rental ?? 0);
   const monthKeys = [...new Set([...planned.keys(), ...actual.keys(), ...site.keys()])].sort();
   const thisMonth = today.slice(0, 7);
   const hasSite = site.size > 0;
@@ -689,7 +692,9 @@ export async function buildProjectReport({
         <tr>
           <th>${L('თვე', 'Month')}</th><th class="num">${L('გეგმა', 'Planned')}</th>
           <th class="num">${L('კონტრაქტები', 'Contracts')}</th>
-          ${hasSite ? `<th class="num">${L('დღიური მუშები', 'Daily workers')}</th><th class="num">${L('ქირა', 'Rentals')}</th>` : ''}
+          ${hasSite ? `<th class="num">${L('დღიური მუშები', 'Daily workers')}</th>
+            <th class="num">${L('დარაჯები', 'Guards')}</th>
+            <th class="num">${L('ქირა', 'Rentals')}</th>` : ''}
           <th class="num">${L('ჯამური გეგმა', 'Cumulative plan')}</th>
           <th class="num">${L('ჯამური ხარჯი', 'Cumulative spent')}</th>
         </tr>
@@ -698,7 +703,7 @@ export async function buildProjectReport({
         ${monthKeys.map((k) => {
           const p = planned.get(k) ?? 0;
           const a = actual.get(k) ?? 0;
-          const sc = site.get(k) ?? { labour: 0, rental: 0 };
+          const sc = site.get(k) ?? { labour: 0, guard: 0, rental: 0 };
           cp += p;
           ca += spentIn(k);
           return `
@@ -706,7 +711,9 @@ export async function buildProjectReport({
               <td>${MONTHS_KA[Number(k.slice(5)) - 1]} / ${MONTHS_EN[Number(k.slice(5)) - 1]} ${k.slice(0, 4)}</td>
               <td class="num">${m(p)}</td>
               <td class="num">${a ? m(a) : '-'}</td>
-              ${hasSite ? `<td class="num">${sc.labour ? m(sc.labour) : '-'}</td><td class="num">${sc.rental ? m(sc.rental) : '-'}</td>` : ''}
+              ${hasSite ? `<td class="num">${sc.labour ? m(sc.labour) : '-'}</td>
+                <td class="num">${sc.guard ? m(sc.guard) : '-'}</td>
+                <td class="num">${sc.rental ? m(sc.rental) : '-'}</td>` : ''}
               <td class="num">${m(cp)}</td>
               <td class="num">${k <= thisMonth ? m(ca) : '-'}</td>
             </tr>`;
@@ -743,15 +750,19 @@ export async function buildProjectReport({
       }).join('')}
     </div>` : '';
 
-  // Daily workers and equipment rentals (money outside the BOQ)
+  // Daily workers, guards and equipment rentals (money outside the BOQ)
   const labour = siteCosts.filter((e) => e.kind === 'labour');
   const workerDays = labour.reduce((sum, e) => sum + e.workers, 0);
-  const siteCostsBlock = labour.length || rentals.length ? `
+  const guards = siteCosts.filter((e) => e.kind === 'guard');
+  const guardDays = guards.reduce((sum, e) => sum + e.workers, 0);
+  const siteCostsBlock = labour.length || guards.length || rentals.length ? `
     <h3 class="rpt-sub-h">${L('ობიექტის სხვა ხარჯები', 'Other site costs')}</h3>
     ${/* Contract payments and the total are tiles at the head of this section. */ ''}
-    <div class="rpt-tiles rpt-tiles-2 rpt-avoid">
+    <div class="rpt-tiles rpt-avoid">
       ${tile('დღიური მუშები', 'Daily workers', m(cost.labour),
         workerDays ? `${workerDays} ${L('კაც-დღე', 'worker-days')}` : '')}
+      ${tile('დარაჯები', 'Guards', m(cost.guard),
+        guardDays ? `${guardDays} ${L('კაც-დღე', 'guard-days')}` : '')}
       ${tile('ტექნიკის ქირა', 'Equipment rentals', m(cost.rental),
         rentals.length ? `${rentals.length} ${L('ქირა', 'rentals')}` : '')}
     </div>

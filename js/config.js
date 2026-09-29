@@ -50,10 +50,13 @@ export const MANPOWER_TRADES = [
   { key: 'tilers',       label: 'Tilers' },
   { key: 'painters',     label: 'Painters' },
   { key: 'day_workers',  label: 'Daily workers' }, // paid a fixed rate per day (see DAY_WORKER_KEY)
+  { key: 'guards',       label: 'Guards' },        // likewise, at their own rate (see GUARD_KEY)
 ];
 
-// Manpower trade whose headcount is paid per day (projects/daily_logs.day_rate).
-export const DAY_WORKER_KEY = 'day_workers';
+// Manpower trades the client pays for by the day, each from its own rate on the
+// project and the log. Anyone else on site is inside a contractor's price.
+export const DAY_WORKER_KEY = 'day_workers'; // projects/daily_logs.day_rate
+export const GUARD_KEY = 'guards';           // projects/daily_logs.guard_rate
 
 // Suggestions for the equipment-rental form (free text is allowed too).
 export const EQUIPMENT_SUGGESTIONS = [

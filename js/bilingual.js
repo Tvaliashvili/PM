@@ -49,6 +49,7 @@ export const KA = {
   'Tilers': 'მეფილეები',
   'Painters': 'მღებავები',
   'Daily workers': 'დღიური მუშები',
+  'Guards': 'დარაჯები',
 
   // Room types
   'Studio': 'სტუდიო',

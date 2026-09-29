@@ -143,28 +143,37 @@ export function actualSpendByMonth(payments) {
 // can be added to spending and to the monthly cash flow.
 
 /**
- * Daily-worker pay per log: headcount × that log's day rate.
+ * What the client pays by the day for one trade: headcount × that log's rate.
  *
- * Only the client's own daily workers are counted - the crew lines with no
- * contractor against them. A contractor's daily workers are the contractor's
- * to pay, and are already inside the price of their work; charging them here
- * as well would count the same men twice. A log recorded before the crew was
- * split by contractor has no lines, so its old headcount stands as the
- * client's, which is what it was.
+ * Only the client's own are counted - the crew lines with no contractor against
+ * them. A contractor's men are the contractor's to pay, and are already inside
+ * the price of their work; charging them here as well would count the same
+ * people twice. A log recorded before the crew was split by contractor has no
+ * lines, so its old headcount stands as the client's, which is what it was.
  */
-export function labourCosts(logs, dayWorkerKey = 'day_workers') {
+function dayRateCosts(logs, tradeKey, rateField, kind) {
   return logs
     .map((l) => {
       const crew = l.crew ?? [];
       const workers = crew.length
         ? crew.reduce((n, c) => (
-          !c.contractor_id && c.trade === dayWorkerKey ? n + (Number(c.workers) || 0) : n
+          !c.contractor_id && c.trade === tradeKey ? n + (Number(c.workers) || 0) : n
         ), 0)
-        : Number(l.manpower?.[dayWorkerKey] || 0);
-      return { date: l.log_date, amount: workers * Number(l.day_rate || 0), workers, kind: 'labour' };
+        : Number(l.manpower?.[tradeKey] || 0);
+      return { date: l.log_date, amount: workers * Number(l[rateField] || 0), workers, kind };
     })
     .filter((e) => e.workers > 0);
 }
+
+/** Daily-worker pay per log. */
+export const labourCosts = (logs, dayWorkerKey = 'day_workers') => (
+  dayRateCosts(logs, dayWorkerKey, 'day_rate', 'labour')
+);
+
+/** Guards, on the same footing but at their own rate. */
+export const guardCosts = (logs, guardKey = 'guards') => (
+  dayRateCosts(logs, guardKey, 'guard_rate', 'guard')
+);
 
 /** Total hire cost of one rental (daily rate × days). */
 export const rentalTotal = (r) => Number(r.daily_rate || 0) * Number(r.days || 0);
@@ -197,7 +206,7 @@ export function siteCostsByMonth(entries, todayIso) {
   for (const e of entries) {
     if (e.date > todayIso) continue;
     const key = monthOf(e.date);
-    const m = months.get(key) ?? { labour: 0, rental: 0 };
+    const m = months.get(key) ?? { labour: 0, guard: 0, rental: 0 };
     m[e.kind] += e.amount;
     months.set(key, m);
   }
@@ -231,8 +240,12 @@ export function costPosition(tasks, payments, todayIso, siteCosts = []) {
     .filter((e) => e.kind === kind && e.date <= todayIso)
     .reduce((sum, e) => sum + e.amount, 0);
   const labour = upToToday('labour');
+  const guard = upToToday('guard');
   const rental = upToToday('rental');
-  return { budget, planned, earned, contracts, labour, rental, spent: contracts + labour + rental };
+  return {
+    budget, planned, earned, contracts, labour, guard, rental,
+    spent: contracts + labour + guard + rental,
+  };
 }
 
 /**
