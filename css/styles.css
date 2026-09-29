@@ -618,13 +618,24 @@ textarea.input-dark { resize: vertical; }
    reliably, so the full-height picture spilled over the one beneath it. Half a
    column wide, a landscape shot comes out about 230px tall, which is the size
    these were drawn at anyway. */
-.pdf-photos { width: 100%; border-collapse: separate; border-spacing: 0 10px; }
+.pdf-photos { width: 100%; border-collapse: separate; border-spacing: 0 12px; }
 .pdf-photos td { width: 50%; padding: 0; border: 0; vertical-align: top; }
-.pdf-photos td + td { padding-left: 10px; }
-.pdf-photos td > div { overflow: hidden; border-radius: 4px; line-height: 0; }
-/* Width alone decides the size; the height follows the picture's own shape.
-   Nothing is cropped, so nothing depends on clipping working. */
-.pdf-photos img { display: block; width: 100%; height: auto; border-radius: 4px; }
+.pdf-photos td + td { padding-left: 12px; }
+.pdf-photos td > div { border-radius: 4px; line-height: 0; text-align: center; }
+/* A photo is fitted inside the column and a fixed height, never cropped or
+   stretched: both bounds are maximums, so the picture keeps its own shape and
+   gives way on whichever side runs out first. The height cap is what makes the
+   gaps even - without it a row is as tall as its taller photo, and the shorter
+   one leaves slack beneath it while the other pair almost touch. A landscape
+   shot fills the height exactly, which is the normal case here. */
+.pdf-photos img {
+  display: inline-block;
+  max-width: 100%;
+  max-height: 230px;
+  width: auto;
+  height: auto;
+  border-radius: 4px;
+}
 /* A heading stays with the photos (or the table) it introduces, and is never
    sliced through the middle - half a line of Georgian reads as other letters. */
 .pdf-page h2, .pdf-page h3 {
