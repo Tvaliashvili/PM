@@ -3063,7 +3063,18 @@ async function setBaseline() {
 
   const btn = $('#btn-baseline');
   setBusy(btn, true, 'Saving…');
-  const rows = dated.map((t) => ({ id: t.id, baseline_start: t.planned_start, baseline_finish: t.planned_finish }));
+  // An upsert is an insert that falls back to an update, and Postgres checks
+  // the not-null columns before it finds the conflict - so every one of them
+  // has to travel with the row, unchanged, even though the row already exists.
+  const rows = dated.map((t) => ({
+    id: t.id,
+    project_id: project.id,
+    name: t.name,
+    planned_start: t.planned_start,
+    planned_finish: t.planned_finish,
+    baseline_start: t.planned_start,
+    baseline_finish: t.planned_finish,
+  }));
   const { error } = await db.from('schedule_tasks').upsert(rows, { onConflict: 'id' });
   const { error: projectError } = error
     ? {}
