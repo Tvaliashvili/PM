@@ -384,9 +384,11 @@ export async function buildProjectReport({
       ${H('გადახრა დამტკიცებული გრაფიკიდან', 'Drift since baseline',
     project.baseline_set_on ? `${L('დამტკიცდა', 'approved')} ${d(project.baseline_set_on)}` : '')}
       <div class="rpt-tiles rpt-tiles-2 rpt-avoid">
+        ${/* The unit goes in the sub-line: a tile's value is escaped, so the
+             bilingual markup would be printed rather than rendered. */ ''}
         ${tile('დასრულების თარიღი გადაიწია', 'Completion moved by',
-    `${projectDrift > 0 ? '+' : ''}${projectDrift} ${L('დღით', projectDrift === 1 || projectDrift === -1 ? 'day' : 'days')}`,
-    '', projectDrift > 0 ? 'bad' : 'ok')}
+    `${projectDrift > 0 ? '+' : ''}${projectDrift}`,
+    L('დღით', Math.abs(projectDrift) === 1 ? 'day' : 'days'), projectDrift > 0 ? 'bad' : 'ok')}
         ${tile('ამოცანა გადაიწია', 'Activities moved', `${drifted.length} / ${baselined.length}`,
     '', drifted.length ? 'warn' : 'ok')}
       </div>
