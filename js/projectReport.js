@@ -805,7 +805,7 @@ export async function buildProjectReport({
           <tr>
             <td>${v.ref ? esc(v.ref) : '-'}</td>
             <td>${d(v.instructed_on)}</td>
-            <td>${esc(v.title)}${v.description || v.description_en
+            <td class="rpt-prose">${esc(v.title)}${v.description || v.description_en
     ? `<em class="rpt-block">${esc(v.description_en || v.description)}</em>` : ''}</td>
             <td>${v.contractor_id ? esc(nameOf(v.contractor_id)) : '-'}</td>
             <td class="num">${Number(v.amount) ? m(v.amount) : '-'}</td>
@@ -1122,7 +1122,7 @@ export async function buildProjectReport({
                 <td>${delayIsOngoing(x)
     ? chip({ ka: 'მიმდინარე', en: 'Ongoing', tone: 'bad' })
     : `${L('დასრულდა', 'Ended')} ${x.resolved_on ? d(x.resolved_on) : ''}`.trim()}</td>
-                <td>${biText(x.description, x.description_en)}</td>
+                <td class="rpt-prose">${biText(x.description, x.description_en)}</td>
               </tr>`).join('')}
           </tbody>
         </table>` : `<p class="rpt-all-good">✓ ${L('ბოლო 30 დღეში შეფერხება არ ყოფილა', 'No delays in the last 30 days')}</p>`}
@@ -1178,7 +1178,7 @@ export async function buildProjectReport({
               <tr>
                 <td>${d(e.event_date)}</td>
                 <td>${L(EVENT_KIND[e.kind]?.ka ?? e.kind, EVENT_KIND[e.kind]?.en ?? e.kind)}</td>
-                <td>${esc(e.title)}${e.description || e.description_en
+                <td class="rpt-prose">${esc(e.title)}${e.description || e.description_en
                   ? `<em class="rpt-block">${esc(e.description_en || e.description)}</em>` : ''}</td>
                 <td>${e.contractor_id ? esc(nameOf(e.contractor_id)) : '-'}</td>
                 <td>${e.action ? esc(e.action) : '-'}</td>
