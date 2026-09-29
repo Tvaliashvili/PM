@@ -399,7 +399,7 @@ export async function buildProjectReport({
       ? `${driftPhrase} · ${L('დამტკიცებული იყო', 'approved')} ${d(baseEnd)}`
       : L('უცვლელი დამტკიცების დღიდან', 'unchanged since baseline'),
     projectDrift > 0 ? 'bad' : 'ok')}
-        ${tile('სამუშაო გადაიწია', 'Activities moved', `${drifted.length} / ${baselined.length}`,
+        ${tile('სამუშაოები გადაიწია', 'Activities moved', `${drifted.length} / ${baselined.length}`,
     '', drifted.length ? 'warn' : 'ok')}
       </div>
       ${drifted.length ? `
