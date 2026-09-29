@@ -71,50 +71,6 @@ create index if not exists daily_logs_project_date_idx
   on public.daily_logs (project_id, log_date desc);
 
 -- -------------------------------------------------------------
--- 3b. Crew on site: who brought how many, by trade
--- One row per contractor per trade per day. daily_logs.manpower held the same
--- counts with no contractor against them, which answered how many men were on
--- site but never whose they were - and so never which contractor is short.
--- A null contractor_id is labour engaged directly, not through anyone.
--- -------------------------------------------------------------
-create table if not exists public.daily_manpower (
-  id            uuid primary key default gen_random_uuid(),
-  daily_log_id  uuid not null references public.daily_logs(id) on delete cascade,
-  contractor_id uuid references public.contractors(id) on delete set null,
-  trade         text not null,
-  workers       integer not null default 0 check (workers >= 0),
-  created_at    timestamptz not null default now(),
-  updated_at    timestamptz not null default now()
-);
-
--- One entry per contractor and trade. Postgres treats every null as distinct,
--- so directly engaged labour needs a stand-in to be held to the same rule.
-create unique index if not exists daily_manpower_unique_idx on public.daily_manpower
-  (daily_log_id, coalesce(contractor_id, '00000000-0000-0000-0000-000000000000'::uuid), trade);
-create index if not exists daily_manpower_contractor_idx
-  on public.daily_manpower (contractor_id);
-
-drop trigger if exists set_updated_at on public.daily_manpower;
-create trigger set_updated_at before update on public.daily_manpower
-  for each row execute function public.set_updated_at();
-
-alter table public.daily_manpower enable row level security;
-drop policy if exists "authenticated_full_access" on public.daily_manpower;
-create policy "authenticated_full_access" on public.daily_manpower
-  for all to authenticated using (true) with check (true);
-
--- Carry across whatever the old column holds, once, as unassigned labour.
--- Re-running changes nothing: the unique index above turns the second attempt
--- at the same day and trade into a no-op.
-insert into public.daily_manpower (daily_log_id, contractor_id, trade, workers)
-select l.id, null, m.key, m.value::int
-from public.daily_logs l, jsonb_each_text(l.manpower) as m(key, value)
-where m.value ~ '^[0-9]+$' and m.value::int > 0
-on conflict do nothing;
-
-notify pgrst, 'reload schema';
-
--- -------------------------------------------------------------
 -- 4. delays
 -- flat_id is optional: null = site-wide delay
 -- -------------------------------------------------------------
@@ -620,5 +576,51 @@ alter table public.variations enable row level security;
 drop policy if exists "authenticated_full_access" on public.variations;
 create policy "authenticated_full_access" on public.variations
   for all to authenticated using (true) with check (true);
+
+notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 19. Crew on site: who brought how many, by trade
+-- One row per contractor per trade per day. daily_logs.manpower held the same
+-- counts with no contractor against them, which answered how many men were on
+-- site but never whose they were - and so never which contractor is short.
+-- A null contractor_id is labour engaged directly, not through anyone.
+-- Placed here, after contractors: it points at that table and cannot be
+-- created before it exists.
+-- -------------------------------------------------------------
+create table if not exists public.daily_manpower (
+  id            uuid primary key default gen_random_uuid(),
+  daily_log_id  uuid not null references public.daily_logs(id) on delete cascade,
+  contractor_id uuid references public.contractors(id) on delete set null,
+  trade         text not null,
+  workers       integer not null default 0 check (workers >= 0),
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+-- One entry per contractor and trade. Postgres treats every null as distinct,
+-- so directly engaged labour needs a stand-in to be held to the same rule.
+create unique index if not exists daily_manpower_unique_idx on public.daily_manpower
+  (daily_log_id, coalesce(contractor_id, '00000000-0000-0000-0000-000000000000'::uuid), trade);
+create index if not exists daily_manpower_contractor_idx
+  on public.daily_manpower (contractor_id);
+
+drop trigger if exists set_updated_at on public.daily_manpower;
+create trigger set_updated_at before update on public.daily_manpower
+  for each row execute function public.set_updated_at();
+
+alter table public.daily_manpower enable row level security;
+drop policy if exists "authenticated_full_access" on public.daily_manpower;
+create policy "authenticated_full_access" on public.daily_manpower
+  for all to authenticated using (true) with check (true);
+
+-- Carry across whatever the old column holds, once, as unassigned labour.
+-- Re-running changes nothing: the unique index above turns the second attempt
+-- at the same day and trade into a no-op.
+insert into public.daily_manpower (daily_log_id, contractor_id, trade, workers)
+select l.id, null, m.key, m.value::int
+from public.daily_logs l, jsonb_each_text(l.manpower) as m(key, value)
+where m.value ~ '^[0-9]+$' and m.value::int > 0
+on conflict do nothing;
 
 notify pgrst, 'reload schema';
