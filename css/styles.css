@@ -1128,14 +1128,21 @@ textarea.input-dark { resize: vertical; }
 }
 
 @media print {
-  html, body { background: #fff; height: auto; }
+  html, body {
+    background: #fff;
+    height: auto;
+    overflow: visible; /* a clipped body prints one page and stops */
+  }
 
   /* The report is the document; the app around it is not printed. */
   body.is-printing > *:not(#print-root) { display: none !important; }
   body.is-printing #print-root {
     position: static;
     left: auto;
-    width: auto;
+    /* Kept at the width the report is designed for. The page box is 190mm =
+       718px at 96dpi, so this is the same measure, and every column, track and
+       chart keeps the proportions it has on screen. */
+    width: 718px;
     pointer-events: auto;
   }
 
@@ -1146,17 +1153,33 @@ textarea.input-dark { resize: vertical; }
     print-color-adjust: exact;
   }
 
-  /* The page box sets the measure now. */
-  .pdf-page { width: auto; max-width: 100%; margin: 0; box-shadow: none; }
-  .rpt-chart svg, .pdf-page svg { max-width: 100%; height: auto; }
+  .pdf-page { margin: 0; box-shadow: none; }
 
-  /* Nothing in this list may be split down the middle. */
+  /* A box that hides its overflow is clipped to the page it starts on, so the
+     rest of the timeline simply vanishes. It keeps its border; it loses only
+     the rounded corner it was hiding. */
+  .rpt-gantt, .rpt-cards, .rpt-hbars, .rpt-tiles, .rpt-two, .rpt-columns {
+    overflow: visible;
+  }
+
+  /* Small units of writing are never split down the middle. */
   tr, img, li,
-  .rpt-avoid, .rpt-card, .rpt-tile, .rpt-panel, .rpt-hbar, .rpt-g-row,
-  .rpt-chart, .rpt-legend, .rpt-tiles, .rpt-h, .rpt-sub-h,
-  .pdf-facts, .pdf-facts > div, .pdf-avoid-break, .pdf-photos td, .doc-signature {
+  .rpt-card, .rpt-tile, .rpt-panel, .rpt-hbar, .rpt-g-row, .rpt-legend,
+  .rpt-chart, .rpt-h, .rpt-sub-h, .rpt-tiles,
+  .pdf-facts > div, .pdf-avoid-break, .pdf-photos td, .doc-signature {
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+
+  /* Anything longer than a page must be allowed to break, or the engine keeps
+     it whole by clipping whatever hangs past the bottom. The rows inside are
+     protected above, so the break still lands between lines, never through one.
+     `.rpt-avoid` is the screen marker for small blocks and sits on some of
+     these too, which is why they are named again here. */
+  table, tbody, .rpt-gantt, .rpt-hbars, .rpt-cards, .rpt-two, .rpt-columns,
+  .rpt-section, .pdf-page, .pdf-photos {
+    break-inside: auto;
+    page-break-inside: auto;
   }
 
   /* A heading is never the last thing on a page. */
