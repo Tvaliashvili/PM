@@ -9,7 +9,7 @@ import {
   BOQ_UNITS, CONTRACTOR_TRADES,
 } from './config.js';
 import { generateDailyReport } from './pdfReport.js';
-import { buildProjectReport, downloadProjectReport } from './projectReport.js';
+import { buildProjectReport, printProjectReport } from './projectReport.js';
 import {
   scheduleProgress, taskState, durationDays, completionOf, expectedPct,
   plannedSpendByMonth, actualSpendByMonth, costPosition, contractorPerformance,
@@ -3278,12 +3278,11 @@ async function openProjectReport() {
 async function downloadReport() {
   if (!reportPage) return;
   const btn = $('#btn-report-pdf');
-  setBusy(btn, true, 'Saving…');
+  setBusy(btn, true, 'Printing…');
   try {
-    await downloadProjectReport(reportPage, currentProject());
-    toast('Project report downloaded.', 'success');
+    await printProjectReport(reportPage, currentProject());
   } catch (err) {
-    toast(err.message || 'Could not save the PDF.', 'error');
+    toast(err.message || 'Could not print the report.', 'error');
   } finally {
     setBusy(btn, false);
   }
@@ -3305,7 +3304,6 @@ async function exportDailyReport(e) {
 
   try {
     await generateDailyReport({ db, project, progress: state.progress, money });
-    toast('Daily report downloaded.', 'success');
   } catch (err) {
     toast(err.message || 'Could not generate the report.', 'error');
   } finally {

@@ -1,7 +1,7 @@
 // =============================================================
 // Full project report - bilingual (Georgian / English), print-ready.
 // Built from the open project's data; shown in the app and saved as PDF.
-// Charts are plain HTML/CSS (plus one inline SVG) so html2pdf renders them as-is.
+// Charts are plain HTML/CSS (plus one inline SVG), so they print as vectors.
 // =============================================================
 import {
   taskState, completionOf, costPosition, contractorPerformance, plannedSpendByMonth, actualSpendByMonth,
@@ -10,7 +10,7 @@ import {
 } from './schedule.js';
 import { bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
 import { MANPOWER_TRADES, REPORT_AUTHOR } from './config.js';
-import { insertPageBreaks } from './paginate.js';
+import { printDocument } from './print.js';
 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -1206,36 +1206,7 @@ const fileSafe = (name) => (name || 'Project')
   .replace(/\s+/g, '_')
   .slice(0, 60) || 'Project';
 
-/** Saves a page built by buildProjectReport() as Project_Report_<name>_<date>.pdf. */
-export async function downloadProjectReport(page, project) {
-  await document.fonts?.ready; // Georgian font must be loaded before rendering
-  const today = iso(new Date());
-  const margin = [10, 10, 12, 10]; // mm: top, right, bottom, left
-  // The breaks are worked out on a copy, off-screen: the preview the user is
-  // looking at keeps its own spacing and gains no blank gaps.
-  const root = document.getElementById('pdf-export-root');
-  const printed = page.cloneNode(true);
-  root.replaceChildren(printed);
-  insertPageBreaks(printed, margin);
-  try {
-    await renderPdf(printed, margin, `Project_Report_${fileSafe(project.name)}_${today}.pdf`);
-  } finally {
-    root.replaceChildren();
-  }
-}
-
-function renderPdf(page, margin, filename) {
-  return window.html2pdf()
-    .set({
-      margin,
-      filename,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      // The breaks are already spaced out by insertPageBreaks(); html2pdf is
-      // only asked to cut on the grid it was given.
-      pagebreak: { mode: ['css', 'legacy'] },
-    })
-    .from(page)
-    .save();
+/** Prints a page built by buildProjectReport(), to paper or to a PDF. */
+export function printProjectReport(page, project) {
+  return printDocument(page, `Project_Report_${fileSafe(project.name)}_${iso(new Date())}`);
 }
