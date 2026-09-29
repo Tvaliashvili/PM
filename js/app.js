@@ -69,7 +69,12 @@ function moneyFormat(decimals) {
   }
   return moneyFormats.get(key);
 }
-const money  = { format: (n) => moneyFormat(0).format(n) };
+// Whole amounts read better without the trailing zeros, but a rate of 65.50 is
+// not 66 and a day's pay of 196.50 is not 197 - so the pence show when there
+// are any. Anything within half a penny of round is treated as round, since
+// that is a floating-point artefact rather than money.
+const isRound = (n) => Math.abs(Number(n) - Math.round(Number(n))) < 0.005;
+const money  = { format: (n) => moneyFormat(isRound(n) ? 0 : 2).format(n) };
 const money2 = { format: (n) => moneyFormat(2).format(n) };
 
 const todayISO = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD, local time
