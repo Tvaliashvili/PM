@@ -266,8 +266,8 @@ export async function buildProjectReport({
         ${tile('ბიუჯეტი', 'Budget', m(cost.budget))}
         ${tile('დახარჯული', 'Spent', m(cost.spent), spentSub,
           cost.budget && cost.spent > cost.budget ? 'bad' : '')}
-        ${tile('ვადაგადაცილებული ამოცანები', 'Overdue items', String(progress.overdue.length),
-          `${progress.count} ${L('ამოცანიდან', 'items in total')}`, progress.overdue.length ? 'bad' : 'ok')}
+        ${tile('ვადაგადაცილებული სამუშაოები', 'Overdue items', String(progress.overdue.length),
+          `${progress.count} ${L('სამუშაოდან', 'items in total')}`, progress.overdue.length ? 'bad' : 'ok')}
         ${rooms
           ? tile('ოთახები', 'Rooms', String(units.length), area ? `${num.format(area)} m²` : '')
           : tile('შეფერხებები (30 დღე)', 'Delays (30 days)', String(delays.length),
@@ -289,7 +289,7 @@ export async function buildProjectReport({
       `${t.name} - ${t.daysLate} days overdue${who ? ` (${who})` : ''}`]);
   }
   if (progress.overdue.length > 5) {
-    alerts.push(['bad', `და კიდევ ${progress.overdue.length - 5} ვადაგადაცილებული ამოცანა`,
+    alerts.push(['bad', `და კიდევ ${progress.overdue.length - 5} ვადაგადაცილებული სამუშაო`,
       `and ${progress.overdue.length - 5} more overdue items`]);
   }
   if (project.end_date && today > project.end_date && progress.actualPct < 100) {
@@ -316,7 +316,7 @@ export async function buildProjectReport({
   const overdueIds = new Set(progress.overdue.map((t) => t.id)); // counted above already
   const stalledCount = stalled.filter((x) => !overdueIds.has(x.task.id)).length;
   if (stalledCount) {
-    alerts.push(['bad', `${stalledCount} ამოცანა არ მოძრაობს`,
+    alerts.push(['bad', `${stalledCount} სამუშაო არ მოძრაობს`,
       `${stalledCount} ${stalledCount === 1 ? 'item is' : 'items are'} not moving`]);
   }
 
@@ -399,7 +399,7 @@ export async function buildProjectReport({
       ? `${driftPhrase} · ${L('დამტკიცებული იყო', 'approved')} ${d(baseEnd)}`
       : L('უცვლელი დამტკიცების დღიდან', 'unchanged since baseline'),
     projectDrift > 0 ? 'bad' : 'ok')}
-        ${tile('ამოცანა გადაიწია', 'Activities moved', `${drifted.length} / ${baselined.length}`,
+        ${tile('სამუშაო გადაიწია', 'Activities moved', `${drifted.length} / ${baselined.length}`,
     '', drifted.length ? 'warn' : 'ok')}
       </div>
       ${drifted.length ? `
@@ -490,7 +490,7 @@ export async function buildProjectReport({
       </div>
       <div class="rpt-gantt">
         <div class="rpt-g-row rpt-g-head">
-          <div class="rpt-g-label">${L('ამოცანა', 'Work item')}</div>
+          <div class="rpt-g-label">${L('სამუშაო', 'Work item')}</div>
           <div class="rpt-g-track rpt-g-months">${monthHead}</div>
           <div class="rpt-g-pct">${L('შესრ.', 'Done')}</div>
         </div>
@@ -499,7 +499,7 @@ export async function buildProjectReport({
   }
   const timeline = `
     <section class="rpt-section">
-      ${H('სამუშაო გრაფიკი', 'Timeline', `${progress.count} ${L('ამოცანა', 'items')}`)}
+      ${H('სამუშაო გრაფიკი', 'Timeline', `${progress.count} ${L('სამუშაო', 'items')}`)}
       ${gantt}
     </section>`;
 
@@ -508,7 +508,7 @@ export async function buildProjectReport({
   // nobody is on it, or nobody has updated the figure. Both are worth asking about.
   const notMoving = !stalled.length ? '' : `
     <section class="rpt-section rpt-avoid">
-      ${H('შეჩერებულია', 'Not moving', `${stalled.length} ${L('ამოცანა', 'items')}`)}
+      ${H('შეჩერებულია', 'Not moving', `${stalled.length} ${L('სამუშაო', 'items')}`)}
       <table class="rpt-compact">
         <thead>
           <tr>
@@ -564,10 +564,10 @@ export async function buildProjectReport({
 
   const roadAhead = !remaining.length ? '' : `
     <section class="rpt-section rpt-avoid">
-      ${H('პროექტის დასრულებამდე', 'Road to completion', `${remaining.length} ${L('დარჩენილი ამოცანა', 'items left')}`)}
+      ${H('პროექტის დასრულებამდე', 'Road to completion', `${remaining.length} ${L('დარჩენილი სამუშაო', 'items left')}`)}
       <div class="rpt-tiles rpt-tiles-2">
         ${tile('დარჩენილი სამუშაო', 'Work left', `${remainingPct}%`,
-    `${remaining.length} ${L('ამოცანა', 'items')} · ${m(remainingBudget)} ${L('ბიუჯეტით', 'of budget')}`)}
+    `${remaining.length} ${L('სამუშაო', 'items')} · ${m(remainingBudget)} ${L('ბიუჯეტით', 'of budget')}`)}
         ${/* The planned date and the days left are in the header's time strip. */ ''}
         ${forecast
     ? tile('პროგნოზი ამ ტემპით', 'Forecast at this pace', d(forecast.date),
@@ -584,7 +584,7 @@ export async function buildProjectReport({
         <table class="rpt-compact">
           <thead>
             <tr>
-              <th>${L('ამოცანა', 'Work item')}</th>
+              <th>${L('სამუშაო', 'Work item')}</th>
               <th>${L('კონტრაქტორი', 'Contractor')}</th>
               <th>${L('უნდა დასრულდეს', 'Due to finish')}</th>
               <th class="num">${L('შესრ.', 'Done')}</th>
@@ -594,7 +594,7 @@ export async function buildProjectReport({
           ${[...aheadMonths].map(([key, list]) => `
             <tbody>
               <tr class="rpt-month-row${key === today.slice(0, 7) ? ' rpt-current' : ''}">
-                <td colspan="5">${monthLabel(key)} · ${list.length} ${L('ამოცანა', 'items')}</td>
+                <td colspan="5">${monthLabel(key)} · ${list.length} ${L('სამუშაო', 'items')}</td>
               </tr>
               ${list.map((t) => {
     const leftValue = Number(t.budget || 0) * (1 - completionOf(t));
@@ -610,7 +610,7 @@ export async function buildProjectReport({
             </tbody>`).join('')}
         </table>
         ${aheadMore ? `<p class="rpt-foot-note">${L(
-    `და კიდევ ${aheadMore} ამოცანა - სრული სია სამუშაო გრაფიკშია.`,
+    `და კიდევ ${aheadMore} სამუშაო - სრული სია გრაფიკშია.`,
     `and ${aheadMore} more - the timeline above lists them all.`,
   )}</p>` : ''}` : ''}
       ${forecast ? `<p class="rpt-foot-note">${L(
@@ -717,7 +717,7 @@ export async function buildProjectReport({
   const budgeted = tasks.filter((t) => Number(t.budget) > 0).sort((a, b) => Number(b.budget) - Number(a.budget));
   const maxBudget = Math.max(1, ...budgeted.map((t) => Number(t.budget)));
   const itemCosts = budgeted.length ? `
-    <h3 class="rpt-sub-h">${L('ღირებულება ამოცანების მიხედვით', 'Cost by item')}</h3>
+    <h3 class="rpt-sub-h">${L('ღირებულება სამუშაოების მიხედვით', 'Cost by item')}</h3>
     <div class="rpt-legend">
       <span class="rpt-legend-item"><i class="rpt-sw rpt-sw-plan-light"></i>${L('ბიუჯეტი', 'Budget')}</span>
       <span class="rpt-legend-item"><i class="rpt-sw rpt-sw-ok"></i>${L('შესრულებული', 'Work done')}</span>
