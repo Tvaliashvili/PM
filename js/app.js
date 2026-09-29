@@ -3304,7 +3304,7 @@ async function exportDailyReport(e) {
   toast('Building today\'s report…');
 
   try {
-    await generateDailyReport({ db, project, progress: state.progress, money });
+    await generateDailyReport({ db, project, progress: state.progress });
     toast('Daily report downloaded.', 'success');
   } catch (err) {
     toast(err.message || 'Could not generate the report.', 'error');

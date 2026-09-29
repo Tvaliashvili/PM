@@ -3,7 +3,7 @@
 // Today's daily_logs + delays → html2pdf
 // =============================================================
 import {
-  MANPOWER_TRADES, REPORT_AUTHOR, DAY_WORKER_KEY,
+  MANPOWER_TRADES, REPORT_AUTHOR,
   SITE_EVENT_KINDS, INCIDENT_SEVERITIES, VARIATION_STATUSES,
 } from './config.js';
 import { rentalEnd, delayIsOngoing, delayDaysLost } from './schedule.js';
@@ -39,22 +39,6 @@ const sinceBi = (iso) => `${ka('since')} ${dateKa(iso)} / since ${dateEn(iso)}`;
 // Bilingual room label; left out in a building that has none.
 const flatLabelBi = roomLabelBi;
 
-// Daily workers' pay for the day: headcount × the log's day rate.
-function dayWorkerPay(logs) {
-  let workers = 0;
-  let pay = 0;
-  let rate = null;
-  for (const l of logs) {
-    const n = Number(l.manpower?.[DAY_WORKER_KEY] || 0);
-    workers += n;
-    if (l.day_rate != null) {
-      rate = Number(l.day_rate);
-      pay += n * rate;
-    }
-  }
-  return { workers, rate, pay };
-}
-
 function mergeManpower(logs) {
   const totals = {};
   for (const log of logs) {
@@ -81,7 +65,7 @@ async function fetchTodayData(db, projectId, day, { withRooms = false } = {}) {
       .or(`created_at.gte.${day.startISO},duration_days.is.null`)
       .order('created_at'),
     db.from('equipment_rentals')
-      .select('equipment, equipment_ka, supplier, supplier_ka, start_date, days, daily_rate')
+      .select('equipment, equipment_ka, supplier, supplier_ka, start_date, days')
       .eq('project_id', projectId)
       .lte('start_date', day.date)
       .order('start_date'),
@@ -166,7 +150,7 @@ function addEmptyRow(tbody, colspan, text) {
   tbody.appendChild(tr);
 }
 
-function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, roomProgress, photoUrls = [], manpower, progress, money, events = [], variations = [] }) {
+function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, roomProgress, photoUrls = [], manpower, progress, events = [], variations = [] }) {
   const page = document.getElementById('daily-report-template').content.firstElementChild.cloneNode(true);
   const set = (field, value) => { page.querySelector(`[data-field="${field}"]`).textContent = value; };
   const rooms = Boolean(project.has_rooms);
@@ -200,18 +184,13 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
     ? `${progress.actualPct}% (${ka('plan')}/plan ${progress.plannedPct}%)`
     : bi('No timetable'));
 
-  // Manpower
+  // Manpower. Heads only: what the day's labour and hire cost belongs in the
+  // project report, as one figure for the whole job. A price standing next to a
+  // headcount here only invited the two to be read as the same number.
   const mpRows = page.querySelector('[data-rows="manpower"]');
   if (manpower.length) {
     manpower.forEach(([trade, n]) => addRow(mpRows, [{ text: bi(tradeLabel(trade)) }, { text: n, className: 'num' }]));
     addRow(mpRows, [{ text: bi('Total'), className: 'pdf-strong' }, { text: workers, className: 'num pdf-strong' }]);
-    const dw = dayWorkerPay(logs);
-    if (dw.workers && dw.rate != null) {
-      addRow(mpRows, [
-        { text: 'დღიური მუშების ანაზღაურება / Daily workers’ pay' },
-        { text: `${dw.workers} × ${money.format(dw.rate)} = ${money.format(dw.pay)}`, className: 'num' },
-      ]);
-    }
   } else {
     addEmptyRow(mpRows, 2, bi('No manpower recorded.'));
   }
@@ -223,7 +202,6 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
       { text: biName(r.equipment, r.equipment_ka) },
       { text: biName(r.supplier, r.supplier_ka) || '-' },
       { text: `${Math.round((new Date(`${day.date}T00:00`) - new Date(`${r.start_date}T00:00`)) / 86_400_000) + 1} / ${r.days}` },
-      { text: money.format(r.daily_rate), className: 'num' },
     ]));
   } else {
     page.querySelector('[data-section="rentals"]').remove();
@@ -316,7 +294,7 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
 /**
  * Builds today's bilingual report for `project` and downloads Daily_Report_[YYYY-MM-DD].pdf.
  */
-export async function generateDailyReport({ db, project, progress, money }) {
+export async function generateDailyReport({ db, project, progress }) {
   const day = todayRange();
   const { logs, delays, carriedDelays, rentals, roomProgress, events, variations } =
     await fetchTodayData(db, project.id, day, { withRooms: Boolean(project.has_rooms) });
@@ -325,7 +303,7 @@ export async function generateDailyReport({ db, project, progress, money }) {
   const photoUrls = await fetchPhotoUrls(db, { logs, delays, carriedDelays });
   const page = buildReport({
     project, day, logs, delays, carriedDelays, rentals, roomProgress, photoUrls,
-    manpower, progress, money, events, variations,
+    manpower, progress, events, variations,
   });
   const root = document.getElementById('pdf-export-root');
   root.replaceChildren(page);
