@@ -23,6 +23,13 @@ const KEEP_WHOLE = [
   'tr', 'p',
 ].join(',');
 
+/** True for a parent that lays its children out itself, where a spacer div
+ *  would become another column or cell rather than empty space. */
+const isTracked = (el) => {
+  const display = el.nodeType === 1 ? getComputedStyle(el).display : '';
+  return display.includes('flex') || display.includes('grid');
+};
+
 const spacerOf = (height, template) => {
   // A spacer between table rows has to be a row itself, or the table breaks.
   if (template.tagName === 'TR') {
@@ -73,7 +80,13 @@ export function insertPageBreaks(page, marginMm) {
     const endsOn = Math.floor((top + height - 1) / pageHeight);
     if (startsOn === endsOn) continue;
 
+    // A spacer dropped into a flex or grid parent becomes another cell and
+    // wrecks the row instead of moving it. Those parents are kept whole in
+    // their own right, so this one is left to be carried along by its box.
+    const parent = el.parentNode;
+    if (!parent || isTracked(parent)) continue;
+
     const gap = (startsOn + 1) * pageHeight - top;
-    el.parentNode?.insertBefore(spacerOf(gap, el), el);
+    parent.insertBefore(spacerOf(gap, el), el);
   }
 }
