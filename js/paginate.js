@@ -33,9 +33,13 @@ const KEEP_WHOLE = [
 const KEEP_WHOLE_LIMIT = 0.3;
 
 // A heading is no use at the foot of a page with its table overleaf, so it
-// travels with roughly the first two rows of whatever it introduces.
+// travels with the start of whatever it introduces. The amount is a share of
+// the page rather than a pixel count, so it holds at any page size: a section
+// header has to bring a real opening with it, a sub-heading rather less.
 const KEEP_WITH_NEXT = 'h1,h2,h3,.rpt-h,.rpt-sub-h';
-const LEAD_PX = 110;
+const MAIN_HEADING = 'h1,h2,.rpt-h';
+const LEAD_MAIN = 0.18;
+const LEAD_SUB = 0.12;
 
 /** A parent that lays out its own children, where a spacer would become a cell. */
 const isTracked = (el) => {
@@ -134,11 +138,12 @@ export function insertPageBreaks(page, marginMm) {
     }
     // Walk on until the heading has real content under it, not just the legend
     // or the one-line note that so often sits between a heading and its table.
+    const wanted = pageHeight * (el.matches(MAIN_HEADING) ? LEAD_MAIN : LEAD_SUB);
     let lead = 0;
-    for (let next = el.nextElementSibling; next && lead < LEAD_PX; next = next.nextElementSibling) {
+    for (let next = el.nextElementSibling; next && lead < wanted; next = next.nextElementSibling) {
       lead += next.getBoundingClientRect().height;
     }
-    return height + Math.min(lead, LEAD_PX);
+    return height + Math.min(lead, wanted);
   };
 
   // One pass in document order, because moving an element only ever moves what
