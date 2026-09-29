@@ -987,6 +987,9 @@ export async function buildProjectReport({
   )).length;
   const perPoint = progress.actualPct ? siteWorkerDays / progress.actualPct : 0;
   const toCome = perPoint ? Math.round(perPoint * (100 - progress.actualPct)) : 0;
+  // Early on this is well under one, and rounding it to a whole number prints a
+  // flat 0 for a rate that is the whole point of the tile.
+  const perPointText = perPoint >= 10 ? num.format(Math.round(perPoint)) : perPoint.toFixed(1);
 
   // The last four weeks against everything before them: the direction of
   // travel matters more than the average.
@@ -1004,7 +1007,7 @@ export async function buildProjectReport({
     <div class="rpt-tiles rpt-avoid">
       ${tile('კაც-დღე დღემდე', 'Worker-days to date', num.format(siteWorkerDays),
     `${daysWorked} ${L('სამუშაო დღე', 'days worked')}`)}
-      ${tile('კაც-დღე 1%-ზე', 'Worker-days per 1%', perPoint ? num.format(Math.round(perPoint)) : '-',
+      ${tile('კაც-დღე 1%-ზე', 'Worker-days per 1%', perPoint ? perPointText : '-',
     progress.actualPct ? `${progress.actualPct}% ${L('შესრულებული', 'complete')}` : '')}
       ${tile('დარჩენილი (პროგნოზი)', 'Still to come (forecast)', toCome ? num.format(toCome) : '-',
     L('ამავე ტემპით', 'at the same rate'))}
