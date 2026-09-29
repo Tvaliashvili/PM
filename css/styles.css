@@ -611,8 +611,13 @@ textarea.input-dark { resize: vertical; }
 .pdf-photos td + td { padding-left: 8px; }
 .pdf-photos td > div { height: 118px; overflow: hidden; border-radius: 4px; }
 .pdf-photos img { display: block; width: 100%; min-height: 100%; }
-/* A heading stays with the photos (or the table) it introduces. */
-.pdf-page h2 { page-break-after: avoid; break-after: avoid; }
+/* A heading stays with the photos (or the table) it introduces, and is never
+   sliced through the middle - half a line of Georgian reads as other letters. */
+.pdf-page h2, .pdf-page h3 {
+  page-break-after: avoid; break-after: avoid;
+  page-break-inside: avoid; break-inside: avoid;
+}
+.pdf-page tr, .pdf-page td, .pdf-page th { page-break-inside: avoid; break-inside: avoid; }
 
 /* ---------- Document sign-off (all generated documents) ---------- */
 .doc-signature {
@@ -752,6 +757,9 @@ textarea.input-dark { resize: vertical; }
 .rpt-bad   { background: #ffe4e6; color: #be123c; }
 .rpt-warn  { background: #fef3c7; color: #b45309; }
 .rpt-muted.rpt-chip, .rpt-chip.rpt-muted { background: #f1f5f9; color: #475569; }
+/* In a table the column is narrow and some Georgian labels are long, so a chip
+   there wraps rather than pushing its way out of the cell. */
+.rpt td .rpt-chip { white-space: normal; }
 
 .rpt table { margin-top: 4px; }
 .rpt tbody tr:nth-child(even) td { background: #f8fafc; }
@@ -790,7 +798,13 @@ textarea.input-dark { resize: vertical; }
 .rpt-h-note { font-size: 10.5px; font-weight: 600; color: #475569; }
 .rpt-sub-h { margin: 16px 0 6px; font-size: 12px; font-weight: 700; line-height: 1.5; }
 .rpt h2, .rpt h3, .rpt .rpt-h, .rpt .rpt-sub-h { page-break-after: avoid; break-after: avoid; }
-.rpt p, .rpt .rpt-legend, .rpt .rpt-sub-h { page-break-inside: avoid; break-inside: avoid; }
+/* Nothing here may be cut through the middle by a page break: a heading sliced
+   halfway down the line renders as a different Georgian word entirely. */
+.rpt h2, .rpt h3, .rpt .rpt-h, .rpt .rpt-sub-h, .rpt p, .rpt .rpt-legend,
+.rpt .rpt-tile, .rpt .rpt-panel, .rpt tr, .rpt td, .rpt th, .rpt .rpt-chart {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
 .rpt-sub-h em { margin-left: 4px; }
 
 /* Header */

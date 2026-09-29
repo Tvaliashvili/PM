@@ -640,6 +640,10 @@ export async function buildProjectReport({
       <text x="${px(i)}" y="${Hh - 8}" text-anchor="middle" font-size="9" fill="${p.k === thisMonth ? '#0f172a' : '#64748b'}"
             font-weight="${p.k === thisMonth ? 700 : 400}">${p.k.slice(5)}.${p.k.slice(2, 4)}</text>` : '')).join('');
     const lastPaid = paidPts.at(-1);
+    // The spent figure normally sits to the right of its last point. On the
+    // right-hand edge there is no room, so it turns and sits to the left of it
+    // instead - otherwise the amount runs off the chart and is cut in half.
+    const lastPaidAtEdge = Boolean(lastPaid) && px(lastPaid.i) > W - padR - 70;
     sCurve = `
       <div class="rpt-chart rpt-avoid">
         <div class="rpt-legend">
@@ -655,7 +659,8 @@ export async function buildProjectReport({
           ${paidPath ? `<path d="${paidPath}" fill="none" stroke="#f59e0b" stroke-width="2.5"/>` : ''}
           ${paidPts.map((p) => `<circle cx="${px(p.i)}" cy="${py(p.ca)}" r="2.5" fill="#f59e0b"/>`).join('')}
           ${nowIdx >= 0 ? `<circle cx="${px(nowIdx)}" cy="${py(cost.earned)}" r="5" fill="#059669" stroke="#fff" stroke-width="1.5"/>` : ''}
-          ${lastPaid ? `<text x="${px(lastPaid.i) + 7}" y="${py(lastPaid.ca) - 6}" font-size="10" font-weight="700" fill="#b45309">${esc(mc(lastPaid.ca))}</text>` : ''}
+          ${lastPaid ? `<text x="${px(lastPaid.i) + (lastPaidAtEdge ? -7 : 7)}" y="${py(lastPaid.ca) - 6}"
+            text-anchor="${lastPaidAtEdge ? 'end' : 'start'}" font-size="10" font-weight="700" fill="#b45309">${esc(mc(lastPaid.ca))}</text>` : ''}
           <text x="${px(pts.length - 1) - 2}" y="${py(pts.at(-1).cp) - 6}" text-anchor="end" font-size="10" font-weight="700" fill="#475569">${esc(mc(pts.at(-1).cp))}</text>
           ${xLabels}
         </svg>
