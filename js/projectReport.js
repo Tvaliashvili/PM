@@ -385,12 +385,13 @@ export async function buildProjectReport({
       ${H('გადახრა დამტკიცებული გრაფიკიდან', 'Drift since baseline',
     project.baseline_set_on ? `${L('დამტკიცდა', 'approved')} ${d(project.baseline_set_on)}` : '')}
       <div class="rpt-tiles rpt-tiles-2 rpt-avoid">
-        ${/* The unit and the two dates go in the sub-line: a tile's value is
-             escaped, so the bilingual markup would print rather than render -
-             and the dates are what show why the figure is what it is. */ ''}
-        ${tile('დასრულების თარიღი გადაიწია', 'Completion moved by',
-    `${projectDrift > 0 ? '+' : ''}${projectDrift}`,
-    `${L('დღით', Math.abs(projectDrift) === 1 ? 'day' : 'days')} · ${d(baseEnd)} → ${d(plannedEnd)}`,
+        ${/* The date itself, not the shift in it. A bare "0" at the head of a
+             section about slippage reads as a fault; a date with "unchanged"
+             under it says the same thing and needs no working out. */ ''}
+        ${tile('დასრულების თარიღი', 'Completion date', d(plannedEnd),
+    projectDrift
+      ? `${projectDrift > 0 ? '+' : ''}${projectDrift} ${L('დღით', Math.abs(projectDrift) === 1 ? 'day' : 'days')} · ${L('დამტკიცებული იყო', 'approved')} ${d(baseEnd)}`
+      : L('უცვლელი დამტკიცების დღიდან', 'unchanged since baseline'),
     projectDrift > 0 ? 'bad' : 'ok')}
         ${tile('ამოცანა გადაიწია', 'Activities moved', `${drifted.length} / ${baselined.length}`,
     '', drifted.length ? 'warn' : 'ok')}
