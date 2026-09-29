@@ -2,7 +2,9 @@
 // Daily PDF report - bilingual (Georgian / English)
 // Today's daily_logs + delays → html2pdf
 // =============================================================
-import { MANPOWER_TRADES, REPORT_AUTHOR, DAY_WORKER_KEY } from './config.js';
+import {
+  MANPOWER_TRADES, REPORT_AUTHOR, DAY_WORKER_KEY, SITE_EVENT_KINDS, INCIDENT_SEVERITIES,
+} from './config.js';
 import { rentalEnd, delayIsOngoing, delayDaysLost } from './schedule.js';
 import { ka, bi, biName, dateKa, dateEn, signatureHtml, roomLabelBi } from './bilingual.js';
 import { fetchPhotos, signPhotos } from './photos.js';
@@ -63,7 +65,7 @@ function mergeManpower(logs) {
 
 // ---------- 1. Query today's data ----------
 async function fetchTodayData(db, projectId, day, { withRooms = false } = {}) {
-  const [logs, delays, rentals, rooms] = await Promise.all([
+  const [logs, delays, rentals, rooms, events, variations] = await Promise.all([
     db.from('daily_logs')
       .select('id, log_date, weather, manpower, notes, notes_en, day_rate')
       .eq('project_id', projectId)
@@ -84,9 +86,23 @@ async function fetchTodayData(db, projectId, day, { withRooms = false } = {}) {
     withRooms
       ? db.from('flats').select('status').eq('project_id', projectId)
       : Promise.resolve({ data: [] }),
+    // An incident is the thing nobody should hear about a week late, so it goes
+    // in the day's own report rather than waiting for the project one.
+    db.from('site_events')
+      .select('kind, severity, title, description, description_en, action, closed, contractors(name, name_ka)')
+      .eq('project_id', projectId)
+      .eq('event_date', day.date)
+      .order('created_at'),
+    // Instructed today. The value and the pricing live in the variation
+    // register; what matters here is the date the instruction was given.
+    db.from('variations')
+      .select('ref, title, description, description_en, contractors(name, name_ka)')
+      .eq('project_id', projectId)
+      .eq('instructed_on', day.date)
+      .order('created_at'),
   ]);
 
-  const failed = [logs, delays, rentals, rooms].find((r) => r.error);
+  const failed = [logs, delays, rentals, rooms, events, variations].find((r) => r.error);
   if (failed) throw new Error(`Could not load today's data: ${failed.error.message}`);
   // Equipment on hire today: started on or before today and not yet returned.
   const onHire = rentals.data.filter((r) => rentalEnd(r) >= day.date);
@@ -98,7 +114,15 @@ async function fetchTodayData(db, projectId, day, { withRooms = false } = {}) {
     total: rooms.data.length,
     done: rooms.data.filter((r) => r.status === 'finished' || r.status === 'handed_over').length,
   };
-  return { logs: logs.data, delays: today, carriedDelays: carried, rentals: onHire, roomProgress };
+  return {
+    logs: logs.data,
+    delays: today,
+    carriedDelays: carried,
+    rentals: onHire,
+    roomProgress,
+    events: events.data,
+    variations: variations.data,
+  };
 }
 
 /**
@@ -136,7 +160,7 @@ function addEmptyRow(tbody, colspan, text) {
   tbody.appendChild(tr);
 }
 
-function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, roomProgress, photoUrls = [], manpower, progress, money }) {
+function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, roomProgress, photoUrls = [], manpower, progress, money, events = [], variations = [] }) {
   const page = document.getElementById('daily-report-template').content.firstElementChild.cloneNode(true);
   const set = (field, value) => { page.querySelector(`[data-field="${field}"]`).textContent = value; };
   const rooms = Boolean(project.has_rooms);
@@ -215,6 +239,34 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
     addEmptyRow(delayRows, rooms ? 4 : 3, bi('No delays recorded today.'));
   }
 
+  // Safety and quality, and variations instructed - both sections drop out on a
+  // day that had none, so a quiet report doesn't carry two empty tables.
+  if (events.length) {
+    const eventRows = page.querySelector('[data-rows="events"]');
+    events.forEach((e) => addRow(eventRows, [
+      { text: bi(SITE_EVENT_KINDS[e.kind] ?? e.kind) },
+      { text: [e.title, e.description, e.description_en].filter(Boolean).join('\n'), className: 'pdf-bi' },
+      { text: biName(e.contractors?.name, e.contractors?.name_ka) || '-' },
+      { text: e.action || '-' },
+      { text: e.severity
+        ? `${bi(INCIDENT_SEVERITIES[e.severity] ?? e.severity)} · ${bi(e.closed ? 'Closed' : 'Open')}`
+        : bi(e.closed ? 'Closed' : 'Open') },
+    ]));
+  } else {
+    page.querySelector('[data-section="events"]').remove();
+  }
+
+  if (variations.length) {
+    const variationRows = page.querySelector('[data-rows="variations"]');
+    variations.forEach((v) => addRow(variationRows, [
+      { text: v.ref || '-' },
+      { text: [v.title, v.description, v.description_en].filter(Boolean).join('\n'), className: 'pdf-bi' },
+      { text: biName(v.contractors?.name, v.contractors?.name_ka) || '-' },
+    ]));
+  } else {
+    page.querySelector('[data-section="variations"]').remove();
+  }
+
   // Site notes (Gemini-corrected Georgian + English) + footer
   const joinNotes = (key) => logs.map((l) => l[key]).filter(Boolean).join('\n\n');
   set('notes-ka', joinNotes('notes') || ka('No site notes recorded.'));
@@ -253,12 +305,15 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
  */
 export async function generateDailyReport({ db, project, progress, money }) {
   const day = todayRange();
-  const { logs, delays, carriedDelays, rentals, roomProgress } =
+  const { logs, delays, carriedDelays, rentals, roomProgress, events, variations } =
     await fetchTodayData(db, project.id, day, { withRooms: Boolean(project.has_rooms) });
   const manpower = mergeManpower(logs);
 
   const photoUrls = await fetchPhotoUrls(db, { logs, delays, carriedDelays });
-  const page = buildReport({ project, day, logs, delays, carriedDelays, rentals, roomProgress, photoUrls, manpower, progress, money });
+  const page = buildReport({
+    project, day, logs, delays, carriedDelays, rentals, roomProgress, photoUrls,
+    manpower, progress, money, events, variations,
+  });
   const root = document.getElementById('pdf-export-root');
   root.replaceChildren(page);
 

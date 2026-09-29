@@ -104,6 +104,8 @@ export const KA = {
   'Site-wide': 'მთელი ობიექტი',
   'Ongoing': 'მიმდინარე',
   'since': 'დაწყებული',
+  'Open': 'ღიაა',
+  'Closed': 'დახურულია',
   'Not recorded': 'არ არის ჩაწერილი',
   'Total': 'სულ',
   'No manpower recorded.': 'სამუშაო ძალა არ არის ჩაწერილი.',
