@@ -1017,9 +1017,11 @@ export async function buildProjectReport({
   const allAvg = daysWorked ? Math.round(siteWorkerDays / daysWorked) : 0;
 
   const labourBlock = siteWorkerDays ? `
+    ${/* Wrapped, because the day's logs follow straight after and the gap has
+         to sit on the block rather than on the row of tiles inside it. */ ''}
+    <div class="rpt-labour">
     <h3 class="rpt-sub-h">${L('სამუშაო ძალის ხარჯვა', 'Labour spent')}</h3>
-    ${/* The day's logs follow straight after, so this row needs a gap under it. */ ''}
-    <div class="rpt-tiles rpt-tiles-end rpt-avoid">
+    <div class="rpt-tiles rpt-avoid">
       ${/* The average is what a reader pictures: how many men are on site on a
            working day. The total it comes from goes underneath, since the two
            tiles beside it are worked out from that. */ ''}
@@ -1029,6 +1031,7 @@ export async function buildProjectReport({
     progress.actualPct ? `${progress.actualPct}% ${L('შესრულებული', 'complete')}` : '')}
       ${tile('დარჩენილი (პროგნოზი)', 'Still to come (forecast)', toCome ? num.format(toCome) : '-',
     L('ამავე ტემპით', 'at the same rate'))}
+    </div>
     </div>` : '';
 
   const logsSection = `
