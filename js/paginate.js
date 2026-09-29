@@ -157,6 +157,42 @@ export function insertPageBreaks(page, marginMm) {
     for (const el of page.querySelectorAll(selector)) {
       if (push(el, needsOf(el))) moved = true;
     }
-    if (!moved) return;
+    if (!moved) break;
+  }
+
+  keepSignatureCompany(page, pageHeight, topOf, push);
+}
+
+/**
+ * A sign-off alone on the last page reads as a blank sheet with a name on it.
+ * When that is how it has fallen, the last piece of content is brought forward
+ * onto the same page, so the signature closes the report rather than opening a
+ * page of its own.
+ */
+function keepSignatureCompany(page, pageHeight, topOf, push) {
+  const signature = page.querySelector('.doc-signature');
+  if (!signature) return;
+
+  const pageOf = (el) => Math.floor(topOf(el) / pageHeight);
+  const last = pageOf(signature);
+  if (last === 0) return; // a one-page report: nothing to be alone on
+
+  // Anything else already up there and it is not alone.
+  const before = Node.DOCUMENT_POSITION_PRECEDING;
+  const others = [...page.querySelectorAll(KEEP_WHOLE)].filter((el) => (
+    el !== signature
+    && !signature.contains(el)
+    && (signature.compareDocumentPosition(el) & before) !== 0
+  ));
+  if (others.some((el) => pageOf(el) === last)) return;
+
+  // The last thing that fits above: bring it down to keep the sign-off company.
+  const room = pageHeight - signature.getBoundingClientRect().height;
+  for (let i = others.length - 1; i >= 0; i -= 1) {
+    const el = others[i];
+    const { height } = el.getBoundingClientRect();
+    if (height <= 0 || height > room) continue; // too big to travel with it
+    push(el, height + signature.getBoundingClientRect().height);
+    return;
   }
 }
