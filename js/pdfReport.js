@@ -1,6 +1,6 @@
 // =============================================================
 // Daily PDF report - bilingual (Georgian / English)
-// Today's daily_logs + delays → the browser's print engine
+// Today's daily_logs + delays → html2pdf
 // =============================================================
 import {
   MANPOWER_TRADES, REPORT_AUTHOR, DAY_WORKER_KEY,
@@ -9,7 +9,7 @@ import {
 import { rentalEnd, delayIsOngoing, delayDaysLost } from './schedule.js';
 import { ka, bi, biName, dateKa, dateEn, signatureHtml, roomLabelBi } from './bilingual.js';
 import { fetchPhotos, signPhotos } from './photos.js';
-import { printDocument } from './print.js';
+import { insertPageBreaks } from './paginate.js';
 
 // ---------- Helpers ----------
 function todayRange() {
@@ -284,8 +284,8 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
   const joinNotes = (key) => logs.map((l) => l[key]).filter(Boolean).join('\n\n');
   set('notes-ka', joinNotes('notes') || ka('No site notes recorded.'));
   set('notes-en', joinNotes('notes_en') || 'No site notes recorded.');
-  // Photos, two to a row, in a table: a row keeps its pair together across a
-  // page break, and every frame is the same size so the shots line up.
+  // Photos, two to a row. They go in a table because that is the one thing
+  // html2pdf keeps whole across a page break - a grid item it happily slices.
   if (photoUrls.length) {
     const body = page.querySelector('[data-photos]');
     for (let i = 0; i < photoUrls.length; i += 2) {
@@ -314,8 +314,7 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
 
 // ---------- 4. Export ----------
 /**
- * Builds today's bilingual report for `project` and sends it to the printer,
- * where it can be saved as Daily_Report_[YYYY-MM-DD].pdf.
+ * Builds today's bilingual report for `project` and downloads Daily_Report_[YYYY-MM-DD].pdf.
  */
 export async function generateDailyReport({ db, project, progress, money }) {
   const day = todayRange();
@@ -328,5 +327,35 @@ export async function generateDailyReport({ db, project, progress, money }) {
     project, day, logs, delays, carriedDelays, rentals, roomProgress, photoUrls,
     manpower, progress, money, events, variations,
   });
-  await printDocument(page, `Daily_Report_${fileSafe(project.name)}_${day.date}`);
+  const root = document.getElementById('pdf-export-root');
+  root.replaceChildren(page);
+
+  try {
+    await document.fonts?.ready; // make sure the Georgian font is loaded before rendering
+    // A photo still loading would be drawn as a blank box.
+    await Promise.all([...page.querySelectorAll('img')].map((img) => (
+      img.complete ? img.decode().catch(() => {}) : new Promise((done) => {
+        img.addEventListener('load', done, { once: true });
+        img.addEventListener('error', done, { once: true });
+      })
+    )));
+    // Measured only once everything above has settled - the photos change the
+    // height of the page, and a break placed before they load lands wrong.
+    const margin = [10, 10, 12, 10]; // mm: top, right, bottom, left
+    insertPageBreaks(page, margin);
+    await window.html2pdf()
+      .set({
+        margin,
+        filename: `Daily_Report_${fileSafe(project.name)}_${day.date}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'] },
+      })
+      .from(page)
+      .save();
+  } finally {
+    root.replaceChildren();
+  }
+
 }

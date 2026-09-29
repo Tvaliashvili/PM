@@ -9,8 +9,7 @@ import {
   BOQ_UNITS, CONTRACTOR_TRADES,
 } from './config.js';
 import { generateDailyReport } from './pdfReport.js';
-import { buildProjectReport, printProjectReport } from './projectReport.js';
-import { printOpenReportOnCtrlP } from './print.js';
+import { buildProjectReport, downloadProjectReport } from './projectReport.js';
 import {
   scheduleProgress, taskState, durationDays, completionOf, expectedPct,
   plannedSpendByMonth, actualSpendByMonth, costPosition, contractorPerformance,
@@ -3279,11 +3278,12 @@ async function openProjectReport() {
 async function downloadReport() {
   if (!reportPage) return;
   const btn = $('#btn-report-pdf');
-  setBusy(btn, true, 'Printing…');
+  setBusy(btn, true, 'Saving…');
   try {
-    await printProjectReport(reportPage, currentProject());
+    await downloadProjectReport(reportPage, currentProject());
+    toast('Project report downloaded.', 'success');
   } catch (err) {
-    toast(err.message || 'Could not print the report.', 'error');
+    toast(err.message || 'Could not save the PDF.', 'error');
   } finally {
     setBusy(btn, false);
   }
@@ -3305,6 +3305,7 @@ async function exportDailyReport(e) {
 
   try {
     await generateDailyReport({ db, project, progress: state.progress, money });
+    toast('Daily report downloaded.', 'success');
   } catch (err) {
     toast(err.message || 'Could not generate the report.', 'error');
   } finally {
@@ -3392,7 +3393,6 @@ $('#form-delete-project').addEventListener('submit', confirmDeleteProject);
 $('#btn-report-daily').addEventListener('click', exportDailyReport);
 $('#btn-view-report').addEventListener('click', openProjectReport);
 $('#btn-report-pdf').addEventListener('click', downloadReport);
-printOpenReportOnCtrlP();
 
 if (db) {
   $('#form-login').addEventListener('submit', signIn);

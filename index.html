@@ -17,6 +17,9 @@
   <!-- Supabase JS v2 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
+  <!-- html2pdf.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 
@@ -506,9 +509,8 @@
   </div>
   </div>
 
-  <!-- The report being printed is moved here: on paper this is the whole
-       document, and everything else in the body is hidden (see @media print). -->
-  <div id="print-root"></div>
+  <!-- Off-screen render target for PDF export (not display:none, so html2canvas can measure it) -->
+  <div id="pdf-export-root" class="pdf-offscreen" aria-hidden="true"></div>
 
   <!-- Printable daily report template (filled by js/pdfReport.js) -->
   <template id="daily-report-template">
@@ -779,7 +781,7 @@
     <div class="modal-header">
       <h2 id="report-title">Project Report</h2>
       <div class="flex items-center gap-2">
-        <button type="button" id="btn-report-pdf" class="btn btn-primary btn-sm" disabled>Print / Save PDF</button>
+        <button type="button" id="btn-report-pdf" class="btn btn-primary btn-sm" disabled>Download PDF</button>
         <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
       </div>
     </div>

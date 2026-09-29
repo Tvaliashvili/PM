@@ -515,14 +515,10 @@ textarea.input-dark { resize: vertical; }
 }
 
 /* ---------- PDF export (light, print-friendly) ---------- */
-/* Holds the report while it is being printed. Parked off-screen rather than
-   hidden, so the page is laid out and the Georgian font is actually fetched
-   before the print dialog opens; on paper it becomes the document itself. */
-#print-root {
+.pdf-offscreen {
   position: fixed;
   top: 0;
   left: -10000px;
-  width: 718px;
   pointer-events: none;
 }
 
@@ -606,16 +602,22 @@ textarea.input-dark { resize: vertical; }
 .pdf-page .pdf-empty { color: #64748b; font-style: italic; text-align: center; }
 .pdf-page .pdf-bi { white-space: pre-line; }
 
-/* Photos sit in a table, two to a row: the row keeps its pair together across
-   a page break, and every frame is the same size, so portrait and landscape
-   shots line up. The frame crops; it never stretches the photo. */
+/* Photos in the daily report: two to a row, each kept whole across a break. */
+/* Photos sit in a table: a row is the one unit html2pdf will not split, and
+   every frame is the same size, so portrait and landscape shots line up. The
+   frame crops; it never stretches the photo. */
 .pdf-photos { width: 100%; border-collapse: separate; border-spacing: 0 8px; }
 .pdf-photos td { width: 50%; padding: 0; border: 0; vertical-align: top; }
 .pdf-photos td + td { padding-left: 8px; }
 .pdf-photos td > div { height: 118px; overflow: hidden; border-radius: 4px; }
 .pdf-photos img { display: block; width: 100%; min-height: 100%; }
-/* Page-break behaviour lives in the @media print block at the end of this
-   file: it is the print engine that acts on it, and nothing else should. */
+/* A heading stays with the photos (or the table) it introduces, and is never
+   sliced through the middle - half a line of Georgian reads as other letters. */
+.pdf-page h2, .pdf-page h3 {
+  page-break-after: avoid; break-after: avoid;
+  page-break-inside: avoid; break-inside: avoid;
+}
+.pdf-page tr, .pdf-page td, .pdf-page th { page-break-inside: avoid; break-inside: avoid; }
 
 /* ---------- Document sign-off (all generated documents) ---------- */
 .doc-signature {
@@ -795,6 +797,14 @@ textarea.input-dark { resize: vertical; }
 .rpt .rpt-h h2 { margin: 0; padding-bottom: 7px; border: 0; font-size: 14px; line-height: 1.5; }
 .rpt-h-note { font-size: 10.5px; font-weight: 600; color: #475569; }
 .rpt-sub-h { margin: 16px 0 6px; font-size: 12px; font-weight: 700; line-height: 1.5; }
+.rpt h2, .rpt h3, .rpt .rpt-h, .rpt .rpt-sub-h { page-break-after: avoid; break-after: avoid; }
+/* Nothing here may be cut through the middle by a page break: a heading sliced
+   halfway down the line renders as a different Georgian word entirely. */
+.rpt h2, .rpt h3, .rpt .rpt-h, .rpt .rpt-sub-h, .rpt p, .rpt .rpt-legend,
+.rpt .rpt-tile, .rpt .rpt-panel, .rpt tr, .rpt td, .rpt th, .rpt .rpt-chart {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
 .rpt-sub-h em { margin-left: 4px; }
 
 /* Header */
@@ -1111,92 +1121,3 @@ textarea.input-dark { resize: vertical; }
 .bar-list-track { height: 0.6rem; border-radius: 999px; background: var(--ink-700); overflow: hidden; }
 .bar-list-fill { display: block; height: 100%; border-radius: 999px; background: #f43f5e; }
 .bar-list-value { text-align: right; font-weight: 600; color: #fda4af; font-variant-numeric: tabular-nums; }
-
-/* =============================================================
-   Print: the browser's own engine renders the report.
-
-   Every rule here is scoped to body.is-printing, which is set only while a
-   report is on its way to the printer. Without that scope they would also
-   apply to an ordinary Ctrl+P of the app, and repaint the dashboard as a
-   half-styled white page. Text stays text - selectable, searchable and sharp
-   at any zoom - because nothing is rasterised.
-   ============================================================= */
-@page {
-  size: A4 portrait;
-  /* 10mm sides keeps the printable width at 190mm = 718px @96dpi, which is
-     exactly what .pdf-page is laid out for, so nothing is scaled. */
-  margin: 12mm 10mm 14mm;
-}
-
-@media print {
-  body.is-printing,
-  html:has(body.is-printing) {
-    background: #fff;
-    height: auto;
-    overflow: visible; /* a clipped body prints one page and stops */
-  }
-
-  /* The report is the document; the app around it is not printed. */
-  body.is-printing > *:not(#print-root) { display: none !important; }
-  body.is-printing #print-root {
-    position: static;
-    left: auto;
-    /* Kept at the width the report is designed for. The page box is 190mm =
-       718px at 96dpi, so this is the same measure, and every column, track and
-       chart keeps the proportions it has on screen. */
-    width: 718px;
-    pointer-events: auto;
-  }
-
-  /* Backgrounds and rules carry meaning here - the dark header, the status
-     chips, the timeline bars - so they are printed rather than dropped. */
-  body.is-printing #print-root *,
-  body.is-printing #print-root *::before,
-  body.is-printing #print-root *::after {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-
-  body.is-printing .pdf-page { margin: 0; box-shadow: none; }
-
-  /* A box that hides its overflow is clipped to the page it starts on, so the
-     rest of the timeline simply vanishes. It keeps its border; it loses only
-     the rounded corner it was hiding. */
-  body.is-printing .rpt-gantt,
-  body.is-printing .rpt-cards,
-  body.is-printing .rpt-hbars,
-  body.is-printing .rpt-two,
-  body.is-printing .rpt-columns {
-    overflow: visible;
-  }
-
-  /* Small units of writing are never split down the middle. */
-  body.is-printing :is(tr, img, li,
-    .rpt-card, .rpt-tile, .rpt-panel, .rpt-hbar, .rpt-g-row, .rpt-legend,
-    .rpt-chart, .rpt-h, .rpt-sub-h, .rpt-tiles,
-    .pdf-facts > div, .pdf-avoid-break, .pdf-photos td, .doc-signature) {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  /* Anything longer than a page must be allowed to break, or the engine keeps
-     it whole by clipping whatever hangs past the bottom. The rows inside are
-     protected above, so the break still lands between lines, never through one. */
-  body.is-printing :is(table, tbody, .rpt-gantt, .rpt-hbars, .rpt-cards,
-    .rpt-two, .rpt-columns, .rpt-section, .pdf-page, .pdf-photos) {
-    break-inside: auto;
-    page-break-inside: auto;
-  }
-
-  /* A heading is never the last thing on a page. */
-  body.is-printing :is(h1, h2, h3, .rpt-h, .rpt-sub-h) {
-    break-after: avoid;
-    page-break-after: avoid;
-  }
-
-  /* A table carried onto the next page repeats its own header. */
-  body.is-printing thead { display: table-header-group; }
-  body.is-printing tfoot { display: table-footer-group; }
-
-  body.is-printing p { orphans: 3; widows: 3; }
-}
