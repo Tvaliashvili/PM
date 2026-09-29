@@ -634,7 +634,10 @@ textarea.input-dark { resize: vertical; }
   color: #b45309;
 }
 .doc-signature-name { margin-top: 4px; font-size: 14px; font-weight: 700; color: #0f172a; }
-.doc-signature-title { font-size: 11.5px; color: #334155; }
+/* The job title is long enough in Georgian that the English cannot follow it
+   on the same line, so it sits underneath - one language to a line, unbroken. */
+.doc-signature-title { font-size: 11.5px; color: #334155; white-space: nowrap; }
+.doc-signature-title-en { font-size: 11px; color: #64748b; white-space: nowrap; }
 .doc-signature-name span,
 .doc-signature-title span { font-weight: 400; color: #64748b; }
 .doc-signature-line {

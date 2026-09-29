@@ -137,7 +137,8 @@ export function signatureHtml(author) {
     <div class="doc-signature">
       <p class="doc-signature-label">მოამზადა · Prepared by</p>
       <p class="doc-signature-name">${e(author.nameKa)} <span>/ ${e(author.name)}</span></p>
-      <p class="doc-signature-title">${e(author.titleKa)} <span>/ ${e(author.title)}</span></p>
+      <p class="doc-signature-title">${e(author.titleKa)}</p>
+      <p class="doc-signature-title-en">${e(author.title)}</p>
       <div class="doc-signature-line"><span>ხელმოწერა · Signature</span></div>
     </div>`;
 }
