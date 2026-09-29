@@ -618,9 +618,11 @@ textarea.input-dark { resize: vertical; }
    reliably, so the full-height picture spilled over the one beneath it. Half a
    column wide, a landscape shot comes out about 230px tall, which is the size
    these were drawn at anyway. */
-.pdf-photos { width: 100%; border-collapse: separate; border-spacing: 0 12px; }
-.pdf-photos td { width: 50%; padding: 0; border: 0; vertical-align: top; }
-.pdf-photos td + td { padding-left: 12px; }
+/* The gap between rows is cell padding, not border-spacing: html2canvas draws
+   the one and quietly ignores the other, which left the rows touching. */
+.pdf-photos { width: 100%; border-collapse: collapse; }
+.pdf-photos td { width: 50%; padding: 0 0 14px; border: 0; vertical-align: top; }
+.pdf-photos td + td { padding-left: 14px; }
 .pdf-photos td > div { border-radius: 4px; line-height: 0; text-align: center; }
 /* A photo is fitted inside the column and a fixed height, never cropped or
    stretched: both bounds are maximums, so the picture keeps its own shape and
@@ -671,9 +673,11 @@ textarea.input-dark { resize: vertical; }
 .doc-signature-sign { width: 220px; margin-top: 16px; }
 .doc-signature-mark {
   display: block;
-  width: 120px;
+  width: 130px;
   height: auto;
-  margin: 0 0 -12px 8px;
+  /* About a third of the mark hangs below, so the rule runs through the ink
+     rather than sitting under it. */
+  margin: 0 0 -30px 8px;
 }
 .doc-signature-line {
   padding-top: 4px;

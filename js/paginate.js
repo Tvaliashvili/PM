@@ -99,16 +99,9 @@ export function insertPageBreaks(page, marginMm) {
 
   const topOf = (el) => el.getBoundingClientRect().top - page.getBoundingClientRect().top;
 
-  /** Pushes `el` to the top of the next page if `needs` px will not fit.
-   *  Returns true when it moved something. */
-  const push = (el, needs) => {
-    const top = topOf(el);
-    if (needs <= 0 || needs > pageHeight) return false; // too tall either way
-    const startsOn = Math.floor(top / pageHeight);
-    // A hair over the edge is a rounding artefact, not a second page.
-    const endsOn = Math.floor((top + needs - 1) / pageHeight);
-    if (startsOn === endsOn) return false;
-
+  /** Moves `el` down to the top of the page after the one it starts on. */
+  const shove = (el) => {
+    const startsOn = Math.floor(topOf(el) / pageHeight);
     const target = movable(el);
     const parent = target.parentNode;
     if (!parent || parent.nodeType !== 1) return false;
@@ -116,7 +109,7 @@ export function insertPageBreaks(page, marginMm) {
     // The whole row is taller than a page, so moving it solves nothing. Push
     // the one item instead: a margin still shifts it inside its own track.
     if (target !== el && target.getBoundingClientRect().height > pageHeight) {
-      const gap = (startsOn + 1) * pageHeight - top;
+      const gap = (startsOn + 1) * pageHeight - topOf(el);
       if (gap <= 0) return false;
       el.style.marginTop = `${parseFloat(el.style.marginTop || 0) + gap}px`;
       return true;
@@ -126,6 +119,18 @@ export function insertPageBreaks(page, marginMm) {
     if (gap <= 0) return false;
     parent.insertBefore(spacerOf(gap, target), target);
     return true;
+  };
+
+  /** Pushes `el` to the top of the next page if `needs` px will not fit.
+   *  Returns true when it moved something. */
+  const push = (el, needs) => {
+    const top = topOf(el);
+    if (needs <= 0 || needs > pageHeight) return false; // too tall either way
+    const startsOn = Math.floor(top / pageHeight);
+    // A hair over the edge is a rounding artefact, not a second page.
+    const endsOn = Math.floor((top + needs - 1) / pageHeight);
+    if (startsOn === endsOn) return false;
+    return shove(el);
   };
 
   // How much of the page this element needs: its own height, and for a heading
@@ -160,7 +165,7 @@ export function insertPageBreaks(page, marginMm) {
     if (!moved) break;
   }
 
-  keepSignatureCompany(page, pageHeight, topOf, push);
+  keepSignatureCompany(page, pageHeight, topOf, shove);
 }
 
 /**
@@ -169,7 +174,7 @@ export function insertPageBreaks(page, marginMm) {
  * onto the same page, so the signature closes the report rather than opening a
  * page of its own.
  */
-function keepSignatureCompany(page, pageHeight, topOf, push) {
+function keepSignatureCompany(page, pageHeight, topOf, shove) {
   const signature = page.querySelector('.doc-signature');
   if (!signature) return;
 
@@ -187,12 +192,15 @@ function keepSignatureCompany(page, pageHeight, topOf, push) {
   if (others.some((el) => pageOf(el) === last)) return;
 
   // The last thing that fits above: bring it down to keep the sign-off company.
+  // It is moved outright rather than offered to the usual test - that only acts
+  // on something already straddling an edge, and the last row of a half-empty
+  // page straddles nothing, which is why it stayed put.
   const room = pageHeight - signature.getBoundingClientRect().height;
   for (let i = others.length - 1; i >= 0; i -= 1) {
     const el = others[i];
     const { height } = el.getBoundingClientRect();
     if (height <= 0 || height > room) continue; // too big to travel with it
-    push(el, height + signature.getBoundingClientRect().height);
-    return;
+    if (pageOf(el) !== last - 1) continue;      // only from the page just above
+    if (shove(el)) return;
   }
 }
