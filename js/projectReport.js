@@ -1006,7 +1006,7 @@ export async function buildProjectReport({
     <h3 class="rpt-sub-h">${L('სამუშაო ძალის ხარჯვა', 'Labour spent')}</h3>
     <div class="rpt-tiles rpt-avoid">
       ${tile('კაც-დღე დღემდე', 'Worker-days to date', num.format(siteWorkerDays),
-    `${daysWorked} ${L('სამუშაო დღე', 'days worked')}`)}
+    `${daysWorked} ${L('სამუშაო დღე', 'days worked')} · ${L('საშუალოდ', 'avg')} ${allAvg}/${L('დღე', 'day')}`)}
       ${tile('კაც-დღე 1%-ზე', 'Worker-days per 1%', perPoint ? perPointText : '-',
     progress.actualPct ? `${progress.actualPct}% ${L('შესრულებული', 'complete')}` : '')}
       ${tile('დარჩენილი (პროგნოზი)', 'Still to come (forecast)', toCome ? num.format(toCome) : '-',
