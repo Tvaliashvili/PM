@@ -95,43 +95,58 @@ export function insertPageBreaks(page, marginMm) {
 
   const topOf = (el) => el.getBoundingClientRect().top - page.getBoundingClientRect().top;
 
-  /** Pushes `el` to the top of the next page if `needs` px will not fit. */
+  /** Pushes `el` to the top of the next page if `needs` px will not fit.
+   *  Returns true when it moved something. */
   const push = (el, needs) => {
     const top = topOf(el);
-    if (needs <= 0 || needs > pageHeight) return; // cannot help: too tall either way
+    if (needs <= 0 || needs > pageHeight) return false; // too tall either way
     const startsOn = Math.floor(top / pageHeight);
     // A hair over the edge is a rounding artefact, not a second page.
     const endsOn = Math.floor((top + needs - 1) / pageHeight);
-    if (startsOn === endsOn) return;
+    if (startsOn === endsOn) return false;
 
     const target = movable(el);
     const parent = target.parentNode;
-    if (!parent || parent.nodeType !== 1) return;
+    if (!parent || parent.nodeType !== 1) return false;
 
     // The whole row is taller than a page, so moving it solves nothing. Push
     // the one item instead: a margin still shifts it inside its own track.
     if (target !== el && target.getBoundingClientRect().height > pageHeight) {
       const gap = (startsOn + 1) * pageHeight - top;
-      if (gap > 0) el.style.marginTop = `${gap}px`;
-      return;
+      if (gap <= 0) return false;
+      el.style.marginTop = `${parseFloat(el.style.marginTop || 0) + gap}px`;
+      return true;
     }
 
     const gap = (startsOn + 1) * pageHeight - topOf(target);
-    if (gap > 0) parent.insertBefore(spacerOf(gap, target), target);
+    if (gap <= 0) return false;
+    parent.insertBefore(spacerOf(gap, target), target);
+    return true;
   };
 
-  // Headings first, each carrying the start of whatever it introduces, so the
-  // later keep-whole pass measures what the reader will actually see.
-  for (const el of page.querySelectorAll(KEEP_WITH_NEXT)) {
-    const next = el.nextElementSibling;
-    const lead = next ? Math.min(next.getBoundingClientRect().height, LEAD_PX) : 0;
-    push(el, el.getBoundingClientRect().height + lead);
-  }
-
+  // How much of the page this element needs: its own height, and for a heading
+  // the start of whatever it introduces, so the two cannot be parted.
   const limit = pageHeight * KEEP_WHOLE_LIMIT;
-  for (const el of page.querySelectorAll(KEEP_WHOLE)) {
+  const needsOf = (el) => {
     const { height } = el.getBoundingClientRect();
-    if (height > limit) continue; // a block, not a line: let it break
-    push(el, height);
+    if (el.matches(KEEP_WITH_NEXT)) {
+      const next = el.nextElementSibling;
+      return height + (next ? Math.min(next.getBoundingClientRect().height, LEAD_PX) : 0);
+    }
+    return height > limit ? 0 : height; // a block, not a line: let it break
+  };
+
+  // One pass in document order, because moving an element only ever moves what
+  // follows it. Then again, until nothing needs moving: a push can carry the
+  // next heading's table off the page it was measured against. It settles in
+  // two or three rounds, and the cap is there so a layout that cannot settle
+  // gives up rather than hangs.
+  const selector = `${KEEP_WHOLE},${KEEP_WITH_NEXT}`;
+  for (let round = 0; round < 4; round += 1) {
+    let moved = false;
+    for (const el of page.querySelectorAll(selector)) {
+      if (push(el, needsOf(el))) moved = true;
+    }
+    if (!moved) return;
   }
 }
