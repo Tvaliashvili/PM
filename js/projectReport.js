@@ -379,6 +379,12 @@ export async function buildProjectReport({
   const baseEnd = baselined.map((t) => t.baseline_finish).sort().at(-1);
   const plannedEnd = baselined.map((t) => t.planned_finish).sort().at(-1);
   const projectDrift = baselined.length ? dayDiff(baseEnd, plannedEnd) : 0;
+  // Said as a phrase rather than a signed number: "20 days later" is read at a
+  // glance, where "+20 days" leaves the reader to work out later than what.
+  const driftDays = Math.abs(projectDrift);
+  const driftPhrase = projectDrift > 0
+    ? L(`${driftDays} დღით მეტი`, `${driftDays} day${driftDays === 1 ? '' : 's'} later`)
+    : L(`${driftDays} დღით ნაკლები`, `${driftDays} day${driftDays === 1 ? '' : 's'} earlier`);
 
   const driftSection = !baselined.length ? '' : `
     <section class="rpt-section rpt-avoid">
@@ -390,7 +396,7 @@ export async function buildProjectReport({
              under it says the same thing and needs no working out. */ ''}
         ${tile('დასრულების თარიღი', 'Completion date', d(plannedEnd),
     projectDrift
-      ? `${projectDrift > 0 ? '+' : ''}${projectDrift} ${L('დღით', Math.abs(projectDrift) === 1 ? 'day' : 'days')} · ${L('დამტკიცებული იყო', 'approved')} ${d(baseEnd)}`
+      ? `${driftPhrase} · ${L('დამტკიცებული იყო', 'approved')} ${d(baseEnd)}`
       : L('უცვლელი დამტკიცების დღიდან', 'unchanged since baseline'),
     projectDrift > 0 ? 'bad' : 'ok')}
         ${tile('ამოცანა გადაიწია', 'Activities moved', `${drifted.length} / ${baselined.length}`,
