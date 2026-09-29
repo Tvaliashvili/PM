@@ -2494,14 +2494,18 @@ function updateManpowerTotal() {
 // "5 daily workers × ₾80 = ₾400" under the rate field.
 function updateDayCost() {
   const f = $('#form-daily-log').elements;
-  const workers = crewByTrade(readCrewRows())[DAY_WORKER_KEY] || 0;
+  // Only the client's own: a contractor's daily workers are paid by that
+  // contractor, out of the price of their work, and are not a cost here.
+  const workers = readCrewRows()
+    .filter((e) => !e.contractor_id && e.trade === DAY_WORKER_KEY)
+    .reduce((sum, e) => sum + e.workers, 0);
   const rate = f.day_rate.value === '' ? null : Number(f.day_rate.value);
   const el = $('#day-cost');
   if (!workers) {
-    el.textContent = 'No daily workers entered.';
+    el.textContent = 'No daily workers of the client’s own entered.';
     el.className = 'text-sm text-slate-500 pb-2';
   } else if (rate == null) {
-    el.textContent = `${workers} daily worker${workers === 1 ? '' : 's'} - enter the rate to count their pay.`;
+    el.textContent = `${workers} daily worker${workers === 1 ? '' : 's'} on the client's account - enter the rate to count their pay.`;
     el.className = 'text-sm text-amber-400 pb-2';
   } else {
     el.textContent = `${workers} × ${money2.format(rate)} = ${money.format(workers * rate)} today`;

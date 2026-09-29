@@ -142,11 +142,25 @@ export function actualSpendByMonth(payments) {
 // Both become dated entries { date, amount, kind: 'labour' | 'rental' } so they
 // can be added to spending and to the monthly cash flow.
 
-/** Daily-worker pay per log: headcount × that log's day rate. */
+/**
+ * Daily-worker pay per log: headcount × that log's day rate.
+ *
+ * Only the client's own daily workers are counted - the crew lines with no
+ * contractor against them. A contractor's daily workers are the contractor's
+ * to pay, and are already inside the price of their work; charging them here
+ * as well would count the same men twice. A log recorded before the crew was
+ * split by contractor has no lines, so its old headcount stands as the
+ * client's, which is what it was.
+ */
 export function labourCosts(logs, dayWorkerKey = 'day_workers') {
   return logs
     .map((l) => {
-      const workers = Number(l.manpower?.[dayWorkerKey] || 0);
+      const crew = l.crew ?? [];
+      const workers = crew.length
+        ? crew.reduce((n, c) => (
+          !c.contractor_id && c.trade === dayWorkerKey ? n + (Number(c.workers) || 0) : n
+        ), 0)
+        : Number(l.manpower?.[dayWorkerKey] || 0);
       return { date: l.log_date, amount: workers * Number(l.day_rate || 0), workers, kind: 'labour' };
     })
     .filter((e) => e.workers > 0);
