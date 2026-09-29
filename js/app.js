@@ -10,6 +10,7 @@ import {
 } from './config.js';
 import { generateDailyReport } from './pdfReport.js';
 import { buildProjectReport, printProjectReport } from './projectReport.js';
+import { printOpenReportOnCtrlP } from './print.js';
 import {
   scheduleProgress, taskState, durationDays, completionOf, expectedPct,
   plannedSpendByMonth, actualSpendByMonth, costPosition, contractorPerformance,
@@ -3391,6 +3392,7 @@ $('#form-delete-project').addEventListener('submit', confirmDeleteProject);
 $('#btn-report-daily').addEventListener('click', exportDailyReport);
 $('#btn-view-report').addEventListener('click', openProjectReport);
 $('#btn-report-pdf').addEventListener('click', downloadReport);
+printOpenReportOnCtrlP();
 
 if (db) {
   $('#form-login').addEventListener('submit', signIn);

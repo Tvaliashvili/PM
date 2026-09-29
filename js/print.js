@@ -55,3 +55,30 @@ export async function printDocument(page, filename) {
     window.print();
   });
 }
+
+/**
+ * Ctrl+P is the other way into the print dialog, and it does not come through
+ * printDocument(). Without this the app itself would be printed - the whole
+ * dark dashboard on white paper - so if a report is open on screen, that is
+ * what goes to the printer instead.
+ */
+export function printOpenReportOnCtrlP() {
+  const root = document.getElementById('print-root');
+  let ours = false;
+
+  window.addEventListener('beforeprint', () => {
+    if (document.body.classList.contains('is-printing')) return; // already ours
+    const preview = document.querySelector('#report-root .pdf-page');
+    if (!preview) return;
+    root.replaceChildren(preview.cloneNode(true));
+    document.body.classList.add('is-printing');
+    ours = true;
+  });
+
+  window.addEventListener('afterprint', () => {
+    if (!ours) return;
+    ours = false;
+    document.body.classList.remove('is-printing');
+    root.replaceChildren();
+  });
+}

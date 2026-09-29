@@ -1115,10 +1115,11 @@ textarea.input-dark { resize: vertical; }
 /* =============================================================
    Print: the browser's own engine renders the report.
 
-   Everything below only applies while a report is being printed. The report is
-   moved into #print-root and the rest of the app is hidden, so the page box
-   belongs entirely to the document. Text stays text - selectable, searchable
-   and sharp at any zoom - because nothing is rasterised.
+   Every rule here is scoped to body.is-printing, which is set only while a
+   report is on its way to the printer. Without that scope they would also
+   apply to an ordinary Ctrl+P of the app, and repaint the dashboard as a
+   half-styled white page. Text stays text - selectable, searchable and sharp
+   at any zoom - because nothing is rasterised.
    ============================================================= */
 @page {
   size: A4 portrait;
@@ -1128,7 +1129,8 @@ textarea.input-dark { resize: vertical; }
 }
 
 @media print {
-  html, body {
+  body.is-printing,
+  html:has(body.is-printing) {
     background: #fff;
     height: auto;
     overflow: visible; /* a clipped body prints one page and stops */
@@ -1147,51 +1149,54 @@ textarea.input-dark { resize: vertical; }
   }
 
   /* Backgrounds and rules carry meaning here - the dark header, the status
-     chips, the bars - so they are printed rather than dropped. */
-  *, *::before, *::after {
+     chips, the timeline bars - so they are printed rather than dropped. */
+  body.is-printing #print-root *,
+  body.is-printing #print-root *::before,
+  body.is-printing #print-root *::after {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
-  .pdf-page { margin: 0; box-shadow: none; }
+  body.is-printing .pdf-page { margin: 0; box-shadow: none; }
 
   /* A box that hides its overflow is clipped to the page it starts on, so the
      rest of the timeline simply vanishes. It keeps its border; it loses only
      the rounded corner it was hiding. */
-  .rpt-gantt, .rpt-cards, .rpt-hbars, .rpt-tiles, .rpt-two, .rpt-columns {
+  body.is-printing .rpt-gantt,
+  body.is-printing .rpt-cards,
+  body.is-printing .rpt-hbars,
+  body.is-printing .rpt-two,
+  body.is-printing .rpt-columns {
     overflow: visible;
   }
 
   /* Small units of writing are never split down the middle. */
-  tr, img, li,
-  .rpt-card, .rpt-tile, .rpt-panel, .rpt-hbar, .rpt-g-row, .rpt-legend,
-  .rpt-chart, .rpt-h, .rpt-sub-h, .rpt-tiles,
-  .pdf-facts > div, .pdf-avoid-break, .pdf-photos td, .doc-signature {
+  body.is-printing :is(tr, img, li,
+    .rpt-card, .rpt-tile, .rpt-panel, .rpt-hbar, .rpt-g-row, .rpt-legend,
+    .rpt-chart, .rpt-h, .rpt-sub-h, .rpt-tiles,
+    .pdf-facts > div, .pdf-avoid-break, .pdf-photos td, .doc-signature) {
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
   /* Anything longer than a page must be allowed to break, or the engine keeps
      it whole by clipping whatever hangs past the bottom. The rows inside are
-     protected above, so the break still lands between lines, never through one.
-     `.rpt-avoid` is the screen marker for small blocks and sits on some of
-     these too, which is why they are named again here. */
-  table, tbody, .rpt-gantt, .rpt-hbars, .rpt-cards, .rpt-two, .rpt-columns,
-  .rpt-section, .pdf-page, .pdf-photos {
+     protected above, so the break still lands between lines, never through one. */
+  body.is-printing :is(table, tbody, .rpt-gantt, .rpt-hbars, .rpt-cards,
+    .rpt-two, .rpt-columns, .rpt-section, .pdf-page, .pdf-photos) {
     break-inside: auto;
     page-break-inside: auto;
   }
 
   /* A heading is never the last thing on a page. */
-  h1, h2, h3, .rpt-h, .rpt-sub-h {
+  body.is-printing :is(h1, h2, h3, .rpt-h, .rpt-sub-h) {
     break-after: avoid;
     page-break-after: avoid;
   }
 
   /* A table carried onto the next page repeats its own header. */
-  thead { display: table-header-group; }
-  tfoot { display: table-footer-group; }
+  body.is-printing thead { display: table-header-group; }
+  body.is-printing tfoot { display: table-footer-group; }
 
-  /* Widow and orphan control for ordinary prose. */
-  p { orphans: 3; widows: 3; }
+  body.is-printing p { orphans: 3; widows: 3; }
 }
