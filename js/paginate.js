@@ -129,11 +129,16 @@ export function insertPageBreaks(page, marginMm) {
   const limit = pageHeight * KEEP_WHOLE_LIMIT;
   const needsOf = (el) => {
     const { height } = el.getBoundingClientRect();
-    if (el.matches(KEEP_WITH_NEXT)) {
-      const next = el.nextElementSibling;
-      return height + (next ? Math.min(next.getBoundingClientRect().height, LEAD_PX) : 0);
+    if (!el.matches(KEEP_WITH_NEXT)) {
+      return height > limit ? 0 : height; // a block, not a line: let it break
     }
-    return height > limit ? 0 : height; // a block, not a line: let it break
+    // Walk on until the heading has real content under it, not just the legend
+    // or the one-line note that so often sits between a heading and its table.
+    let lead = 0;
+    for (let next = el.nextElementSibling; next && lead < LEAD_PX; next = next.nextElementSibling) {
+      lead += next.getBoundingClientRect().height;
+    }
+    return height + Math.min(lead, LEAD_PX);
   };
 
   // One pass in document order, because moving an element only ever moves what
