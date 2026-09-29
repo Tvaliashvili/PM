@@ -133,21 +133,12 @@ export function insertPageBreaks(page, marginMm) {
     return shove(el);
   };
 
-  // The sign-off must not start a page of its own, so the last piece of content
-  // above it is asked to find room for both. That puts it on the same footing
-  // as a heading and its table, measured by the same rule.
-  const signature = page.querySelector('.doc-signature');
-  const tail = signature && lastBefore(page, signature);
-
   // How much of the page this element needs: its own height, and for a heading
-  // the start of whatever it introduces, so the two cannot be parted.
+  // the start of whatever it introduces, so the two cannot be parted. The
+  // sign-off asks for nothing beyond staying whole - it falls where it falls.
   const limit = pageHeight * KEEP_WHOLE_LIMIT;
   const needsOf = (el) => {
     const { height } = el.getBoundingClientRect();
-    if (el === tail) {
-      const both = height + signature.getBoundingClientRect().height;
-      return both <= pageHeight ? both : height; // no room for both: let it be
-    }
     if (!el.matches(KEEP_WITH_NEXT)) {
       return height > limit ? 0 : height; // a block, not a line: let it break
     }
@@ -174,17 +165,4 @@ export function insertPageBreaks(page, marginMm) {
     }
     if (!moved) break;
   }
-}
-
-/** The last element that must stay whole, before `stop` in document order. */
-function lastBefore(page, stop) {
-  const preceding = Node.DOCUMENT_POSITION_PRECEDING;
-  const all = [...page.querySelectorAll(KEEP_WHOLE)].filter((el) => (
-    el !== stop
-    && !stop.contains(el)
-    && !el.contains(stop)
-    && (stop.compareDocumentPosition(el) & preceding) !== 0
-    && el.getBoundingClientRect().height > 0
-  ));
-  return all.at(-1) ?? null;
 }
