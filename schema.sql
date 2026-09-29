@@ -584,7 +584,8 @@ notify pgrst, 'reload schema';
 -- One row per contractor per trade per day. daily_logs.manpower held the same
 -- counts with no contractor against them, which answered how many men were on
 -- site but never whose they were - and so never which contractor is short.
--- A null contractor_id is labour engaged directly, not through anyone.
+-- A null contractor_id is labour the client engaged themselves, through no
+-- contractor of ours - so it is counted, but never against anyone's record.
 -- Placed here, after contractors: it points at that table and cannot be
 -- created before it exists.
 -- -------------------------------------------------------------

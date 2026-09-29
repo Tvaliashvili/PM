@@ -115,7 +115,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-daily-print', '#btn-view-report', '#btn-add-unit', '#btn-add-task', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental',
+  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-daily-print', '#btn-report-project', '#btn-report-project-print', '#btn-view-report', '#btn-add-unit', '#btn-add-task', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -2141,7 +2141,7 @@ const photoStrip = (photos, owner) => (photos?.length ? `
 
 const logCard = (l) => {
   const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key;
-  const nameOf = (id) => state.contractors.find((c) => c.id === id)?.name ?? 'Direct labour';
+  const nameOf = (id) => state.contractors.find((c) => c.id === id)?.name ?? 'Hired by the client';
   // Grouped by whoever brought them, which is the question the day answers now.
   const byContractor = new Map();
   for (const c of l.crew ?? []) {
@@ -2426,10 +2426,10 @@ function requireProject() {
 
 // ---------- Daily log ----------
 // ---------- Crew on site: one line per contractor and trade ----------
-/** The contractors to choose from, plus labour engaged directly. */
+/** The contractors to choose from, plus men the client engaged themselves. */
 function crewContractorOptions(selected) {
   const chosen = selected ?? '';
-  const direct = `<option value=""${chosen === '' ? ' selected' : ''}>Direct labour</option>`;
+  const direct = `<option value=""${chosen === '' ? ' selected' : ''}>Hired by the client</option>`;
   return direct + state.contractors.map((c) => (
     `<option value="${esc(c.id)}"${c.id === chosen ? ' selected' : ''}>${esc(c.name)}</option>`
   )).join('');
@@ -2682,7 +2682,7 @@ async function processLogText() {
   if (data.date && data.date <= todayISO()) f.log_date.value = data.date;
   f.weather.value = data.weather || '';
   // Gemini reads a headcount by trade; it has no way of knowing whose men they
-  // were, so they arrive as direct labour and the contractor is set by hand.
+  // were, so they come in as the client's own and the contractor is set by hand.
   renderCrewRows(MANPOWER_TRADES
     .map((t) => ({ contractor_id: null, trade: t.key, workers: Number(data.manpower?.[t.key]) || 0 }))
     .filter((e) => e.workers > 0));
@@ -3325,6 +3325,53 @@ async function saveDelay(e) {
 // ---------- Full project report (viewer + PDF) ----------
 let reportPage = null;
 
+/** The report page for the open project, built from what is already loaded. */
+function projectReportArgs(project) {
+  return {
+    db,
+    project,
+    tasks: state.tasks,
+    payments: state.payments,
+    contractors: state.contractors,
+    contractorDelays: state.contractorDelays,
+    units: state.flats,
+    siteLogs: state.siteLogs,
+    siteCosts: state.siteCosts,
+    rentals: state.rentals,
+    progress: state.progress ?? scheduleProgress([], todayISO()),
+    money,
+  };
+}
+
+/**
+ * Builds the project report and saves it, without opening the preview - the
+ * same one-click path the daily report has.
+ */
+async function exportProjectReport(e) {
+  if (exporting || !requireProject()) return;
+  const btn = e.currentTarget;
+  const printable = btn.id === 'btn-report-project-print';
+  const label = btn.querySelector('span') ?? btn;
+  const original = label.textContent;
+
+  exporting = true;
+  btn.disabled = true;
+  label.textContent = 'Building…';
+  toast('Building the project report…');
+
+  try {
+    const project = currentProject();
+    const page = await buildProjectReport(projectReportArgs(project));
+    await downloadProjectReport(page, project, { printable });
+  } catch (err) {
+    toast(err.message || 'Could not build the report.', 'error');
+  } finally {
+    exporting = false;
+    btn.disabled = !state.projectId;
+    label.textContent = original;
+  }
+}
+
 async function openProjectReport() {
   if (!requireProject()) return;
   const project = currentProject();
@@ -3337,20 +3384,7 @@ async function openProjectReport() {
   openModal('modal-report');
 
   try {
-    const page = await buildProjectReport({
-      db,
-      project,
-      tasks: state.tasks,
-      payments: state.payments,
-      contractors: state.contractors,
-      contractorDelays: state.contractorDelays,
-      units: state.flats,
-      siteLogs: state.siteLogs,
-      siteCosts: state.siteCosts,
-      rentals: state.rentals,
-      progress: state.progress ?? scheduleProgress([], todayISO()),
-      money,
-    });
+    const page = await buildProjectReport(projectReportArgs(project));
     if (project.id !== state.projectId) return;
     root.replaceChildren(page);
     reportPage = page;
@@ -3478,6 +3512,8 @@ $('#form-edit-project').addEventListener('submit', saveEditProject);
 $('#form-delete-project').addEventListener('submit', confirmDeleteProject);
 $('#btn-report-daily').addEventListener('click', exportDailyReport);
 $('#btn-report-daily-print').addEventListener('click', exportDailyReport);
+$('#btn-report-project').addEventListener('click', exportProjectReport);
+$('#btn-report-project-print').addEventListener('click', exportProjectReport);
 $('#btn-view-report').addEventListener('click', openProjectReport);
 $('#btn-report-pdf').addEventListener('click', () => downloadReport(false));
 $('#btn-report-pdf-print').addEventListener('click', () => downloadReport(true));

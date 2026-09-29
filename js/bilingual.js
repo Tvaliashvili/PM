@@ -103,7 +103,7 @@ export const KA = {
   // Report phrases
   'Site-wide': 'მთელი ობიექტი',
   'Ongoing': 'მიმდინარე',
-  'Direct labour': 'პირდაპირი დაქირავება',
+  'Hired by the client': 'დამკვეთის მიერ დაქირავებული',
   'Man-days': 'კაც-დღე',
   'since': 'დაწყებული',
   'Open': 'ღიაა',

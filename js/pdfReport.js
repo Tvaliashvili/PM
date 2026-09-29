@@ -51,8 +51,8 @@ function mergeManpower(logs) {
 
 /**
  * The day's crew grouped by whoever brought them: [{ name, trades, total }].
- * Direct labour comes last, under its own heading, because it belongs to no
- * contractor and should not be mistaken for one.
+ * Men the client hired themselves come last, under their own heading: they
+ * answer to no contractor and should not be counted against one.
  */
 function crewByContractor(logs) {
   const groups = new Map();
@@ -60,7 +60,7 @@ function crewByContractor(logs) {
     for (const c of log.crew ?? []) {
       const workers = Number(c.workers) || 0;
       if (workers <= 0) continue;
-      const name = biName(c.contractors?.name, c.contractors?.name_ka) || bi('Direct labour');
+      const name = biName(c.contractors?.name, c.contractors?.name_ka) || bi('Hired by the client');
       if (!groups.has(name)) groups.set(name, { name, trades: new Map(), total: 0, direct: !c.contractors });
       const g = groups.get(name);
       g.trades.set(c.trade, (g.trades.get(c.trade) || 0) + workers);
