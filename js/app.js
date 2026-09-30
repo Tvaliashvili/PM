@@ -523,7 +523,10 @@ async function loadUnits(projectId) {
     $('#units-table').innerHTML = `<div class="empty-state">Could not load units: ${esc(error.message)}</div>`;
     return;
   }
-  state.flats = data;
+  // Postgres sorts room numbers as text (1, 10, 11, 2); sort them as people count.
+  const byNumber = (a, b) => String(a ?? '').localeCompare(String(b ?? ''), undefined, { numeric: true });
+  state.flats = data.sort((a, b) => byNumber(a.block, b.block)
+    || byNumber(a.floor, b.floor) || byNumber(a.flat_number, b.flat_number));
   renderUnits();
 }
 
