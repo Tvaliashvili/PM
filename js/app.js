@@ -14,7 +14,7 @@ import {
   scheduleProgress, taskState, durationDays, completionOf, expectedPct,
   plannedSpendByMonth, actualSpendByMonth, costPosition, contractorPerformance,
   labourCosts, guardCosts, rentalCosts, rentalTotal, rentalEnd, siteCostsByMonth,
-  delayIsOngoing, delayDaysLost, delayStart, delayEnd, delayCovers, causeOf, excusedDaysByTask,
+  delayIsOngoing, delayDaysLost, delayStart, delayEnd, delayCovers, causeOf, withExtensions, dueDate,
 } from './schedule.js';
 import { ka, roomLabel } from './bilingual.js';
 import {
@@ -35,7 +35,7 @@ const state = {
   tasks: [],            // timetable items (also the BOQ)
   payments: [],         // task_payments
   contractorDelays: [], // delays with cause_contractor_id + days
-  delayImpacts: [],     // { delay_id, task_id, delay } - work a delay held up
+  delayImpacts: [],     // { delay_id, task_id, delay } - work a delay held up, which extends it
   contractors: [],      // this project's contractors
   siteLogs: [],         // every daily log's date, manpower and day rate (daily-worker pay)
   events: [],           // safety and quality events, newest first
@@ -327,15 +327,19 @@ async function renderProjectList() {
   }
 
   const request = ++projectListRequest;
-  const [tasks, delays] = await Promise.all([
-    db.from('schedule_tasks').select('project_id, planned_start, planned_finish, done'),
+  const [tasks, delays, impacts] = await Promise.all([
+    db.from('schedule_tasks').select('id, project_id, planned_start, planned_finish, done'),
     db.from('delays').select('project_id'),
+    // An item a delay held up is not overdue until its extension runs out.
+    db.from('delay_impacts').select('task_id, delay:delays(duration_days, created_at)'),
   ]);
   if (request !== projectListRequest) return; // a newer render started
-  if (tasks.error || delays.error) toast('Could not load project stats.', 'error');
+  if (tasks.error || delays.error || impacts.error) toast('Could not load project stats.', 'error');
 
   const tasksByProject = new Map(state.projects.map((p) => [p.id, []]));
-  for (const t of tasks.data ?? []) tasksByProject.get(t.project_id)?.push(t);
+  for (const t of withExtensions(tasks.data ?? [], impacts.data ?? [], todayISO())) {
+    tasksByProject.get(t.project_id)?.push(t);
+  }
   const delayCount = new Map();
   for (const d of delays.data ?? []) delayCount.set(d.project_id, (delayCount.get(d.project_id) ?? 0) + 1);
 
@@ -712,7 +716,7 @@ async function loadSchedule(projectId) {
     // Work each delay held up. The delay comes with it: the days an item is
     // excused are the days that delay lasted, counted from it rather than typed.
     db.from('delay_impacts')
-      .select('delay_id, task_id, delay:delays!inner(project_id, duration_days, created_at, resolved_on)')
+      .select('delay_id, task_id, delay:delays!inner(project_id, delay_cause, duration_days, created_at, resolved_on)')
       .eq('delay.project_id', projectId),
     db.from('contractors')
       .select('id, name, name_ka, trade, contact_person, phone, email, notes')
@@ -734,7 +738,8 @@ async function loadSchedule(projectId) {
     $('#schedule-table').innerHTML = `<div class="empty-state">Could not load timetable: ${esc(failed.error.message)}</div>`;
     return;
   }
-  state.tasks = tasks.data;
+  // Each item's finish, pushed out by the delays that held it up.
+  state.tasks = withExtensions(tasks.data, impacts.data, todayISO());
   state.payments = payments.data;
   state.contractorDelays = delays.data;
   state.delayImpacts = impacts.data;
@@ -776,6 +781,25 @@ function planStatus(gap) {
   if (gap < -5) return 'Behind plan';
   if (gap > 5) return 'Ahead of plan';
   return 'On track';
+}
+
+/** Why an item's finish moved: the causes of the delays that held it up. */
+const extendedBy = (taskId) => [...new Set(state.delayImpacts
+  .filter((i) => i.task_id === taskId && i.delay)
+  .map((i) => i.delay.delay_cause))];
+
+/**
+ * The finish an item is held to. Once a delay has held it up, the date the
+ * programme promised stays on show, struck through, above the one it has
+ * been extended to - so nobody mistakes the new date for the old.
+ */
+function finishCell(t) {
+  const ext = Number(t.extension_days) || 0;
+  if (!ext) return esc(formatDate(t.planned_finish));
+  const why = extendedBy(t.id).join(', ');
+  return `<span class="finish-was">${esc(formatDate(t.planned_finish))}</span>
+    <span class="finish-extended" title="Extended by delays: ${esc(why)}">${esc(formatDate(dueDate(t)))}
+      <span class="finish-ext-days">+${ext} d</span></span>`;
 }
 
 function renderSchedule() {
@@ -828,7 +852,7 @@ function renderSchedule() {
                   aria-label="Contractor for ${esc(t.name)}">${contractorOptions(t.contractor_id ?? '')}</select>
         </td>
         <td class="whitespace-nowrap">${esc(formatDate(t.planned_start))}</td>
-        <td class="whitespace-nowrap">${esc(formatDate(t.planned_finish))}</td>
+        <td class="whitespace-nowrap">${finishCell(t)}</td>
         <td class="num">${durationDays(t)} d</td>
         <td class="num">${Number(t.budget) ? money.format(t.budget) : '-'}</td>
         <td class="whitespace-nowrap">${taskStateChip(t, s)}</td>
@@ -890,8 +914,12 @@ function updateTaskDuration() {
   const f = $('#form-task').elements;
   const start = f.planned_start.value;
   const finish = f.planned_finish.value;
+  // The extension rides on whatever finish is typed here. Say so, or the date
+  // in the box reads as the one the item is held to.
+  const ext = Number(state.tasks.find((t) => t.id === f.id.value)?.extension_days) || 0;
   $('#task-duration').textContent = start && finish
-    ? (finish < start ? 'Finish is before start.' : `${durationDays({ planned_start: start, planned_finish: finish })} days`)
+    ? (finish < start ? 'Finish is before start.' : `${durationDays({ planned_start: start, planned_finish: finish })} days`
+      + (ext ? ` · plus ${ext} d from delays that held it up - due ${formatDate(addDays(finish, ext))}` : ''))
     : '';
 }
 
@@ -1389,7 +1417,7 @@ function renderTimeline() {
   const overdueList = p.overdue.length ? `
     <ul class="mt-3 space-y-1 text-xs">
       ${p.overdue.slice(0, 3).map((t) => `
-        <li class="text-rose-300">! ${esc(t.name)} - ${t.daysLate} days past planned finish</li>`).join('')}
+        <li class="text-rose-300">! ${esc(t.name)} - ${t.daysLate} days past its finish date</li>`).join('')}
       ${p.overdue.length > 3 ? `<li class="text-slate-500">and ${p.overdue.length - 3} more on the Timetable page</li>` : ''}
     </ul>` : '';
 
@@ -2018,7 +2046,7 @@ function contractorRating(s) {
 }
 
 function renderContractors() {
-  const perf = contractorPerformance(state.tasks, state.contractorDelays, state.payments, todayISO(), state.delayImpacts);
+  const perf = contractorPerformance(state.tasks, state.contractorDelays, state.payments, todayISO());
   const el = $('#contractors-table');
   const list = [...state.contractors].sort((a, b) =>
     (perf.get(b.id)?.items ?? 0) - (perf.get(a.id)?.items ?? 0) || a.name.localeCompare(b.name));
@@ -2133,7 +2161,7 @@ function openContractorJobs(contractorId) {
   const jobs = state.tasks
     .filter((t) => t.contractor_id === c.id)
     .sort((a, b) => a.planned_start.localeCompare(b.planned_start));
-  const s = contractorPerformance(state.tasks, state.contractorDelays, state.payments, today, state.delayImpacts).get(c.id);
+  const s = contractorPerformance(state.tasks, state.contractorDelays, state.payments, today).get(c.id);
 
   $('#contractor-jobs-title').textContent = `Jobs - ${c.name}`;
   $('#contractor-jobs-sub').textContent = [c.name_ka, c.trade].filter(Boolean).join(' · ');
@@ -2158,7 +2186,7 @@ function openContractorJobs(contractorId) {
           return `
             <tr>
               <td class="task-name">${esc(t.name)}${t.name_ka && t.name_ka !== t.name ? `<span class="block text-xs text-slate-500">${esc(t.name_ka)}</span>` : ''}</td>
-              <td class="whitespace-nowrap">${esc(formatDate(t.planned_start))} → ${esc(formatDate(t.planned_finish))}</td>
+              <td class="whitespace-nowrap">${esc(formatDate(t.planned_start))} → ${finishCell(t)}</td>
               <td class="num">
                 ${pct}%
                 <div class="task-pct-bar"><div style="width:${pct}%"></div></div>
@@ -3475,7 +3503,6 @@ function projectReportArgs(project) {
     payments: state.payments,
     contractors: state.contractors,
     contractorDelays: state.contractorDelays,
-    delayImpacts: state.delayImpacts,
     units: state.flats,
     siteLogs: state.siteLogs,
     siteCosts: state.siteCosts,

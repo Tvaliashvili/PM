@@ -5,7 +5,7 @@
 // =============================================================
 import {
   taskState, completionOf, costPosition, contractorPerformance, plannedSpendByMonth, actualSpendByMonth,
-  siteCostsByMonth, rentalTotal, rentalEnd, delayIsOngoing, delayDaysLost, causeOf,
+  siteCostsByMonth, rentalTotal, rentalEnd, delayIsOngoing, delayDaysLost, causeOf, dueDate,
   stalledTasks, forecastFinish, durationDays, contractorManDays,
 } from './schedule.js';
 import { bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
@@ -62,6 +62,12 @@ const UNIT_STATUS = [
 // Timetable item / rental names typed in both languages.
 const taskKa = (t) => t.name_ka || t.name;
 const taskBi = (t) => biName(t.name, t.name_ka);
+// The finish an item is held to. Where delays have extended it, the date the
+// programme promised stays beside it, struck through, so neither is mistaken
+// for the other.
+const finishOf = (t) => (Number(t.extension_days)
+  ? `<span class="rpt-was">${d(t.planned_finish)}</span> ${d(dueDate(t))}`
+  : d(t.planned_finish));
 
 const chip = (s, extraKa = '', extraEn = '') => `<span class="rpt-chip rpt-${s.tone}">`
   + `${esc(s.ka)}${esc(extraKa)}<br>${esc(s.en)}${esc(extraEn)}</span>`;
@@ -144,13 +150,13 @@ async function fetchExtras(db, projectId, today) {
  * `money` formats amounts in the project's currency.
  */
 export async function buildProjectReport({
-  db, project, tasks, payments, contractors, contractorDelays, delayImpacts = [], units, progress, money,
+  db, project, tasks, payments, contractors, contractorDelays, units, progress, money,
   siteCosts = [], rentals = [], siteLogs = [],
 }) {
   const today = iso(new Date());
   const { logs, delays, events, variations } = await fetchExtras(db, project.id, today);
   const cost = costPosition(tasks, payments, today, siteCosts);
-  const perf = contractorPerformance(tasks, contractorDelays, payments, today, delayImpacts); // all-time delays
+  const perf = contractorPerformance(tasks, contractorDelays, payments, today); // all-time delays
   const manDays = contractorManDays(siteLogs); // who actually put men on the job
   const rooms = Boolean(project.has_rooms); // sites like a stadium have no rooms
   const contractorById = new Map(contractors.map((c) => [c.id, c]));
@@ -328,7 +334,8 @@ export async function buildProjectReport({
     .flatMap((t) => {
       const out = [];
       if (t.planned_start > today && t.planned_start <= horizon) out.push({ t, date: t.planned_start, kind: 'start' });
-      if (t.planned_finish >= today && t.planned_finish <= horizon) out.push({ t, date: t.planned_finish, kind: 'finish' });
+      const due = dueDate(t);
+      if (due >= today && due <= horizon) out.push({ t, date: due, kind: 'finish' });
       return out;
     })
     .sort((a, b) => a.date.localeCompare(b.date))
@@ -369,9 +376,11 @@ export async function buildProjectReport({
   // Planned dates move as work slips, so "on time" always means on time
   // against today's plan. The baseline is what the client approved; the gap
   // between the two is the question they actually ask.
+  // Measured to the due date: time a delay added is as much a move since
+  // approval as a date someone changed by hand.
   const drifted = tasks
-    .filter((t) => t.baseline_finish && t.planned_finish !== t.baseline_finish)
-    .map((t) => ({ t, days: dayDiff(t.baseline_finish, t.planned_finish) }))
+    .filter((t) => t.baseline_finish && dueDate(t) !== t.baseline_finish)
+    .map((t) => ({ t, days: dayDiff(t.baseline_finish, dueDate(t)) }))
     .sort((a, b) => b.days - a.days);
   const baselined = tasks.filter((t) => t.baseline_finish);
   // When the project finishes is when its last activity finishes, so this is
@@ -379,7 +388,7 @@ export async function buildProjectReport({
   // middle of the programme can slip a long way without touching either: that
   // is why this can read 0 while the table below lists work that has moved.
   const baseEnd = baselined.map((t) => t.baseline_finish).sort().at(-1);
-  const plannedEnd = baselined.map((t) => t.planned_finish).sort().at(-1);
+  const plannedEnd = baselined.map(dueDate).sort().at(-1);
   const projectDrift = baselined.length ? dayDiff(baseEnd, plannedEnd) : 0;
   // Said as a phrase rather than a signed number: "20 days later" is read at a
   // glance, where "+20 days" leaves the reader to work out later than what.
@@ -419,7 +428,7 @@ export async function buildProjectReport({
                 <td>${esc(taskBi(t))}</td>
                 <td>${t.contractor_id ? esc(nameOf(t.contractor_id)) : '-'}</td>
                 <td>${d(t.baseline_finish)}</td>
-                <td>${d(t.planned_finish)}</td>
+                <td>${finishOf(t)}</td>
                 <td class="num ${days > 0 ? 'rpt-late' : ''}">${days > 0 ? '+' : ''}${days}</td>
               </tr>`).join('')}
           </tbody>
@@ -431,7 +440,7 @@ export async function buildProjectReport({
   let gantt = none;
   if (tasks.length) {
     const starts = tasks.map((t) => t.planned_start).concat(project.start_date ? [project.start_date] : []);
-    const ends = tasks.map((t) => t.planned_finish).concat(project.end_date ? [project.end_date] : []);
+    const ends = tasks.map(dueDate).concat(project.end_date ? [project.end_date] : []);
     const first = toDate(starts.sort()[0]);
     const rangeStart = iso(new Date(first.getFullYear(), first.getMonth(), 1));
     const last = toDate(ends.sort().at(-1));
@@ -459,19 +468,24 @@ export async function buildProjectReport({
       const done = Math.round(completionOf(t) * 100);
       const left = x(t.planned_start);
       const width = Math.max(0.8, x(addDays(t.planned_finish, 1)) - left);
+      // The time delays added, drawn on past the planned bar in a colour of its own.
+      const ext = Number(t.extension_days) || 0;
+      const extLeft = left + width;
+      const extWidth = ext ? Math.max(0.4, x(addDays(dueDate(t), 1)) - extLeft) : 0;
       const who = nameOf(t.contractor_id);
       return `
         <div class="rpt-g-row rpt-avoid">
           <div class="rpt-g-label">
             <strong>${esc(taskKa(t))}</strong>
             ${t.name_ka && t.name !== t.name_ka ? `<span class="rpt-g-en">${esc(t.name)}</span>` : ''}
-            <span>${d(t.planned_start)} → ${d(t.planned_finish)}${who ? ` · ${esc(who)}` : ''}</span>
+            <span>${d(t.planned_start)} → ${finishOf(t)}${who ? ` · ${esc(who)}` : ''}</span>
           </div>
           <div class="rpt-g-track">
             ${grid}
             <div class="rpt-g-bar rpt-g-${s.key}" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%">
               <div class="rpt-g-fill" style="width:${done}%"></div>
             </div>
+            ${ext ? `<div class="rpt-g-ext" style="left:${extLeft.toFixed(2)}%;width:${extWidth.toFixed(2)}%"></div>` : ''}
           </div>
           <div class="rpt-g-pct">
             <strong>${done}%</strong>
@@ -487,6 +501,7 @@ export async function buildProjectReport({
         ${legendItem('bad', 'ვადაგადაცილება', 'Overdue')}
         ${legendItem('muted', 'დაგეგმილი', 'Upcoming')}
         <span class="rpt-legend-item"><i class="rpt-sw rpt-sw-fill"></i>${L('მუქი ნაწილი = შესრულებული %', 'dark part = % complete')}</span>
+        ${tasks.some((t) => Number(t.extension_days)) ? `<span class="rpt-legend-item"><i class="rpt-sw rpt-sw-ext"></i>${L('შეფერხებით გაგრძელებული ვადა', 'extended by delays')}</span>` : ''}
         <span class="rpt-legend-item"><i class="rpt-sw-line rpt-sw-today"></i>${L('დღეს', 'Today')}</span>
         ${project.end_date ? `<span class="rpt-legend-item"><i class="rpt-sw-line rpt-sw-end"></i>${L('დასრულების თარიღი', 'Completion date')}</span>` : ''}
       </div>
@@ -525,7 +540,7 @@ export async function buildProjectReport({
             <tr>
               <td>${esc(taskBi(st.task))}</td>
               <td>${st.task.contractor_id ? esc(nameOf(st.task.contractor_id)) : '-'}</td>
-              <td>${d(st.task.planned_start)} → ${d(st.task.planned_finish)}</td>
+              <td>${d(st.task.planned_start)} → ${finishOf(st.task)}</td>
               <td class="num">${st.expected}%</td>
               <td class="num rpt-late">${st.actual}%</td>
               <td>${st.kind === 'not_started'
@@ -548,12 +563,12 @@ export async function buildProjectReport({
   // What is left, listed by the month it is due: a count says how much is
   // coming, but not which work it is - and that is what gets chased.
   const AHEAD_MAX = 15; // a long project would otherwise fill pages with rows
-  const byFinish = [...remaining].sort((a, b) => a.planned_finish.localeCompare(b.planned_finish));
+  const byFinish = [...remaining].sort((a, b) => dueDate(a).localeCompare(dueDate(b)));
   const aheadShown = byFinish.slice(0, AHEAD_MAX);
   const aheadMore = byFinish.length - aheadShown.length;
   const aheadMonths = new Map();
   for (const t of aheadShown) {
-    const key = t.planned_finish.slice(0, 7);
+    const key = dueDate(t).slice(0, 7);
     if (!aheadMonths.has(key)) aheadMonths.set(key, []);
     aheadMonths.get(key).push(t);
   }
@@ -604,7 +619,7 @@ export async function buildProjectReport({
               <tr>
                 <td>${esc(taskBi(t))}</td>
                 <td>${t.contractor_id ? esc(nameOf(t.contractor_id)) : '-'}</td>
-                <td>${d(t.planned_finish)}</td>
+                <td>${finishOf(t)}</td>
                 <td class="num">${Math.round(completionOf(t) * 100)}%</td>
                 <td class="num">${leftValue ? m(leftValue) : '-'}</td>
               </tr>`;

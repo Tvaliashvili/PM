@@ -326,6 +326,16 @@ html, body { background: var(--ink-950); }
 /* A delay that was running this day - the crew above is the evidence for it. */
 .log-card-delays { margin-bottom: 0.6rem; font-size: 0.75rem; color: #fcd34d; }
 
+/* ---------- A finish pushed out by delays, on the timetable ---------- */
+/* The promised date stays readable but struck through; the one the item is now
+   held to sits under it, with the days it gained. */
+.finish-was { display: block; font-size: 0.75rem; color: #64748b; text-decoration: line-through; }
+.finish-extended { display: block; color: #7dd3fc; cursor: help; }
+.finish-ext-days {
+  margin-left: 0.25rem; padding: 0 0.35rem; border-radius: 999px;
+  background: rgba(14, 165, 233, 0.15); font-size: 0.6875rem; font-weight: 600;
+}
+
 /* ---------- Work a delay held up, on the delay form ---------- */
 /* Scrolls once there are more items than fit, so the rest of the form stays reachable. */
 .impact-list {
@@ -1083,6 +1093,23 @@ textarea.input-dark { resize: vertical; }
 .rpt-g-active   { background: #bfdbfe; } .rpt-g-active .rpt-g-fill   { background: #2563eb; }
 .rpt-g-overdue  { background: #fecdd3; } .rpt-g-overdue .rpt-g-fill  { background: #e11d48; }
 .rpt-g-upcoming { background: #e2e8f0; } .rpt-g-upcoming .rpt-g-fill { background: #64748b; }
+/* Time a delay added to an item: past the end of its planned bar, in the sky
+   blue the timetable uses for an extension. */
+.rpt-g-ext {
+  position: absolute; top: 50%; height: 14px; margin-top: -7px;
+  border-radius: 0 4px 4px 0; background: #7dd3fc; z-index: 1;
+}
+.rpt-sw-ext { background: #7dd3fc; }
+/* The promised finish, where delays have pushed it out, struck through. The
+   line is drawn here rather than with text-decoration, which html2canvas puts
+   along the top of the digits, where it reads as an overline. */
+/* A box of its own, so the line spans the date and not the whole label - and
+   specific enough to beat .rpt-g-label span, which makes every span a block. */
+.rpt span.rpt-was { position: relative; display: inline-block; font-size: inherit; color: #94a3b8; }
+.rpt span.rpt-was::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 52%;
+  border-top: 1px solid #94a3b8;
+}
 .rpt-g-pct { flex: 0 0 108px; padding: 5px 8px 5px 4px; text-align: right; }
 .rpt-g-pct strong { display: block; font-size: 11px; }
 .rpt-g-head .rpt-g-pct em { display: block; margin-left: 0; }

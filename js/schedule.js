@@ -11,6 +11,11 @@ const DAY_MS = 86_400_000;
 
 const toDate = (iso) => new Date(`${iso}T00:00`);
 const dayDiff = (a, b) => Math.round((toDate(b) - toDate(a)) / DAY_MS);
+const addDays = (iso, n) => {
+  const d = toDate(iso);
+  d.setDate(d.getDate() + n);
+  return d.toLocaleDateString('en-CA');
+};
 
 // ---------- Delays ----------
 // A delay with no days lost written down is still running: it costs another day
@@ -32,9 +37,7 @@ export const delayDaysLost = (d, today = new Date().toLocaleDateString('en-CA'))
 export const delayEnd = (d, today = new Date().toLocaleDateString('en-CA')) => {
   if (d.resolved_on) return d.resolved_on;
   if (delayIsOngoing(d)) return today;
-  const end = toDate(delayStart(d));
-  end.setDate(end.getDate() + Math.max(0, delayDaysLost(d, today) - 1));
-  return end.toLocaleDateString('en-CA');
+  return addDays(delayStart(d), Math.max(0, delayDaysLost(d, today) - 1));
 };
 
 /** Whether a delay was running on one calendar day. */
@@ -47,21 +50,58 @@ export const delayCovers = (d, iso, today = new Date().toLocaleDateString('en-CA
  */
 export const causeOf = (d) => d.cause_contractor_id ?? d.contractor_id ?? null;
 
+// ---------- Extensions of time ----------
 /**
- * Days each timetable item lost to somebody else's delay: task id → days.
- * An item held up by a delay loses exactly the days that delay lasted - the
- * delay is why the work is standing, so the two run together, and an ongoing
- * one keeps excusing days until it is settled. Two delays holding up the same
- * item both count: it waited for both.
+ * Days each timetable item's finish is pushed out by the delays that held it
+ * up: task id → days. Never typed - an item waits for exactly as long as the
+ * delay lasts, so an ongoing one pushes the finish out a day at a time until
+ * it is settled. Each delay covers its start date and its days lost after it;
+ * two delays over the same days hold the item up once, because a day the work
+ * stood still is one day however many reasons it had.
  */
-export function excusedDaysByTask(impacts = [], today = new Date().toLocaleDateString('en-CA')) {
-  const days = new Map();
+export function extensionsByTask(impacts = [], today = new Date().toLocaleDateString('en-CA')) {
+  const spans = new Map();
   for (const i of impacts) {
     if (!i.delay) continue; // the delay it belongs to was not loaded
-    days.set(i.task_id, (days.get(i.task_id) ?? 0) + delayDaysLost(i.delay, today));
+    const start = delayStart(i.delay);
+    const end = addDays(start, delayDaysLost(i.delay, today) - 1);
+    if (!spans.has(i.task_id)) spans.set(i.task_id, []);
+    spans.get(i.task_id).push([start, end]);
+  }
+  const days = new Map();
+  for (const [taskId, list] of spans) {
+    list.sort((a, b) => a[0].localeCompare(b[0]));
+    let total = 0;
+    let [from, to] = list[0];
+    for (const [s, e] of list.slice(1)) {
+      if (s <= addDays(to, 1)) {
+        if (e > to) to = e;
+      } else {
+        total += dayDiff(from, to) + 1;
+        [from, to] = [s, e];
+      }
+    }
+    days.set(taskId, total + dayDiff(from, to) + 1);
   }
   return days;
 }
+
+/**
+ * The timetable with each item's extension on it, as extension_days. Worked
+ * out afresh on every load rather than stored, so it can never fall out of step
+ * with the delays: untick an item or delete the delay and the date comes back.
+ */
+export const withExtensions = (tasks, impacts, today) => {
+  const ext = extensionsByTask(impacts, today);
+  return tasks.map((t) => ({ ...t, extension_days: ext.get(t.id) ?? 0 }));
+};
+
+/**
+ * When an item is due: its planned finish, pushed out by any extension. The
+ * planned finish itself is left alone, so the date the programme promised and
+ * the one the delays have moved it to can both be shown.
+ */
+export const dueDate = (task) => addDays(task.planned_finish, Number(task.extension_days) || 0);
 
 /** Planned duration in days, inclusive of both ends (a one-day task weighs 1). */
 export const durationDays = (task) => dayDiff(task.planned_start, task.planned_finish) + 1;
@@ -70,11 +110,16 @@ export const durationDays = (task) => dayDiff(task.planned_start, task.planned_f
 export const completionOf = (task) =>
   (task.done ? 1 : Math.min(100, Math.max(0, Number(task.progress_pct || 0))) / 100);
 
-/** Share of a task's duration that has passed by `todayIso` (0…1). */
+/**
+ * Share of a task's time that has passed by `todayIso` (0…1). Its time runs to
+ * the due date: days it stood waiting on someone else's delay are not days it
+ * should have been working through.
+ */
 function plannedFraction(task, todayIso) {
+  const due = dueDate(task);
   if (todayIso < task.planned_start) return 0;
-  if (todayIso >= task.planned_finish) return 1;
-  return (dayDiff(task.planned_start, todayIso) + 1) / durationDays(task);
+  if (todayIso >= due) return 1;
+  return (dayDiff(task.planned_start, todayIso) + 1) / (dayDiff(task.planned_start, due) + 1);
 }
 
 /** What share of an item should be done by `todayIso`, 0-100, from its dates alone. */
@@ -86,11 +131,14 @@ export const expectedPct = (task, todayIso) => Math.round(plannedFraction(task, 
  * daysLate is set for overdue tasks and for tasks finished after their planned date.
  */
 export function taskState(task, todayIso) {
+  // Late means late against the due date: an extension is time the contractor
+  // was given, not time he took.
+  const due = dueDate(task);
   if (task.done) {
-    const late = task.done_at ? dayDiff(task.planned_finish, task.done_at) : 0;
+    const late = task.done_at ? dayDiff(due, task.done_at) : 0;
     return { key: 'done', daysLate: Math.max(0, late) };
   }
-  if (todayIso > task.planned_finish) return { key: 'overdue', daysLate: dayDiff(task.planned_finish, todayIso) };
+  if (todayIso > due) return { key: 'overdue', daysLate: dayDiff(due, todayIso) };
   if (todayIso >= task.planned_start) return { key: 'active', daysLate: 0 };
   return { key: 'upcoming', daysLate: 0 };
 }
@@ -320,12 +368,16 @@ export function contractorManDays(logs) {
 
 /**
  * Per-contractor performance on one project. Keyed by contractor_id ('' = unassigned).
- * Each entry: { items, onTime, late, avgDaysLate, overdue, open, delayDays, budget, paid }
- *   onTime/late - finished items, split by whether done_at was after planned_finish
- *   overdue     - unfinished items past their planned finish today
+ * Each entry: { items, onTime, late, avgDaysLate, overdue, open, delayDays,
+ *               excusedDays, excusedItems, budget, paid }
+ *   onTime/late - finished items, split by whether done_at was after the due date
+ *   overdue     - unfinished items past their due date today
  *   open        - unfinished items not yet overdue (in progress or upcoming)
+ *   delayDays   - days of the delays this contractor caused
+ *   excusedDays - days his own items were extended by other people's delays
+ * `tasks` must carry extension_days (see withExtensions), or nothing is excused.
  */
-export function contractorPerformance(tasks, delays, payments, todayIso, impacts = []) {
+export function contractorPerformance(tasks, delays, payments, todayIso) {
   const stats = new Map();
   const entry = (id) => {
     const key = id ?? '';
@@ -338,34 +390,31 @@ export function contractorPerformance(tasks, delays, payments, todayIso, impacts
     return stats.get(key);
   };
 
-  const excused = excusedDaysByTask(impacts, todayIso);
   const taskContractor = new Map();
   for (const task of tasks) {
     taskContractor.set(task.id, task.contractor_id ?? '');
     const s = entry(task.contractor_id);
+    // Measured against the due date, so days another contractor's delay held
+    // this item up are already off its lateness.
     const state = taskState(task, todayIso);
     s.items += 1;
     s.budget += budgetOf(task);
-    // Days another contractor's delay cost this item come off its lateness
-    // before its own contractor is counted late for them.
-    const off = Math.min(state.daysLate, excused.get(task.id) ?? 0);
-    const own = state.daysLate - off;
-    if (off > 0) {
-      s.excusedDays += off;
+    // Counted from the day the delay is logged, not once the item runs late:
+    // the time was given to him whether or not he has needed it yet.
+    const ext = Number(task.extension_days) || 0;
+    if (ext > 0) {
+      s.excusedDays += ext;
       s.excusedItems += 1;
     }
     if (state.key === 'done') {
-      if (own > 0) {
+      if (state.daysLate > 0) {
         s.late += 1;
-        s.lateDays += own;
+        s.lateDays += state.daysLate;
       } else {
         s.onTime += 1;
       }
     } else if (state.key === 'overdue') {
-      // Excused in full: it is running behind the programme, but not behind its
-      // own contractor's - so it does not count against him.
-      if (own > 0) s.overdue += 1;
-      else s.open += 1;
+      s.overdue += 1;
     } else {
       s.open += 1;
     }

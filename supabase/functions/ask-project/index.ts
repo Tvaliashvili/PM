@@ -15,7 +15,7 @@ const MAX_QUESTION_CHARS = 1_000;
 // roughly 1.5M characters of JSON. Only past that are the oldest logs dropped.
 const MAX_CONTEXT_CHARS = 1_500_000;
 
-const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget), contractors, delays (counted in whole days lost, described in Georgian and English; a delay with ongoing=true has not been settled yet - its days_lost is the count so far and keeps growing; contractor_at_fault caused it and held_up lists the work it stopped, with the contractor who was waiting - each of those items lost this delay's whole days_lost, so when judging whether someone is running late, take those days off the waiting contractor and count them against the one at fault, and say so), payments to contractors, daily workers (manpower.day_workers, each paid the log's day_rate for that day) and equipment rentals (daily_rate × days).
+const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget; due is the planned finish pushed out by extension_days, the days delays held the item up - judge an item late or overdue against due, never planned_finish), contractors, delays (counted in whole days lost, described in Georgian and English; a delay with ongoing=true has not been settled yet - its days_lost is the count so far and keeps growing; contractor_at_fault caused it and held_up lists the work it stopped, with the contractor who was waiting - each of those items lost this delay's whole days_lost, so when judging whether someone is running late, take those days off the waiting contractor and count them against the one at fault, and say so), payments to contractors, daily workers (manpower.day_workers, each paid the log's day_rate for that day) and equipment rentals (daily_rate × days).
 
 Rules:
 - Answer twice, whatever language the question is in: "ka" in natural, professional Georgian as used in Georgian construction reporting, and "en" in English. The two must state the same facts and figures - neither leaves out something the other says. Write each as it would be written in that language, not word for word from the other.
@@ -66,6 +66,36 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
     return json({ error: "Could not read the project data" }, 500);
   }
 
+  // Each item's finish, pushed out by the delays that held it up - the same
+  // rule as the app (js/schedule.js extensionsByTask): a delay covers its start
+  // day and its days lost after it, and days two delays share count once.
+  const today = String(payload.today ?? new Date().toISOString().slice(0, 10));
+  const day = (iso: string) => new Date(`${iso}T00:00:00Z`).getTime();
+  const addDays = (iso: string, n: number) => new Date(day(iso) + n * 86_400_000).toISOString().slice(0, 10);
+  const daysLost = (d: any) => d.duration_days ?? Math.max(1,
+    Math.round((day(today) - day(String(d.created_at).slice(0, 10))) / 86_400_000) + 1);
+  const spans = new Map<string, [string, string][]>();
+  for (const d of delays.data ?? []) {
+    const start = String(d.created_at).slice(0, 10);
+    for (const i of (d as any).impacts ?? []) {
+      if (!spans.has(i.task_id)) spans.set(i.task_id, []);
+      spans.get(i.task_id)!.push([start, addDays(start, daysLost(d) - 1)]);
+    }
+  }
+  const extension = new Map<string, number>();
+  for (const [taskId, list] of spans) {
+    list.sort((a, b) => a[0].localeCompare(b[0]));
+    let total = 0;
+    let [from, to] = list[0];
+    for (const [s, e] of list.slice(1)) {
+      if (s <= addDays(to, 1)) { if (e > to) to = e; } else {
+        total += (day(to) - day(from)) / 86_400_000 + 1;
+        [from, to] = [s, e];
+      }
+    }
+    extension.set(taskId, total + (day(to) - day(from)) / 86_400_000 + 1);
+  }
+
   const contractorName = new Map((contractors.data ?? []).map((c) => [c.id, c.name]));
   const taskName = new Map((tasks.data ?? []).map((t) => [t.id, t.name]));
   const taskContractor = new Map((tasks.data ?? []).map((t) => [t.id, t.contractor_id]));
@@ -76,6 +106,9 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
       item_ka: t.name_ka,
       planned_start: t.planned_start,
       planned_finish: t.planned_finish,
+      // Days delays added to this item, and the finish it is held to because of them.
+      extension_days: extension.get(t.id) ?? 0,
+      due: addDays(t.planned_finish, extension.get(t.id) ?? 0),
       percent_complete: t.progress_pct,
       finished_on: t.done_at,
       contractor: contractorName.get(t.contractor_id) ?? null,
