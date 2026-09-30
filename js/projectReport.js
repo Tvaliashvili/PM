@@ -325,8 +325,8 @@ export async function buildProjectReport({
   const overdueIds = new Set(progress.overdue.map((t) => t.id)); // counted above already
   const stalledCount = stalled.filter((x) => !overdueIds.has(x.task.id)).length;
   if (stalledCount) {
-    alerts.push(['bad', `${stalledCount} სამუშაო არ მოძრაობს`,
-      `${stalledCount} ${stalledCount === 1 ? 'item is' : 'items are'} not moving`]);
+    alerts.push(['bad', `${stalledCount} სამუშაო ჩამორჩება გეგმას`,
+      `${stalledCount} ${stalledCount === 1 ? 'item is' : 'items are'} behind plan`]);
   }
 
   const horizon = addDays(today, 14);
@@ -526,7 +526,7 @@ export async function buildProjectReport({
   // nobody is on it, or nobody has updated the figure. Both are worth asking about.
   const notMoving = !stalled.length ? '' : `
     <section class="rpt-section rpt-avoid">
-      ${H('შეჩერებულია', 'Not moving', `${stalled.length} ${L('სამუშაო', 'items')}`)}
+      ${H('გეგმას ჩამორჩენილი სამუშაოები', 'Work behind plan', `${stalled.length} ${L('სამუშაო', 'items')}`)}
       <table class="rpt-compact">
         <thead>
           <tr>
