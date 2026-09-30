@@ -109,5 +109,5 @@ export const BOQ_UNITS = ['m²', 'm³', 'm', 'kg', 't', 'pcs', 'lump sum', 'day'
 // Suggestions for a contractor's trade (free text is allowed too).
 export const CONTRACTOR_TRADES = [
   'General contractor', 'Earthworks', 'Concrete', 'Steel / rebar', 'Masonry', 'Roofing',
-  'Facade', 'Windows & doors', 'Plumbing', 'Electrical', 'HVAC', 'Finishes', 'Elevators',
+  'Facade', 'Windows & doors', 'MEP', 'Plumbing', 'Electrical', 'HVAC', 'Finishes', 'Elevators',
 ];
