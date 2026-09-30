@@ -994,7 +994,7 @@ export async function buildProjectReport({
           </p>
           <div class="rpt-type-chips">
             ${[...byType].sort((a, b) => b[1].n - a[1].n).map(([type, e]) => `
-              <span class="rpt-type"><b>${e.n}</b> ${esc(bi(type))}${e.area ? ` · ${num.format(e.area)} m²` : ''}</span>`).join('')}
+              <span class="rpt-type"><b>${e.n})</b> ${esc(bi(type))}${e.area ? ` · ${num.format(e.area)} m²` : ''}</span>`).join('')}
           </div>
           ${roomGrid}` : none}
       </section>`;
