@@ -288,9 +288,22 @@ export async function buildProjectReport({
 
   // ---------- Needs attention + next 14 days ----------
   const alerts = [];
-  // The ring beside this list already gives both percentages: say only the gap.
+  // Items behind their own dates, not counting the overdue ones named below.
+  const stalled = stalledTasks(tasks, today);
+  const overdueIds = new Set(progress.overdue.map((t) => t.id));
+  const stalledCount = stalled.filter((x) => !overdueIds.has(x.task.id)).length;
+  const lagging = stalledCount
+    ? [`${stalledCount} სამუშაო ჩამორჩება გეგმას`, `${stalledCount} ${stalledCount === 1 ? 'item is' : 'items are'} behind plan`]
+    : null;
+  // How far behind the project is, and how many items it is behind on, are one
+  // question at two sizes: one line. The ring beside this list already gives
+  // both percentages, so it says only the gap.
   if (progress.count && gap < -5) {
-    alerts.push(['bad', `გეგმას ჩამორჩება ${Math.abs(gap)}%-ით`, `Behind plan by ${Math.abs(gap)}%`]);
+    alerts.push(['bad',
+      `გეგმას ჩამორჩება ${Math.abs(gap)}%-ით${stalledCount ? ` · ${stalledCount} სამუშაო` : ''}`,
+      `Behind plan by ${Math.abs(gap)}%${stalledCount ? ` · ${stalledCount} ${stalledCount === 1 ? 'item' : 'items'}` : ''}`]);
+  } else if (lagging) {
+    alerts.push(['bad', ...lagging]);
   }
   for (const t of progress.overdue.slice(0, 5)) {
     const who = nameOf(t.contractor_id);
@@ -316,18 +329,9 @@ export async function buildProjectReport({
     for (const x of delays) byCause.set(x.delay_cause, (byCause.get(x.delay_cause) ?? 0) + delayDaysLost(x, today));
     const [topCause, topDays] = [...byCause].sort((a, b) => b[1] - a[1])[0];
     alerts.push(['warn', `ბოლო 30 დღეში ${delays.length} შეფერხება, ${delayDays} დღე; ძირითადი მიზეზი: ${bi(topCause).split(' / ')[0]} (${topDays} დღე)`,
-      `${delays.length} delays in the last 30 days, ${delayDays} days lost; mostly ${topCause} (${topDays} days)`]);
+      `${delays.length} ${delays.length === 1 ? 'delay' : 'delays'} in the last 30 days, ${delayDays} ${delayDays === 1 ? 'day' : 'days'} lost; mostly ${topCause} (${topDays} ${topDays === 1 ? 'day' : 'days'})`]);
   }
 
-  // Open delays get their own note at the head of the delays section; the
-  // list below names every stalled item. Both only need pointing at here.
-  const stalled = stalledTasks(tasks, today);
-  const overdueIds = new Set(progress.overdue.map((t) => t.id)); // counted above already
-  const stalledCount = stalled.filter((x) => !overdueIds.has(x.task.id)).length;
-  if (stalledCount) {
-    alerts.push(['bad', `${stalledCount} სამუშაო ჩამორჩება გეგმას`,
-      `${stalledCount} ${stalledCount === 1 ? 'item is' : 'items are'} behind plan`]);
-  }
 
   const horizon = addDays(today, 14);
   const lookAhead = tasks
