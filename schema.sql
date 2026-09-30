@@ -701,3 +701,16 @@ create policy "authenticated_full_access" on public.delay_impacts
   for all to authenticated using (true) with check (true);
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 22. A held-up item loses exactly the days the delay lasted
+-- days_lost was asked for per item, on the reasoning that float differs. In
+-- practice nobody knows that number, and inventing one is worse than useless:
+-- the delay is the reason the work is standing, so for as long as the delay
+-- runs the hold-up runs with it. The days now come from the delay itself,
+-- which means an ongoing delay keeps excusing days until it is settled,
+-- without anyone having to remember to come back and raise the figure.
+-- -------------------------------------------------------------
+alter table public.delay_impacts drop column if exists days_lost;
+
+notify pgrst, 'reload schema';

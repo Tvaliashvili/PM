@@ -709,10 +709,11 @@ async function loadSchedule(projectId) {
     db.from('delays')
       .select('cause_contractor_id, duration_days, created_at, delay_cause, resolved_on')
       .eq('project_id', projectId),
-    // Days each item lost to a delay, so excused lateness is off the contractor's record.
+    // Work each delay held up. The delay comes with it: the days an item is
+    // excused are the days that delay lasted, counted from it rather than typed.
     db.from('delay_impacts')
-      .select('delay_id, task_id, days_lost, delays!inner(project_id)')
-      .eq('delays.project_id', projectId),
+      .select('delay_id, task_id, delay:delays!inner(project_id, duration_days, created_at, resolved_on)')
+      .eq('delay.project_id', projectId),
     db.from('contractors')
       .select('id, name, name_ka, trade, contact_person, phone, email, notes')
       .eq('project_id', projectId)
@@ -1134,15 +1135,18 @@ function crewNote(delay) {
 function knockOnCell(delay) {
   const impacts = delay.impacts ?? [];
   if (!impacts.length) return '<span class="text-slate-500">-</span>';
+  // Every held-up item loses the delay's own days, so the figure is said once.
+  const days = delayDaysLost(delay);
   const byContractor = new Map();
   for (const i of impacts) {
     const task = state.tasks.find((t) => t.id === i.task_id);
     const who = task?.contractor_id ? contractorName(task.contractor_id) : 'No contractor';
     if (!byContractor.has(who)) byContractor.set(who, []);
-    byContractor.get(who).push(`${task ? task.name : 'Item removed'} (${i.days_lost} d)`);
+    byContractor.get(who).push(task ? task.name : 'Item removed');
   }
   return [...byContractor].map(([who, items]) => `
     <p class="text-xs"><span class="text-white">${esc(who)}</span>
+      <span class="text-sky-300">${days} d</span>
       <span class="text-slate-500">${esc(items.join(', '))}</span></p>`).join('');
 }
 
@@ -3308,47 +3312,27 @@ function openDelayModal(delay = null) {
  */
 function renderImpactPicker(delay) {
   const el = $('#delay-impacts');
-  const already = new Map((delay?.impacts ?? []).map((i) => [i.task_id, i.days_lost]));
+  const already = new Set((delay?.impacts ?? []).map((i) => i.task_id));
   if (!state.tasks.length) {
     el.innerHTML = '<div class="empty-state">No timetable items yet - add them on the Timetable first.</div>';
     return;
   }
   el.innerHTML = state.tasks.map((t) => {
-    const hit  = already.has(t.id);
-    const who  = t.contractor_id ? contractorName(t.contractor_id) : 'No contractor';
-    const days = already.get(t.id) ?? '';
+    const who = t.contractor_id ? contractorName(t.contractor_id) : 'No contractor';
     return `
       <label class="impact-row">
-        <input type="checkbox" data-impact-task="${esc(t.id)}"${hit ? ' checked' : ''}>
+        <input type="checkbox" data-impact-task="${esc(t.id)}"${already.has(t.id) ? ' checked' : ''}>
         <span class="impact-row-name">${esc(t.name)}
           <span class="impact-row-who">${esc(who)} · ${esc(formatDate(t.planned_start))} → ${esc(formatDate(t.planned_finish))}</span>
         </span>
-        <input type="number" min="1" step="1" class="input-dark impact-row-days" aria-label="Days lost"
-               value="${esc(String(days))}"${hit ? '' : ' disabled'}>
       </label>`;
   }).join('');
 }
 
-/**
- * Ticking an item asks for its days, and starts from the delay's own duration -
- * usually the same number, and one click when it is.
- */
-function onImpactToggle(e) {
-  const box = e.target.closest('[data-impact-task]');
-  if (!box) return;
-  const days = $('.impact-row-days', box.closest('.impact-row'));
-  days.disabled = !box.checked;
-  if (!box.checked) return;
-  if (!days.value) days.value = $('#delay-status').value === 'ongoing' ? 1 : ($('#form-delay').elements.duration_days.value || 1);
-  days.focus();
-}
-
 /** What the picker has: one entry per ticked item. */
 const impactsFromPicker = () =>
-  $$('#delay-impacts [data-impact-task]').filter((b) => b.checked).map((b) => ({
-    task_id: b.dataset.impactTask,
-    days_lost: Math.max(1, Number($('.impact-row-days', b.closest('.impact-row')).value) || 1),
-  }));
+  $$('#delay-impacts [data-impact-task]').filter((b) => b.checked)
+    .map((b) => ({ task_id: b.dataset.impactTask }));
 
 // Ongoing delays have no end date and no days lost yet - those fields only
 // make sense once the delay is settled.
@@ -3574,7 +3558,6 @@ $('#btn-translate-event').addEventListener('click', () => onTranslate('#form-eve
 $('#btn-translate-variation').addEventListener('click', () => onTranslate('#form-variation', '#btn-translate-variation',
   (f) => [f.ref.value, f.title.value].filter(Boolean).join(' - ')));
 $('#delay-status').addEventListener('change', syncDelayStatus);
-$('#delay-impacts').addEventListener('change', onImpactToggle);
 $('#delays-table').addEventListener('click', onDelaysTableClick);
 $('#btn-add-rental').addEventListener('click', () => openRentalModal());
 $('#form-rental').addEventListener('submit', saveRental);

@@ -342,9 +342,6 @@ html, body { background: var(--ink-950); }
 .impact-row input[type="checkbox"] { flex: none; accent-color: #0ea5e9; }
 .impact-row-name { min-width: 0; flex: 1; font-size: 0.8125rem; color: #e2e8f0; }
 .impact-row-who { display: block; font-size: 0.6875rem; color: #64748b; }
-.impact-row-days { flex: none; width: 4.5rem; }
-/* Days only matter for an item that is ticked. */
-.impact-row-days:disabled { opacity: 0.35; }
 .impact-list .empty-state { border: 0; }
 
 /* Open / closed, on the safety register */
@@ -1105,6 +1102,20 @@ textarea.input-dark { resize: vertical; }
 .rpt-chart svg { display: block; }
 .rpt-compact { font-size: 10.5px; }
 .rpt-compact th, .rpt-compact td { padding: 4px 7px; }
+
+/* The delay list carries a long description, which under the automatic table
+   layout squeezes the narrow columns below the width their own words need -
+   and the text then spills over itself. Fixed widths give each column its
+   room and let the description take what is left. */
+.rpt-delays { table-layout: fixed; }
+.rpt-delays th, .rpt-delays td { overflow-wrap: break-word; }
+.rpt-delays .rpt-c-date { width: 8%; }
+.rpt-delays .rpt-c-cause { width: 11%; }
+.rpt-delays .rpt-c-where { width: 10%; }
+.rpt-delays .rpt-c-fault { width: 12%; }
+.rpt-delays .rpt-c-held { width: 15%; }
+.rpt-delays .rpt-c-days { width: 6%; }
+.rpt-delays .rpt-c-status { width: 10%; }
 
 /* Horizontal bars: cost per item, delays per cause */
 .rpt-hbars { display: grid; gap: 5px; margin-bottom: 10px; }

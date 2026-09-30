@@ -49,12 +49,16 @@ export const causeOf = (d) => d.cause_contractor_id ?? d.contractor_id ?? null;
 
 /**
  * Days each timetable item lost to somebody else's delay: task id → days.
- * Two delays holding up the same item both count - it waited for both.
+ * An item held up by a delay loses exactly the days that delay lasted - the
+ * delay is why the work is standing, so the two run together, and an ongoing
+ * one keeps excusing days until it is settled. Two delays holding up the same
+ * item both count: it waited for both.
  */
-export function excusedDaysByTask(impacts = []) {
+export function excusedDaysByTask(impacts = [], today = new Date().toLocaleDateString('en-CA')) {
   const days = new Map();
   for (const i of impacts) {
-    days.set(i.task_id, (days.get(i.task_id) ?? 0) + (Number(i.days_lost) || 0));
+    if (!i.delay) continue; // the delay it belongs to was not loaded
+    days.set(i.task_id, (days.get(i.task_id) ?? 0) + delayDaysLost(i.delay, today));
   }
   return days;
 }
@@ -334,7 +338,7 @@ export function contractorPerformance(tasks, delays, payments, todayIso, impacts
     return stats.get(key);
   };
 
-  const excused = excusedDaysByTask(impacts);
+  const excused = excusedDaysByTask(impacts, todayIso);
   const taskContractor = new Map();
   for (const task of tasks) {
     taskContractor.set(task.id, task.contractor_id ?? '');

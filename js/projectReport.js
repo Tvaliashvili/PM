@@ -1049,13 +1049,16 @@ export async function buildProjectReport({
   const heldUp = (x) => {
     const impacts = x.impacts ?? [];
     if (!impacts.length) return '-';
+    // Each item held up loses the delay's own days, so the figure is said once.
+    const days = delayDaysLost(x, today);
     const byWho = new Map();
     for (const i of impacts) {
       const t = tasks.find((z) => z.id === i.task_id);
       const who = t?.contractor_id ? nameOf(t.contractor_id) : bi('No contractor');
-      byWho.set(who, (byWho.get(who) ?? 0) + Number(i.days_lost || 0));
+      byWho.set(who, (byWho.get(who) ?? 0) + 1);
     }
-    return [...byWho].map(([who, days]) => `${esc(who)} <em>${days} ${L('დღე', 'd')}</em>`).join('<br>');
+    return [...byWho].map(([who, n]) =>
+      `${esc(who)} <em>${n} ${L('სამუშაო', n === 1 ? 'item' : 'items')} · ${days} ${L('დღე', 'd')}</em>`).join('<br>');
   };
 
   const causeDays = new Map();
@@ -1126,13 +1129,17 @@ export async function buildProjectReport({
               <span class="rpt-hbar-value">${e.days} ${L('დღე', 'days')}<em>${e.n}× </em></span>
             </div>`).join('')}
         </div>
-        <table class="rpt-compact">
+        <table class="rpt-compact rpt-delays">
           <thead>
             <tr>
-              <th>${L('თარიღი', 'Date')}</th><th>${L('მიზეზი', 'Cause')}</th>${rooms ? `<th>${L('ადგილი', 'Location')}</th>` : ''}
-              <th>${L('დამნაშავე', 'At fault')}</th><th>${L('შეაფერხა სამუშაო', 'Work held up')}</th>
-              <th class="num">${L('დღე', 'Days')}</th>
-              <th>${L('სტატუსი', 'Status')}</th><th>${L('აღწერა', 'Description')}</th>
+              <th class="rpt-c-date">${L('თარიღი', 'Date')}</th>
+              <th class="rpt-c-cause">${L('მიზეზი', 'Cause')}</th>
+              ${rooms ? `<th class="rpt-c-where">${L('ადგილი', 'Location')}</th>` : ''}
+              <th class="rpt-c-fault">${L('დამნაშავე', 'At fault')}</th>
+              <th class="rpt-c-held">${L('შეაფერხა სამუშაო', 'Work held up')}</th>
+              <th class="num rpt-c-days">${L('დღე', 'Days')}</th>
+              <th class="rpt-c-status">${L('სტატუსი', 'Status')}</th>
+              <th>${L('აღწერა', 'Description')}</th>
             </tr>
           </thead>
           <tbody>
