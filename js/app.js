@@ -35,7 +35,7 @@ const state = {
   tasks: [],            // timetable items (also the BOQ)
   payments: [],         // task_payments
   contractorDelays: [], // delays with cause_contractor_id + days
-  delayImpacts: [],     // { delay_id, task_id, days_lost } - work a delay held up
+  delayImpacts: [],     // { delay_id, task_id, delay } - work a delay held up
   contractors: [],      // this project's contractors
   siteLogs: [],         // every daily log's date, manpower and day rate (daily-worker pay)
   events: [],           // safety and quality events, newest first
@@ -1053,7 +1053,7 @@ async function refreshDashboard(projectId) {
   // The Spent vs Budget card is updated by renderCosts() from the timetable.
   const [delays, logs] = await Promise.all([
     db.from('delays')
-      .select('id, delay_cause, duration_days, resolved_on, description, description_en, created_at, flat_id, cause_contractor_id, flats(block, flat_number), impacts:delay_impacts(task_id, days_lost)')
+      .select('id, delay_cause, duration_days, resolved_on, description, description_en, created_at, flat_id, cause_contractor_id, flats(block, flat_number), impacts:delay_impacts(task_id)')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false }),
     db.from('daily_logs')

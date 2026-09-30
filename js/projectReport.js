@@ -116,7 +116,7 @@ async function fetchExtras(db, projectId, today) {
       .order('log_date', { ascending: false })
       .limit(14),
     db.from('delays')
-      .select('created_at, delay_cause, duration_days, resolved_on, description, description_en, cause_contractor_id, flats(block, flat_number), impacts:delay_impacts(task_id, days_lost)')
+      .select('created_at, delay_cause, duration_days, resolved_on, description, description_en, cause_contractor_id, flats(block, flat_number), impacts:delay_impacts(task_id)')
       .eq('project_id', projectId)
       // The last 30 days, plus anything still running from before - an open
       // delay belongs in the report however old it is.
