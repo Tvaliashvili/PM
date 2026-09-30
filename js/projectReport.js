@@ -1049,16 +1049,15 @@ export async function buildProjectReport({
   const heldUp = (x) => {
     const impacts = x.impacts ?? [];
     if (!impacts.length) return '-';
-    // Each item held up loses the delay's own days, so the figure is said once.
-    const days = delayDaysLost(x, today);
     const byWho = new Map();
     for (const i of impacts) {
       const t = tasks.find((z) => z.id === i.task_id);
       const who = t?.contractor_id ? nameOf(t.contractor_id) : bi('No contractor');
-      byWho.set(who, (byWho.get(who) ?? 0) + 1);
+      if (!byWho.has(who)) byWho.set(who, []);
+      byWho.get(who).push(t ? taskBi(t) : bi('Item removed'));
     }
-    return [...byWho].map(([who, n]) =>
-      `${esc(who)} <em>${n} ${L('სამუშაო', n === 1 ? 'item' : 'items')} · ${days} ${L('დღე', 'd')}</em>`).join('<br>');
+    return [...byWho].map(([who, items]) =>
+      `${esc(who)}<br><span class="rpt-muted">${items.map(esc).join(', ')}</span>`).join('<br>');
   };
 
   const causeDays = new Map();
@@ -1129,35 +1128,27 @@ export async function buildProjectReport({
               <span class="rpt-hbar-value">${e.days} ${L('დღე', 'days')}<em>${e.n}× </em></span>
             </div>`).join('')}
         </div>
-        <table class="rpt-compact rpt-delays">
-          <thead>
-            <tr>
-              <th class="rpt-c-date">${L('თარიღი', 'Date')}</th>
-              <th class="rpt-c-cause">${L('მიზეზი', 'Cause')}</th>
-              ${rooms ? `<th class="rpt-c-where">${L('ადგილი', 'Location')}</th>` : ''}
-              <th class="rpt-c-fault">${L('დამნაშავე', 'At fault')}</th>
-              <th class="rpt-c-held">${L('შეაფერხა სამუშაო', 'Work held up')}</th>
-              <th class="num rpt-c-days">${L('დღე', 'Days')}</th>
-              <th class="rpt-c-status">${L('სტატუსი', 'Status')}</th>
-              <th>${L('აღწერა', 'Description')}</th>
-            </tr>
-          </thead>
+        ${delays.map((x) => {
+    // One delay to a table, its headings down the side: the values get the
+    // width of the page instead of an eighth of it each.
+    const row = (ka, en, value) => `<tr><th scope="row">${L(ka, en)}</th><td>${value}</td></tr>`;
+    return `
+        <table class="rpt-compact rpt-delay">
           <tbody>
-            ${delays.map((x) => `
-              <tr>
-                <td>${d(x.created_at)}</td>
-                <td>${esc(bi(x.delay_cause))}</td>
-                ${rooms ? `<td>${x.flats ? esc([x.flats.block, x.flats.flat_number].filter(Boolean).join('-')) : esc(bi('Site-wide'))}</td>` : ''}
-                <td>${causeOf(x) ? esc(nameOf(causeOf(x))) : '-'}</td>
-                <td>${heldUp(x)}</td>
-                <td class="num">${num.format(delayDaysLost(x, today))}${delayIsOngoing(x) ? '+' : ''}</td>
-                <td>${delayIsOngoing(x)
+            ${row('თარიღი', 'Date', d(x.created_at))}
+            ${row('მიზეზი', 'Cause', esc(bi(x.delay_cause)))}
+            ${rooms ? row('ადგილი', 'Location',
+    x.flats ? esc([x.flats.block, x.flats.flat_number].filter(Boolean).join('-')) : esc(bi('Site-wide'))) : ''}
+            ${row('დამნაშავე', 'At fault', causeOf(x) ? esc(nameOf(causeOf(x))) : '-')}
+            ${row('შეაფერხა სამუშაო', 'Work held up', heldUp(x))}
+            ${row('დღე', 'Days', `${num.format(delayDaysLost(x, today))}${delayIsOngoing(x) ? '+' : ''}`)}
+            ${row('სტატუსი', 'Status', delayIsOngoing(x)
     ? chip({ ka: 'მიმდინარე', en: 'Ongoing', tone: 'bad' })
-    : `${L('დასრულდა', 'Ended')} ${x.resolved_on ? d(x.resolved_on) : ''}`.trim()}</td>
-                <td class="rpt-prose">${biText(x.description, x.description_en)}</td>
-              </tr>`).join('')}
+    : `${L('დასრულდა', 'Ended')} ${x.resolved_on ? d(x.resolved_on) : ''}`.trim())}
+            ${row('აღწერა', 'Description', biText(x.description, x.description_en))}
           </tbody>
-        </table>` : `<p class="rpt-all-good">✓ ${L('ბოლო 30 დღეში შეფერხება არ ყოფილა', 'No delays in the last 30 days')}</p>`}
+        </table>`;
+  }).join('')}` : `<p class="rpt-all-good">✓ ${L('ბოლო 30 დღეში შეფერხება არ ყოფილა', 'No delays in the last 30 days')}</p>`}
       ${blameTable}
     </section>`;
 

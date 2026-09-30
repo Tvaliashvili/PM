@@ -104,6 +104,8 @@ export const KA = {
 
   // Report phrases
   'Site-wide': 'მთელი ობიექტი',
+  'No contractor': 'კონტრაქტორის გარეშე',
+  'Item removed': 'სამუშაო წაშლილია',
   'Ongoing': 'მიმდინარე',
   'Hired by the client': 'დამკვეთის მიერ დაქირავებული',
   'Man-days': 'კაც-დღე',

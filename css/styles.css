@@ -1103,19 +1103,14 @@ textarea.input-dark { resize: vertical; }
 .rpt-compact { font-size: 10.5px; }
 .rpt-compact th, .rpt-compact td { padding: 4px 7px; }
 
-/* The delay list carries a long description, which under the automatic table
-   layout squeezes the narrow columns below the width their own words need -
-   and the text then spills over itself. Fixed widths give each column its
-   room and let the description take what is left. */
-.rpt-delays { table-layout: fixed; }
-.rpt-delays th, .rpt-delays td { overflow-wrap: break-word; }
-.rpt-delays .rpt-c-date { width: 8%; }
-.rpt-delays .rpt-c-cause { width: 11%; }
-.rpt-delays .rpt-c-where { width: 10%; }
-.rpt-delays .rpt-c-fault { width: 12%; }
-.rpt-delays .rpt-c-held { width: 15%; }
-.rpt-delays .rpt-c-days { width: 6%; }
-.rpt-delays .rpt-c-status { width: 10%; }
+/* One delay to a table, headings down the side. Across the top, eight columns
+   left each value an eighth of the page, narrower than some of its own words -
+   and html2canvas cannot draw a word the browser has had to split: it draws it
+   whole, over its neighbour. Down the side, every value has the page's width. */
+.rpt-delay { table-layout: fixed; margin-bottom: 8px; }
+.rpt-delay th[scope="row"] { width: 120px; }
+/* Stripes mark one record from the next in a list; here every row is the same one. */
+.rpt .rpt-delay tbody tr:nth-child(even) td { background: none; }
 
 /* Horizontal bars: cost per item, delays per cause */
 .rpt-hbars { display: grid; gap: 5px; margin-bottom: 10px; }
