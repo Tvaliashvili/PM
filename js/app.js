@@ -571,13 +571,14 @@ function renderUnits() {
   if (state.unitFloor !== 'all' && !floors.has(state.unitFloor)) state.unitFloor = floors.keys().next().value;
   const shown = state.unitFloor === 'all' ? units : units.filter((u) => floorKey(u) === state.unitFloor);
   const shownArea = sumOf(shown.filter((u) => u.area_m2 != null), 'area_m2');
-  const tab = (key, label, n) => `<button type="button" class="floor-tab${key === state.unitFloor ? ' is-active' : ''}" `
-    + `data-unit-floor="${esc(key)}">${esc(label)} <span>${n}</span></button>`;
+  const tab = (key, label) => `<button type="button" class="floor-tab${key === state.unitFloor ? ' is-active' : ''}" `
+    + `data-unit-floor="${esc(key)}">${esc(label)}</button>`;
   const tabs = floors.size > 1 ? `
     <div class="floor-tabs">
-      ${[...floors].map(([key, f]) => tab(key, f.label, f.n)).join('')}
-      ${tab('all', 'All floors', units.length)}
+      ${[...floors].map(([key, f]) => tab(key, f.label)).join('')}
+      ${tab('all', 'All floors')}
     </div>` : '';
+  const totals = `<p class="floor-totals"><b>${shown.length}</b> rooms · <b>${areaFormat.format(shownArea)}</b> m²</p>`;
 
   const rows = shown.map((u) => `
     <tr>
@@ -594,7 +595,7 @@ function renderUnits() {
       </td>
     </tr>`).join('');
 
-  $('#units-table').innerHTML = `${tabs}
+  $('#units-table').innerHTML = `${tabs}${totals}
     <table class="data-table">
       <thead>
         <tr>
@@ -603,13 +604,6 @@ function renderUnits() {
         </tr>
       </thead>
       <tbody>${rows}</tbody>
-      <tfoot>
-        <tr>
-          <td colspan="${anyBlock ? 4 : 3}">${shown.length} rooms</td>
-          <td class="num">${areaFormat.format(shownArea)}</td>
-          <td colspan="3"></td>
-        </tr>
-      </tfoot>
     </table>`;
 }
 

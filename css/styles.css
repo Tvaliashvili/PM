@@ -1246,7 +1246,9 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
 }
 
 /* Floor tabs over the room list: one floor at a time instead of a long scroll. */
-.floor-tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }
+.floor-tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+.floor-totals { margin-bottom: 0.75rem; font-size: 0.85rem; color: #94a3b8; }
+.floor-totals b { color: #fff; }
 .floor-tab {
   padding: 0.3rem 0.8rem;
   border: 1px solid var(--ink-700);
@@ -1255,11 +1257,9 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
   color: #94a3b8;
   white-space: nowrap;
 }
-.floor-tab span { margin-left: 0.25rem; color: #64748b; font-size: 0.7rem; }
 .floor-tab:hover { border-color: var(--brand-500); color: var(--brand-400); }
 .floor-tab.is-active {
   background: rgba(245, 158, 11, 0.12);
   border-color: var(--brand-500);
   color: var(--brand-400);
 }
-.floor-tab.is-active span { color: var(--brand-400); }
