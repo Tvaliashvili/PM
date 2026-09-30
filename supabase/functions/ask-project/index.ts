@@ -15,7 +15,7 @@ const MAX_QUESTION_CHARS = 1_000;
 // roughly 1.5M characters of JSON. Only past that are the oldest logs dropped.
 const MAX_CONTEXT_CHARS = 1_500_000;
 
-const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget), contractors, delays (counted in whole days lost, described in Georgian and English; a delay with ongoing=true has not been settled yet - its days_lost is the count so far and keeps growing), payments to contractors, daily workers (manpower.day_workers, each paid the log's day_rate for that day) and equipment rentals (daily_rate × days).
+const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget), contractors, delays (counted in whole days lost, described in Georgian and English; a delay with ongoing=true has not been settled yet - its days_lost is the count so far and keeps growing; contractor_at_fault caused it and held_up lists the work it stopped, with the contractor who was waiting - when judging whether someone is running late, take the held_up days off that contractor and count them against the one at fault, and say so), payments to contractors, daily workers (manpower.day_workers, each paid the log's day_rate for that day) and equipment rentals (daily_rate × days).
 
 Rules:
 - Answer twice, whatever language the question is in: "ka" in natural, professional Georgian as used in Georgian construction reporting, and "en" in English. The two must state the same facts and figures - neither leaves out something the other says. Write each as it would be written in that language, not word for word from the other.
@@ -54,7 +54,7 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
       // Every log, newest first - four years of daily logs on one project.
       .eq("project_id", projectId).order("log_date", { ascending: false }).limit(1500),
     sb.from("delays")
-      .select("created_at, delay_cause, duration_days, resolved_on, description, description_en, contractor_id, flats(block, flat_number)")
+      .select("created_at, delay_cause, duration_days, resolved_on, description, description_en, cause_contractor_id, flats(block, flat_number), impacts:delay_impacts(task_id, days_lost)")
       .eq("project_id", projectId).order("created_at", { ascending: false }).limit(1000),
     sb.from("task_payments").select("task_id, paid_on, amount, note").eq("project_id", projectId).order("paid_on"),
     sb.from("equipment_rentals").select("equipment, equipment_ka, supplier, supplier_ka, start_date, days, daily_rate, note").eq("project_id", projectId).order("start_date"),
@@ -68,6 +68,7 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
 
   const contractorName = new Map((contractors.data ?? []).map((c) => [c.id, c.name]));
   const taskName = new Map((tasks.data ?? []).map((t) => [t.id, t.name]));
+  const taskContractor = new Map((tasks.data ?? []).map((t) => [t.id, t.contractor_id]));
   const context = {
     project: project.data,
     timetable: (tasks.data ?? []).map((t) => ({
@@ -92,7 +93,16 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
       ongoing: d.duration_days === null,
       ended_on: d.resolved_on ?? null,
       ...(project.data?.has_rooms ? { room: d.flats ? `${d.flats.block}-${d.flats.flat_number}` : "site-wide" } : {}),
-      contractor: contractorName.get(d.contractor_id) ?? null,
+      // Whose fault it was, and the work it held up. Days a delay cost someone
+      // else's item are that item's holder's lateness only on paper - they are
+      // owed to the contractor at fault, so never blame them on the item's own
+      // contractor when asked who is running late.
+      contractor_at_fault: contractorName.get(d.cause_contractor_id) ?? null,
+      held_up: (d.impacts ?? []).map((i: any) => ({
+        item: taskName.get(i.task_id) ?? null,
+        contractor: contractorName.get(taskContractor.get(i.task_id)) ?? null,
+        days_lost: i.days_lost,
+      })),
       description_ka: d.description,
       description_en: d.description_en,
     })),

@@ -25,6 +25,40 @@ export const delayDaysLost = (d, today = new Date().toLocaleDateString('en-CA'))
     : Number(d.duration_days || 0)
 );
 
+/**
+ * The last day a delay covers: the day it was settled if that was written down,
+ * otherwise the last of the days lost. An ongoing delay runs to today.
+ */
+export const delayEnd = (d, today = new Date().toLocaleDateString('en-CA')) => {
+  if (d.resolved_on) return d.resolved_on;
+  if (delayIsOngoing(d)) return today;
+  const end = toDate(delayStart(d));
+  end.setDate(end.getDate() + Math.max(0, delayDaysLost(d, today) - 1));
+  return end.toLocaleDateString('en-CA');
+};
+
+/** Whether a delay was running on one calendar day. */
+export const delayCovers = (d, iso, today = new Date().toLocaleDateString('en-CA')) =>
+  delayStart(d) <= iso && iso <= delayEnd(d, today);
+
+/**
+ * The contractor at fault. Older rows called the column contractor_id, which
+ * read as "the contractor this delay concerns" - it always meant the cause.
+ */
+export const causeOf = (d) => d.cause_contractor_id ?? d.contractor_id ?? null;
+
+/**
+ * Days each timetable item lost to somebody else's delay: task id → days.
+ * Two delays holding up the same item both count - it waited for both.
+ */
+export function excusedDaysByTask(impacts = []) {
+  const days = new Map();
+  for (const i of impacts) {
+    days.set(i.task_id, (days.get(i.task_id) ?? 0) + (Number(i.days_lost) || 0));
+  }
+  return days;
+}
+
 /** Planned duration in days, inclusive of both ends (a one-day task weighs 1). */
 export const durationDays = (task) => dayDiff(task.planned_start, task.planned_finish) + 1;
 
@@ -287,16 +321,20 @@ export function contractorManDays(logs) {
  *   overdue     - unfinished items past their planned finish today
  *   open        - unfinished items not yet overdue (in progress or upcoming)
  */
-export function contractorPerformance(tasks, delays, payments, todayIso) {
+export function contractorPerformance(tasks, delays, payments, todayIso, impacts = []) {
   const stats = new Map();
   const entry = (id) => {
     const key = id ?? '';
     if (!stats.has(key)) {
-      stats.set(key, { items: 0, onTime: 0, late: 0, lateDays: 0, overdue: 0, open: 0, delayDays: 0, budget: 0, paid: 0 });
+      stats.set(key, {
+        items: 0, onTime: 0, late: 0, lateDays: 0, overdue: 0, open: 0,
+        delayDays: 0, excusedDays: 0, excusedItems: 0, budget: 0, paid: 0,
+      });
     }
     return stats.get(key);
   };
 
+  const excused = excusedDaysByTask(impacts);
   const taskContractor = new Map();
   for (const task of tasks) {
     taskContractor.set(task.id, task.contractor_id ?? '');
@@ -304,20 +342,31 @@ export function contractorPerformance(tasks, delays, payments, todayIso) {
     const state = taskState(task, todayIso);
     s.items += 1;
     s.budget += budgetOf(task);
+    // Days another contractor's delay cost this item come off its lateness
+    // before its own contractor is counted late for them.
+    const off = Math.min(state.daysLate, excused.get(task.id) ?? 0);
+    const own = state.daysLate - off;
+    if (off > 0) {
+      s.excusedDays += off;
+      s.excusedItems += 1;
+    }
     if (state.key === 'done') {
-      if (state.daysLate > 0) {
+      if (own > 0) {
         s.late += 1;
-        s.lateDays += state.daysLate;
+        s.lateDays += own;
       } else {
         s.onTime += 1;
       }
     } else if (state.key === 'overdue') {
-      s.overdue += 1;
+      // Excused in full: it is running behind the programme, but not behind its
+      // own contractor's - so it does not count against him.
+      if (own > 0) s.overdue += 1;
+      else s.open += 1;
     } else {
       s.open += 1;
     }
   }
-  for (const d of delays) if (d.contractor_id) entry(d.contractor_id).delayDays += delayDaysLost(d);
+  for (const d of delays) if (causeOf(d)) entry(causeOf(d)).delayDays += delayDaysLost(d);
   for (const p of payments) entry(taskContractor.get(p.task_id)).paid += Number(p.amount || 0);
 
   for (const s of stats.values()) {

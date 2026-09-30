@@ -14,7 +14,7 @@ import {
   scheduleProgress, taskState, durationDays, completionOf, expectedPct,
   plannedSpendByMonth, actualSpendByMonth, costPosition, contractorPerformance,
   labourCosts, guardCosts, rentalCosts, rentalTotal, rentalEnd, siteCostsByMonth,
-  delayIsOngoing, delayDaysLost, delayStart,
+  delayIsOngoing, delayDaysLost, delayStart, delayEnd, delayCovers, causeOf, excusedDaysByTask,
 } from './schedule.js';
 import { ka, roomLabel } from './bilingual.js';
 import {
@@ -34,7 +34,8 @@ const state = {
   flats: [],            // units
   tasks: [],            // timetable items (also the BOQ)
   payments: [],         // task_payments
-  contractorDelays: [], // delays with contractor_id + days
+  contractorDelays: [], // delays with cause_contractor_id + days
+  delayImpacts: [],     // { delay_id, task_id, days_lost } - work a delay held up
   contractors: [],      // this project's contractors
   siteLogs: [],         // every daily log's date, manpower and day rate (daily-worker pay)
   events: [],           // safety and quality events, newest first
@@ -695,7 +696,7 @@ const paidOn = (taskId) => sumOf(state.payments.filter((p) => p.task_id === task
 
 // Items, payments and contractor-linked delays for one project, then every view built on them.
 async function loadSchedule(projectId) {
-  const [tasks, payments, delays, contractors, siteLogs, rentals] = await Promise.all([
+  const [tasks, payments, delays, impacts, contractors, siteLogs, rentals] = await Promise.all([
     db.from('schedule_tasks')
       .select('id, name, name_ka, planned_start, planned_finish, baseline_start, baseline_finish, done, done_at, progress_pct, contractor_id, quantity, unit, rate, budget')
       .eq('project_id', projectId)
@@ -706,8 +707,12 @@ async function loadSchedule(projectId) {
       .eq('project_id', projectId)
       .order('paid_on'),
     db.from('delays')
-      .select('contractor_id, duration_days, created_at, delay_cause, resolved_on')
+      .select('cause_contractor_id, duration_days, created_at, delay_cause, resolved_on')
       .eq('project_id', projectId),
+    // Days each item lost to a delay, so excused lateness is off the contractor's record.
+    db.from('delay_impacts')
+      .select('delay_id, task_id, days_lost, delays!inner(project_id)')
+      .eq('delays.project_id', projectId),
     db.from('contractors')
       .select('id, name, name_ka, trade, contact_person, phone, email, notes')
       .eq('project_id', projectId)
@@ -723,7 +728,7 @@ async function loadSchedule(projectId) {
   ]);
 
   if (projectId !== state.projectId) return;
-  const failed = [tasks, payments, delays, contractors, siteLogs, rentals].find((r) => r.error);
+  const failed = [tasks, payments, delays, impacts, contractors, siteLogs, rentals].find((r) => r.error);
   if (failed) {
     $('#schedule-table').innerHTML = `<div class="empty-state">Could not load timetable: ${esc(failed.error.message)}</div>`;
     return;
@@ -731,6 +736,7 @@ async function loadSchedule(projectId) {
   state.tasks = tasks.data;
   state.payments = payments.data;
   state.contractorDelays = delays.data;
+  state.delayImpacts = impacts.data;
   state.contractors = contractors.data;
   state.siteLogs = siteLogs.data;
   state.rentals = rentals.data;
@@ -1046,7 +1052,7 @@ async function refreshDashboard(projectId) {
   // The Spent vs Budget card is updated by renderCosts() from the timetable.
   const [delays, logs] = await Promise.all([
     db.from('delays')
-      .select('id, delay_cause, duration_days, resolved_on, description, description_en, created_at, flat_id, contractor_id, flats(block, flat_number)')
+      .select('id, delay_cause, duration_days, resolved_on, description, description_en, created_at, flat_id, cause_contractor_id, flats(block, flat_number), impacts:delay_impacts(task_id, days_lost)')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false }),
     db.from('daily_logs')
@@ -1105,6 +1111,41 @@ async function loadDelayPhotos() {
   }
 }
 
+/**
+ * The work a delay held up: each item with the days it lost, under whoever
+ * holds it. Those days are excused on his record and carried by the cause.
+ */
+/**
+ * What the contractor at fault had on site the day the delay started, read off
+ * that day's crew sheet - the record that backs the claim up. "No crew sheet"
+ * means nobody filled the log in, which is not the same as nobody turning up.
+ */
+function crewNote(delay) {
+  const who = causeOf(delay);
+  if (!who) return '';
+  const day = delayDate(delay);
+  const log = state.siteLogs.find((l) => l.log_date === day);
+  if (!log) return '<span class="impact-row-who">No crew sheet that day</span>';
+  const men = (log.crew ?? []).filter((c) => c.contractor_id === who)
+    .reduce((sum, c) => sum + (Number(c.workers) || 0), 0);
+  return `<span class="impact-row-who">${men} on site that day</span>`;
+}
+
+function knockOnCell(delay) {
+  const impacts = delay.impacts ?? [];
+  if (!impacts.length) return '<span class="text-slate-500">-</span>';
+  const byContractor = new Map();
+  for (const i of impacts) {
+    const task = state.tasks.find((t) => t.id === i.task_id);
+    const who = task?.contractor_id ? contractorName(task.contractor_id) : 'No contractor';
+    if (!byContractor.has(who)) byContractor.set(who, []);
+    byContractor.get(who).push(`${task ? task.name : 'Item removed'} (${i.days_lost} d)`);
+  }
+  return [...byContractor].map(([who, items]) => `
+    <p class="text-xs"><span class="text-white">${esc(who)}</span>
+      <span class="text-slate-500">${esc(items.join(', '))}</span></p>`).join('');
+}
+
 function renderDelays() {
   const delays = state.delays;
   const rooms = hasRooms(currentProject());
@@ -1125,8 +1166,8 @@ function renderDelays() {
     byCause.set(d.delay_cause, [c[0] + n, c[1] + 1]);
     // Leaving the contractor blank means nobody was held responsible - that is
     // not a contractor to rank, so it stays out of the chart.
-    if (d.contractor_id) {
-      const key = contractorName(d.contractor_id);
+    if (causeOf(d)) {
+      const key = contractorName(causeOf(d));
       const k = byContractor.get(key) ?? [0, 0];
       byContractor.set(key, [k[0] + n, k[1] + 1]);
     } else {
@@ -1171,7 +1212,8 @@ function renderDelays() {
         <td class="whitespace-nowrap">${esc(formatDate(delayDate(d)))}</td>
         <td>${esc(d.delay_cause)}</td>
         ${rooms ? `<td>${esc(where)}</td>` : ''}
-        <td>${d.contractor_id ? esc(contractorName(d.contractor_id)) : '<span class="text-slate-500">-</span>'}</td>
+        <td>${causeOf(d) ? `${esc(contractorName(causeOf(d)))}${crewNote(d)}` : '<span class="text-slate-500">-</span>'}</td>
+        <td>${knockOnCell(d)}</td>
         <td class="num font-semibold text-rose-400">
           ${delayIsOngoing(d)
             ? `${delayDaysLost(d)}<span class="ml-1 rounded-full bg-rose-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-rose-300">ongoing</span>`
@@ -1193,7 +1235,7 @@ function renderDelays() {
     <table class="data-table">
       <thead>
         <tr>
-          <th>Date</th><th>Cause</th>${rooms ? '<th>Room</th>' : ''}<th>Contractor</th>
+          <th>Date</th><th>Cause</th>${rooms ? '<th>Room</th>' : ''}<th>At fault</th><th>Work held up</th>
           <th class="num">Days</th><th>Description</th><th></th>
         </tr>
       </thead>
@@ -1229,7 +1271,7 @@ async function onDelaysTableClick(e) {
   }
   toast('Delay deleted.', 'success');
   refreshDashboard(state.projectId);
-  if (delay.contractor_id) loadSchedule(state.projectId);
+  loadSchedule(state.projectId); // delay days and excused days both move
 }
 
 function renderRecentLogs(logs) {
@@ -1972,7 +2014,7 @@ function contractorRating(s) {
 }
 
 function renderContractors() {
-  const perf = contractorPerformance(state.tasks, state.contractorDelays, state.payments, todayISO());
+  const perf = contractorPerformance(state.tasks, state.contractorDelays, state.payments, todayISO(), state.delayImpacts);
   const el = $('#contractors-table');
   const list = [...state.contractors].sort((a, b) =>
     (perf.get(b.id)?.items ?? 0) - (perf.get(a.id)?.items ?? 0) || a.name.localeCompare(b.name));
@@ -1997,6 +2039,9 @@ function renderContractors() {
         <td class="num">${s?.overdue ? `<span class="variance-over">${s.overdue}</span>` : 0}</td>
         <td class="num">${s?.open ?? 0}</td>
         <td class="num">${s?.delayDays ? `${s.delayDays} d` : '-'}</td>
+        <td class="num">${s?.excusedDays
+          ? `<span class="text-sky-300">${s.excusedDays} d</span> <span class="text-slate-500">(${s.excusedItems})</span>`
+          : '-'}</td>
         <td class="num">${s?.budget ? money.format(s.budget) : '-'}</td>
         <td class="num">${s?.paid ? money.format(s.paid) : '-'}</td>
         <td class="whitespace-nowrap">${contractorRating(s)}</td>
@@ -2015,7 +2060,7 @@ function renderContractors() {
         <tr>
           <th>Contractor</th><th class="num">Jobs</th><th class="num">On time</th><th class="num">Late</th>
           <th class="num">Overdue now</th><th class="num">Open</th><th class="num">Delay days</th>
-          <th class="num">Budget</th><th class="num">Paid</th><th>Performance</th><th></th>
+          <th class="num">Excused</th><th class="num">Budget</th><th class="num">Paid</th><th>Performance</th><th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -2084,13 +2129,15 @@ function openContractorJobs(contractorId) {
   const jobs = state.tasks
     .filter((t) => t.contractor_id === c.id)
     .sort((a, b) => a.planned_start.localeCompare(b.planned_start));
-  const s = contractorPerformance(state.tasks, state.contractorDelays, state.payments, today).get(c.id);
+  const s = contractorPerformance(state.tasks, state.contractorDelays, state.payments, today, state.delayImpacts).get(c.id);
 
   $('#contractor-jobs-title').textContent = `Jobs - ${c.name}`;
   $('#contractor-jobs-sub').textContent = [c.name_ka, c.trade].filter(Boolean).join(' · ');
   $('#contractor-jobs-summary').innerHTML = [
     statTile('Jobs', String(jobs.length), s ? `${s.onTime} on time · ${s.late} late` : ''),
     statTile('Overdue', String(s?.overdue ?? 0), 'Past planned finish', s?.overdue ? 'negative' : ''),
+    statTile('Excused', s?.excusedDays ? `${s.excusedDays} d` : '-',
+      s?.excusedItems ? `on ${s.excusedItems} item${s.excusedItems === 1 ? '' : 's'} - another's delay` : 'Nothing held them up'),
     statTile('Budget', money.format(s?.budget ?? 0), 'Their items'),
     statTile('Paid', money.format(s?.paid ?? 0),
       s?.budget ? `${Math.round(((s.paid ?? 0) / s.budget) * 100)}% of budget` : ''),
@@ -2155,6 +2202,20 @@ const photoStrip = (photos, owner) => (photos?.length ? `
       </button>`).join('')}
   </div>` : '');
 
+/**
+ * The delays that were running on a day, shown on its log. The crew above is
+ * the evidence for them: it is this sheet that shows whose men were missing.
+ */
+function delayLineFor(logDate) {
+  const running = state.delays.filter((d) => delayCovers(d, logDate));
+  if (!running.length) return '';
+  const parts = running.map((d) => {
+    const who = causeOf(d) ? contractorName(causeOf(d)) : 'nobody at fault';
+    return `${d.delay_cause} (${who})`;
+  });
+  return `<p class="log-card-delays">Delay running: ${parts.map((t) => esc(t)).join(' &middot; ')}</p>`;
+}
+
 const logCard = (l) => {
   const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key;
   const nameOf = (id) => state.contractors.find((c) => c.id === id)?.name ?? 'Hired by the client';
@@ -2179,6 +2240,7 @@ const logCard = (l) => {
         </span>
       </div>
       ${crew.length ? `<p class="log-card-crew">${crew.map((line) => esc(line)).join(' &middot; ')}</p>` : ''}
+      ${delayLineFor(l.log_date)}
       <div class="log-notes">
         <p><span class="log-lang">ქართული</span>${esc(l.notes || '-')}</p>
         <p><span class="log-lang">English</span>${esc(l.notes_en || '-')}</p>
@@ -3221,7 +3283,8 @@ function openDelayModal(delay = null) {
       <option value="${esc(f.id)}">${esc(roomLabel(f))} (${esc(floorLabel(f.floor))})</option>
     `).join('');
   $('#delay-flat-field').classList.toggle('hidden', !hasRooms(currentProject()));
-  $('#delay-contractor').innerHTML = contractorOptions(delay?.contractor_id ?? '');
+  $('#delay-contractor').innerHTML = contractorOptions(causeOf(delay ?? {}) ?? '');
+  renderImpactPicker(delay);
   if (delay) {
     f.flat_id.value = delay.flat_id ?? '';
     f.delay_cause.value = delay.delay_cause;
@@ -3238,6 +3301,54 @@ function openDelayModal(delay = null) {
   showFormError(form, '');
   openModal('modal-delay');
 }
+
+/**
+ * One row per timetable item, ticked for the ones this delay held up. Items
+ * already recorded open ticked, with the days they were given.
+ */
+function renderImpactPicker(delay) {
+  const el = $('#delay-impacts');
+  const already = new Map((delay?.impacts ?? []).map((i) => [i.task_id, i.days_lost]));
+  if (!state.tasks.length) {
+    el.innerHTML = '<div class="empty-state">No timetable items yet - add them on the Timetable first.</div>';
+    return;
+  }
+  el.innerHTML = state.tasks.map((t) => {
+    const hit  = already.has(t.id);
+    const who  = t.contractor_id ? contractorName(t.contractor_id) : 'No contractor';
+    const days = already.get(t.id) ?? '';
+    return `
+      <label class="impact-row">
+        <input type="checkbox" data-impact-task="${esc(t.id)}"${hit ? ' checked' : ''}>
+        <span class="impact-row-name">${esc(t.name)}
+          <span class="impact-row-who">${esc(who)} · ${esc(formatDate(t.planned_start))} → ${esc(formatDate(t.planned_finish))}</span>
+        </span>
+        <input type="number" min="1" step="1" class="input-dark impact-row-days" aria-label="Days lost"
+               value="${esc(String(days))}"${hit ? '' : ' disabled'}>
+      </label>`;
+  }).join('');
+}
+
+/**
+ * Ticking an item asks for its days, and starts from the delay's own duration -
+ * usually the same number, and one click when it is.
+ */
+function onImpactToggle(e) {
+  const box = e.target.closest('[data-impact-task]');
+  if (!box) return;
+  const days = $('.impact-row-days', box.closest('.impact-row'));
+  days.disabled = !box.checked;
+  if (!box.checked) return;
+  if (!days.value) days.value = $('#delay-status').value === 'ongoing' ? 1 : ($('#form-delay').elements.duration_days.value || 1);
+  days.focus();
+}
+
+/** What the picker has: one entry per ticked item. */
+const impactsFromPicker = () =>
+  $$('#delay-impacts [data-impact-task]').filter((b) => b.checked).map((b) => ({
+    task_id: b.dataset.impactTask,
+    days_lost: Math.max(1, Number($('.impact-row-days', b.closest('.impact-row')).value) || 1),
+  }));
 
 // Ongoing delays have no end date and no days lost yet - those fields only
 // make sense once the delay is settled.
@@ -3288,6 +3399,20 @@ async function onTranslate(formId, buttonId, context) {
   if (err) showFormError(form, `Gemini couldn't translate: ${err}`);
 }
 
+/**
+ * Replaces the delay's list of held-up items with what the form has. Unticking
+ * an item has to remove its row, so the whole list is rewritten rather than
+ * added to. Returns an error message, or '' if it went through.
+ */
+async function saveDelayImpacts(delayId, impacts) {
+  const { error: wiped } = await db.from('delay_impacts').delete().eq('delay_id', delayId);
+  if (wiped) return wiped.message;
+  if (!impacts.length) return '';
+  const { error } = await db.from('delay_impacts')
+    .insert(impacts.map((i) => ({ ...i, delay_id: delayId })));
+  return error ? error.message : '';
+}
+
 async function saveDelay(e) {
   e.preventDefault();
   const form = e.currentTarget;
@@ -3318,8 +3443,8 @@ async function saveDelay(e) {
 
   const id = fd.get('id');
   const row = {
-    flat_id:        fd.get('flat_id') || null,
-    contractor_id:  fd.get('contractor_id') || null,
+    flat_id:             fd.get('flat_id') || null,
+    cause_contractor_id: fd.get('cause_contractor_id') || null,
     delay_cause:    fd.get('delay_cause'),
     // null days = still running; the days lost are counted up to today instead.
     duration_days:  ongoing ? null : days,
@@ -3340,8 +3465,10 @@ async function saveDelay(e) {
     return;
   }
 
+  const impactError = await saveDelayImpacts(saved.id, impactsFromPicker());
   const photoError = await commitPhotos('delay', { delayId: saved.id });
   setBusy(btn, false);
+  if (impactError) toast(`The delay was saved, but the work it held up was not: ${impactError}`, 'error');
   if (photoError) toast(`The delay was saved, but the photos were not: ${photoError}`, 'error');
 
   closeModal('modal-delay');
@@ -3364,6 +3491,7 @@ function projectReportArgs(project) {
     payments: state.payments,
     contractors: state.contractors,
     contractorDelays: state.contractorDelays,
+    delayImpacts: state.delayImpacts,
     units: state.flats,
     siteLogs: state.siteLogs,
     siteCosts: state.siteCosts,
@@ -3446,6 +3574,7 @@ $('#btn-translate-event').addEventListener('click', () => onTranslate('#form-eve
 $('#btn-translate-variation').addEventListener('click', () => onTranslate('#form-variation', '#btn-translate-variation',
   (f) => [f.ref.value, f.title.value].filter(Boolean).join(' - ')));
 $('#delay-status').addEventListener('change', syncDelayStatus);
+$('#delay-impacts').addEventListener('change', onImpactToggle);
 $('#delays-table').addEventListener('click', onDelaysTableClick);
 $('#btn-add-rental').addEventListener('click', () => openRentalModal());
 $('#form-rental').addEventListener('submit', saveRental);

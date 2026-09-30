@@ -5,7 +5,7 @@
 // =============================================================
 import {
   taskState, completionOf, costPosition, contractorPerformance, plannedSpendByMonth, actualSpendByMonth,
-  siteCostsByMonth, rentalTotal, rentalEnd, delayIsOngoing, delayDaysLost,
+  siteCostsByMonth, rentalTotal, rentalEnd, delayIsOngoing, delayDaysLost, causeOf,
   stalledTasks, forecastFinish, durationDays, contractorManDays,
 } from './schedule.js';
 import { bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
@@ -116,7 +116,7 @@ async function fetchExtras(db, projectId, today) {
       .order('log_date', { ascending: false })
       .limit(14),
     db.from('delays')
-      .select('created_at, delay_cause, duration_days, resolved_on, description, description_en, contractor_id, flats(block, flat_number)')
+      .select('created_at, delay_cause, duration_days, resolved_on, description, description_en, cause_contractor_id, flats(block, flat_number), impacts:delay_impacts(task_id, days_lost)')
       .eq('project_id', projectId)
       // The last 30 days, plus anything still running from before - an open
       // delay belongs in the report however old it is.
@@ -144,13 +144,13 @@ async function fetchExtras(db, projectId, today) {
  * `money` formats amounts in the project's currency.
  */
 export async function buildProjectReport({
-  db, project, tasks, payments, contractors, contractorDelays, units, progress, money,
+  db, project, tasks, payments, contractors, contractorDelays, delayImpacts = [], units, progress, money,
   siteCosts = [], rentals = [], siteLogs = [],
 }) {
   const today = iso(new Date());
   const { logs, delays, events, variations } = await fetchExtras(db, project.id, today);
   const cost = costPosition(tasks, payments, today, siteCosts);
-  const perf = contractorPerformance(tasks, contractorDelays, payments, today); // all-time delays
+  const perf = contractorPerformance(tasks, contractorDelays, payments, today, delayImpacts); // all-time delays
   const manDays = contractorManDays(siteLogs); // who actually put men on the job
   const rooms = Boolean(project.has_rooms); // sites like a stadium have no rooms
   const contractorById = new Map(contractors.map((c) => [c.id, c]));
@@ -898,6 +898,7 @@ export async function buildProjectReport({
                 <div class="rpt-card-money">
                   <span>${L('გადახდილი', 'Paid')} <b>${m(paid)}</b>${budget ? ` / ${m(budget)}` : ''}</span>
                   <span>${L('შეფერხება', 'Delays')} <b>${s?.delayDays ?? 0}</b> ${L('დღე', 'days')}</span>
+                  ${s?.excusedDays ? `<span>${L('სხვისი ბრალით', 'Excused')} <b>${s.excusedDays}</b> ${L('დღე', 'days')}</span>` : ''}
                 </div>
                 ${crew ? `
                   <p class="rpt-card-contact">
@@ -1043,6 +1044,20 @@ export async function buildProjectReport({
     </section>`;
 
   // ---------- Delays: by cause, then the list ----------
+  // The work a delay held up, under whoever holds it: these are the days that
+  // come off his record and stay on the contractor at fault.
+  const heldUp = (x) => {
+    const impacts = x.impacts ?? [];
+    if (!impacts.length) return '-';
+    const byWho = new Map();
+    for (const i of impacts) {
+      const t = tasks.find((z) => z.id === i.task_id);
+      const who = t?.contractor_id ? nameOf(t.contractor_id) : bi('No contractor');
+      byWho.set(who, (byWho.get(who) ?? 0) + Number(i.days_lost || 0));
+    }
+    return [...byWho].map(([who, days]) => `${esc(who)} <em>${days} ${L('დღე', 'd')}</em>`).join('<br>');
+  };
+
   const causeDays = new Map();
   for (const x of delays) {
     const e = causeDays.get(x.delay_cause) ?? { days: 0, n: 0 };
@@ -1057,12 +1072,12 @@ export async function buildProjectReport({
   // contractor is a pattern, and that is a different conversation.
   const byContractor = new Map();
   for (const x of contractorDelays) {
-    if (!x.contractor_id) continue;
-    const e = byContractor.get(x.contractor_id) ?? { n: 0, days: 0, causes: new Map() };
+    if (!causeOf(x)) continue;
+    const e = byContractor.get(causeOf(x)) ?? { n: 0, days: 0, causes: new Map() };
     e.n += 1;
     e.days += delayDaysLost(x, today);
     e.causes.set(x.delay_cause, (e.causes.get(x.delay_cause) ?? 0) + 1);
-    byContractor.set(x.contractor_id, e);
+    byContractor.set(causeOf(x), e);
   }
   const blame = [...byContractor]
     .map(([id, e]) => {
@@ -1115,7 +1130,8 @@ export async function buildProjectReport({
           <thead>
             <tr>
               <th>${L('თარიღი', 'Date')}</th><th>${L('მიზეზი', 'Cause')}</th>${rooms ? `<th>${L('ადგილი', 'Location')}</th>` : ''}
-              <th>${L('კონტრაქტორი', 'Contractor')}</th><th class="num">${L('დღე', 'Days')}</th>
+              <th>${L('დამნაშავე', 'At fault')}</th><th>${L('შეაფერხა სამუშაო', 'Work held up')}</th>
+              <th class="num">${L('დღე', 'Days')}</th>
               <th>${L('სტატუსი', 'Status')}</th><th>${L('აღწერა', 'Description')}</th>
             </tr>
           </thead>
@@ -1125,7 +1141,8 @@ export async function buildProjectReport({
                 <td>${d(x.created_at)}</td>
                 <td>${esc(bi(x.delay_cause))}</td>
                 ${rooms ? `<td>${x.flats ? esc([x.flats.block, x.flats.flat_number].filter(Boolean).join('-')) : esc(bi('Site-wide'))}</td>` : ''}
-                <td>${x.contractor_id ? esc(nameOf(x.contractor_id)) : '-'}</td>
+                <td>${causeOf(x) ? esc(nameOf(causeOf(x))) : '-'}</td>
+                <td>${heldUp(x)}</td>
                 <td class="num">${num.format(delayDaysLost(x, today))}${delayIsOngoing(x) ? '+' : ''}</td>
                 <td>${delayIsOngoing(x)
     ? chip({ ka: 'მიმდინარე', en: 'Ongoing', tone: 'bad' })

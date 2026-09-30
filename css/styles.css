@@ -323,6 +323,29 @@ html, body { background: var(--ink-950); }
 .log-card-meta { margin-left: auto; font-size: 0.75rem; color: #94a3b8; }
 .log-card-actions { display: flex; gap: 0.25rem; white-space: nowrap; }
 .log-card-crew { margin-bottom: 0.6rem; font-size: 0.75rem; color: #64748b; }
+/* A delay that was running this day - the crew above is the evidence for it. */
+.log-card-delays { margin-bottom: 0.6rem; font-size: 0.75rem; color: #fcd34d; }
+
+/* ---------- Work a delay held up, on the delay form ---------- */
+/* Scrolls once there are more items than fit, so the rest of the form stays reachable. */
+.impact-list {
+  max-height: 13rem; overflow-y: auto;
+  border: 1px solid var(--ink-700); border-radius: 0.5rem;
+  background: rgba(15, 23, 42, 0.4);
+}
+.impact-row {
+  display: flex; align-items: center; gap: 0.625rem;
+  padding: 0.45rem 0.625rem;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+}
+.impact-row:last-child { border-bottom: 0; }
+.impact-row input[type="checkbox"] { flex: none; accent-color: #0ea5e9; }
+.impact-row-name { min-width: 0; flex: 1; font-size: 0.8125rem; color: #e2e8f0; }
+.impact-row-who { display: block; font-size: 0.6875rem; color: #64748b; }
+.impact-row-days { flex: none; width: 4.5rem; }
+/* Days only matter for an item that is ticked. */
+.impact-row-days:disabled { opacity: 0.35; }
+.impact-list .empty-state { border: 0; }
 
 /* Open / closed, on the safety register */
 .chip-ok, .chip-open {

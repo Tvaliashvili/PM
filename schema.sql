@@ -639,3 +639,65 @@ alter table public.daily_logs
   add column if not exists guard_rate numeric(10,2) check (guard_rate is null or guard_rate >= 0);
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 21. Knock-on delays: whose fault, and whose work it cost
+-- delays.contractor_id has always meant the contractor at fault, so it is
+-- renamed to say so. What it never recorded is who the delay landed on: if the
+-- blockwork contractor stops, the plasterer behind him finishes late through no
+-- fault of his own, and his record should not carry it.
+--
+-- One row per timetable item a delay held up. The affected contractor is not
+-- stored - it is whoever holds the item, so it can never disagree with the
+-- timetable. days_lost is per item because float differs: the same ten-day
+-- stoppage may cost the plasterer ten days and the painter three.
+--
+-- Those days are excused: they come off the item's lateness before a contractor
+-- is counted late, and are shown against the delay's cause instead.
+-- -------------------------------------------------------------
+-- Running the whole file again puts the old column back at section 6, so the
+-- two can both be present: rename only when the new one is not there yet, and
+-- otherwise drop the empty column section 6 just re-added.
+do $$
+declare
+  has_old boolean := exists (select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'delays' and column_name = 'contractor_id');
+  has_new boolean := exists (select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'delays' and column_name = 'cause_contractor_id');
+begin
+  if has_old and not has_new then
+    alter table public.delays rename column contractor_id to cause_contractor_id;
+  elsif has_old and has_new then
+    -- Anything written to the old column since the rename is still the cause.
+    update public.delays set cause_contractor_id = contractor_id
+     where cause_contractor_id is null and contractor_id is not null;
+    alter table public.delays drop column contractor_id;
+  end if;
+end;
+$$;
+
+alter table public.delays
+  add column if not exists cause_contractor_id uuid references public.contractors(id) on delete set null;
+
+drop index if exists delays_contractor_idx;
+create index if not exists delays_cause_contractor_idx
+  on public.delays (cause_contractor_id);
+
+create table if not exists public.delay_impacts (
+  id         uuid primary key default gen_random_uuid(),
+  delay_id   uuid not null references public.delays(id) on delete cascade,
+  task_id    uuid not null references public.schedule_tasks(id) on delete cascade,
+  days_lost  integer not null default 1 check (days_lost >= 1),
+  created_at timestamptz not null default now(),
+  unique (delay_id, task_id)
+);
+
+create index if not exists delay_impacts_delay_idx on public.delay_impacts (delay_id);
+create index if not exists delay_impacts_task_idx  on public.delay_impacts (task_id);
+
+alter table public.delay_impacts enable row level security;
+drop policy if exists "authenticated_full_access" on public.delay_impacts;
+create policy "authenticated_full_access" on public.delay_impacts
+  for all to authenticated using (true) with check (true);
+
+notify pgrst, 'reload schema';
