@@ -10,6 +10,7 @@ import { rentalEnd, delayIsOngoing, delayDaysLost } from './schedule.js';
 import { ka, bi, biName, dateKa, dateEn, signatureHtml, roomLabelBi } from './bilingual.js';
 import { fetchPhotos, signPhotos } from './photos.js';
 import { savePdf } from './pdfSave.js';
+import { saveDocx } from './docxSave.js';
 
 // ---------- Helpers ----------
 function todayRange() {
@@ -329,9 +330,11 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
 
 // ---------- 4. Export ----------
 /**
- * Builds today's bilingual report for `project` and downloads Daily_Report_[YYYY-MM-DD].pdf.
+ * Builds today's bilingual report for `project` and downloads it as
+ * Daily_Report_<name>_<YYYY-MM-DD>.pdf - or, with `word`, as a .docx to arrange
+ * by hand before printing.
  */
-export async function generateDailyReport({ db, project, progress, printable = false }) {
+export async function generateDailyReport({ db, project, progress, printable = false, word = false }) {
   const day = todayRange();
   const { logs, delays, carriedDelays, rentals, roomProgress, events, variations } =
     await fetchTodayData(db, project.id, day, { withRooms: Boolean(project.has_rooms) });
@@ -345,8 +348,10 @@ export async function generateDailyReport({ db, project, progress, printable = f
   const root = document.getElementById('pdf-export-root');
   root.replaceChildren(page);
 
+  const name = `Daily_Report_${fileSafe(project.name)}_${day.date}`;
   try {
-    await savePdf(page, `Daily_Report_${fileSafe(project.name)}_${day.date}.pdf`, { printable });
+    if (word) await saveDocx(page, `${name}.docx`, { title: `Daily Report - ${project.name} - ${day.date}` });
+    else await savePdf(page, `${name}.pdf`, { printable });
   } finally {
     root.replaceChildren();
   }

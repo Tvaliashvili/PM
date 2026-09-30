@@ -11,6 +11,7 @@ import {
 import { bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
 import { MANPOWER_TRADES, REPORT_AUTHOR } from './config.js';
 import { savePdf } from './pdfSave.js';
+import { saveDocx } from './docxSave.js';
 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -911,9 +912,9 @@ export async function buildProjectReport({
                     <span><i class="rpt-sw rpt-sw-muted"></i>${s.open} ${L('ღია', 'open')}</span>
                   </p>` : ''}
                 <div class="rpt-card-money">
-                  <span>${L('გადახდილი', 'Paid')} <b>${m(paid)}</b>${budget ? ` / ${m(budget)}` : ''}</span>
-                  <span>${L('შეფერხება', 'Delays')} <b>${s?.delayDays ?? 0}</b> ${L('დღე', 'days')}</span>
-                  ${s?.excusedDays ? `<span>${L('სხვისი ბრალით', 'Excused')} <b>${s.excusedDays}</b> ${L('დღე', 'days')}</span>` : ''}
+                  <span>${L('გადახდილი', 'Paid')}<span class="rpt-card-value"><b>${m(paid)}</b>${budget ? ` / ${m(budget)}` : ''}</span></span>
+                  <span>${L('შეფერხება (დღე)', 'Delays (days)')}<span class="rpt-card-value"><b>${s?.delayDays ?? 0}</b></span></span>
+                  ${s?.excusedDays ? `<span>${L('სხვისი ბრალით (დღე)', 'Excused (days)')}<span class="rpt-card-value"><b>${s.excusedDays}</b></span></span>` : ''}
                 </div>
                 ${crew ? `
                   <p class="rpt-card-contact">
@@ -1154,7 +1155,7 @@ export async function buildProjectReport({
             ${row('მიზეზი', 'Cause', esc(bi(x.delay_cause)))}
             ${rooms ? row('ადგილი', 'Location',
     x.flats ? esc([x.flats.block, x.flats.flat_number].filter(Boolean).join('-')) : esc(bi('Site-wide'))) : ''}
-            ${row('დამნაშავე', 'At fault', causeOf(x) ? esc(nameOf(causeOf(x))) : '-')}
+            ${row('ბრალეულობა', 'At fault', causeOf(x) ? esc(nameOf(causeOf(x))) : '-')}
             ${row('შეაფერხა სამუშაო', 'Work held up', heldUp(x))}
             ${row('დღე', 'Days', `${num.format(delayDaysLost(x, today))}${delayIsOngoing(x) ? '+' : ''}`)}
             ${row('სტატუსი', 'Status', delayIsOngoing(x)
@@ -1244,16 +1245,21 @@ const fileSafe = (name) => (name || 'Project')
   .replace(/\s+/g, '_')
   .slice(0, 60) || 'Project';
 
-/** Saves a page built by buildProjectReport() as Project_Report_<name>_<date>.pdf. */
-export async function downloadProjectReport(page, project, { printable = false } = {}) {
+/**
+ * Saves a page built by buildProjectReport() as Project_Report_<name>_<date>,
+ * a .pdf - or, with `word`, a .docx to arrange by hand before printing.
+ */
+export async function downloadProjectReport(page, project, { printable = false, word = false } = {}) {
   const today = iso(new Date());
   // Rendered from a copy, off-screen: the printable version has spacers put
   // into it, and the preview on screen should not gain those blank gaps.
   const root = document.getElementById('pdf-export-root');
   const printed = page.cloneNode(true);
   root.replaceChildren(printed);
+  const name = `Project_Report_${fileSafe(project.name)}_${today}`;
   try {
-    await savePdf(printed, `Project_Report_${fileSafe(project.name)}_${today}.pdf`, { printable });
+    if (word) await saveDocx(printed, `${name}.docx`, { title: `Project Report - ${project.name}` });
+    else await savePdf(printed, `${name}.pdf`, { printable });
   } finally {
     root.replaceChildren();
   }

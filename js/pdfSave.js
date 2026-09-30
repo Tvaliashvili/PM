@@ -15,22 +15,28 @@ import { insertPageBreaks } from './paginate.js';
 const MARGIN_MM = [10, 10, 12, 10]; // top, right, bottom, left
 
 /**
- * @param {HTMLElement} page      the built report, laid out in the document
- * @param {string} filename       including the .pdf
- * @param {boolean} printable     true for A4 sheets, false for one long page
+ * Waits until a built page can be measured and drawn: the Georgian font loaded,
+ * and every photo either in or given up on. A picture still loading would be
+ * drawn as a blank frame, and would measure as nothing - which throws out the
+ * page height, the page breaks and any picture cut from the page.
  */
-export async function savePdf(page, filename, { printable = false } = {}) {
-  await document.fonts?.ready; // the Georgian font must be loaded before layout
-
-  // A picture still loading would be drawn as a blank frame, and would measure
-  // as nothing - which throws out both the page height and the page breaks.
+export async function pageReady(page) {
+  await document.fonts?.ready;
   await Promise.all([...page.querySelectorAll('img')].map((img) => (
     img.complete ? img.decode().catch(() => {}) : new Promise((done) => {
       img.addEventListener('load', done, { once: true });
       img.addEventListener('error', done, { once: true });
     })
   )));
+}
 
+/**
+ * @param {HTMLElement} page      the built report, laid out in the document
+ * @param {string} filename       including the .pdf
+ * @param {boolean} printable     true for A4 sheets, false for one long page
+ */
+export async function savePdf(page, filename, { printable = false } = {}) {
+  await pageReady(page);
   if (printable) insertPageBreaks(page, MARGIN_MM);
 
   await window.html2pdf()
