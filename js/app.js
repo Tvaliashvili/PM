@@ -32,6 +32,7 @@ const state = {
   projectId: null,
   // Open project:
   flats: [],            // units
+  unitFloor: null,      // the floor tab shown in the room list, or 'all'
   tasks: [],            // timetable items (also the BOQ)
   payments: [],         // task_payments
   contractorDelays: [], // delays with cause_contractor_id + days
@@ -555,7 +556,30 @@ function renderUnits() {
   }
 
   const anyBlock = units.some((u) => u.block);
-  const rows = units.map((u) => `
+
+  // One tab per floor (per block and floor), so a building of a few hundred
+  // rooms is read a floor at a time rather than scrolled.
+  const floorKey = (u) => `${u.block ?? ''}|${u.floor ?? ''}`;
+  const floors = new Map();
+  for (const u of units) {
+    const key = floorKey(u);
+    if (!floors.has(key)) {
+      floors.set(key, { label: [anyBlock && u.block, u.floor != null && floorLabel(u.floor)].filter(Boolean).join(' · ') || 'No floor', n: 0 });
+    }
+    floors.get(key).n++;
+  }
+  if (state.unitFloor !== 'all' && !floors.has(state.unitFloor)) state.unitFloor = floors.keys().next().value;
+  const shown = state.unitFloor === 'all' ? units : units.filter((u) => floorKey(u) === state.unitFloor);
+  const shownArea = sumOf(shown.filter((u) => u.area_m2 != null), 'area_m2');
+  const tab = (key, label, n) => `<button type="button" class="floor-tab${key === state.unitFloor ? ' is-active' : ''}" `
+    + `data-unit-floor="${esc(key)}">${esc(label)} <span>${n}</span></button>`;
+  const tabs = floors.size > 1 ? `
+    <div class="floor-tabs">
+      ${[...floors].map(([key, f]) => tab(key, f.label, f.n)).join('')}
+      ${tab('all', 'All floors', units.length)}
+    </div>` : '';
+
+  const rows = shown.map((u) => `
     <tr>
       <td class="font-medium text-white whitespace-nowrap">${esc(u.flat_number)}</td>
       ${anyBlock ? `<td>${esc(u.block || '-')}</td>` : ''}
@@ -570,7 +594,7 @@ function renderUnits() {
       </td>
     </tr>`).join('');
 
-  $('#units-table').innerHTML = `
+  $('#units-table').innerHTML = `${tabs}
     <table class="data-table">
       <thead>
         <tr>
@@ -581,8 +605,8 @@ function renderUnits() {
       <tbody>${rows}</tbody>
       <tfoot>
         <tr>
-          <td colspan="${anyBlock ? 4 : 3}">${units.length} rooms</td>
-          <td class="num">${areaFormat.format(area)}</td>
+          <td colspan="${anyBlock ? 4 : 3}">${shown.length} rooms</td>
+          <td class="num">${areaFormat.format(shownArea)}</td>
           <td colspan="3"></td>
         </tr>
       </tfoot>
@@ -654,6 +678,13 @@ async function saveUnit(e) {
 }
 
 async function onUnitsTableClick(e) {
+  const floor = e.target.closest('[data-unit-floor]');
+  if (floor) {
+    state.unitFloor = floor.dataset.unitFloor;
+    renderUnits();
+    return;
+  }
+
   const edit = e.target.closest('[data-unit-edit]');
   if (edit) {
     openUnitModal(state.flats.find((u) => u.id === edit.dataset.unitEdit));
