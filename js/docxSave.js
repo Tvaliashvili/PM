@@ -14,7 +14,7 @@
 //   time where it has lines, so no picture is taller than a page and a page
 //   can break between them
 // =============================================================
-import { pageReady } from './pdfSave.js';
+import { pageReady, settleCapitals } from './pdfSave.js';
 
 // Loaded on the first Word export, not with the app: the library is large and
 // most visits never use it.
@@ -51,11 +51,11 @@ const MAX_CANVAS_PX = 14_000;
 // How far past its own box a picture reaches for what spills out of it: the
 // tail of a signature, a label's descenders. Beyond this it is someone else's.
 const SPILL_PX = 48;
-// html2canvas draws a line of text a few pixels lower than the browser sets
-// it - most where the line height is tight. The PDF never shows this, because
-// the page is drawn whole and the text lands in the space below. A picture cut
-// at its own box loses the bottom of its last line, so each one reaches down
-// into the free space under it, as far as this and never into what comes next.
+// Letters can run a few pixels below their box - more where the line height
+// is tight. The PDF never shows this, because the page is drawn whole and they
+// land in the space below. A picture cut at its own box loses the bottom of its
+// last line, so each one reaches down into the free space under it, as far as
+// this and never into what comes next.
 const BLEED_PX = 10;
 
 // A line of a few words laid out side by side - a date and its weather, a
@@ -71,6 +71,7 @@ const MARKER_PX = 40;
  */
 export async function saveDocx(page, filename, { title = '' } = {}) {
   await pageReady(page);
+  settleCapitals(page);
   await Promise.all([load(DOCX_SRC), window.html2canvas ? null : load(HTML2CANVAS_SRC)]);
   const D = window.docx;
 

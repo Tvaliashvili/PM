@@ -31,12 +31,31 @@ export async function pageReady(page) {
 }
 
 /**
+ * Writes out the capitals that CSS only asks for. A browser leaves Georgian
+ * alone under text-transform: uppercase; html2canvas does not, and turns it
+ * into Mtavruli. So the Latin is raised in the text itself and the transform
+ * taken off - the page looks as it did, and the render matches it.
+ */
+export function settleCapitals(page) {
+  const raised = new Set();
+  const walker = document.createTreeWalker(page, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const el = n.parentElement;
+    if (!el || getComputedStyle(el).textTransform !== 'uppercase') continue;
+    n.nodeValue = n.nodeValue.replace(/\P{Script=Georgian}+/gu, (t) => t.toUpperCase());
+    raised.add(el);
+  }
+  for (const el of raised) el.style.textTransform = 'none';
+}
+
+/**
  * @param {HTMLElement} page      the built report, laid out in the document
  * @param {string} filename       including the .pdf
  * @param {boolean} printable     true for A4 sheets, false for one long page
  */
 export async function savePdf(page, filename, { printable = false } = {}) {
   await pageReady(page);
+  settleCapitals(page);
   if (printable) insertPageBreaks(page, MARGIN_MM);
 
   await window.html2pdf()

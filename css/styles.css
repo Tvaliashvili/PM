@@ -545,6 +545,14 @@ textarea.input-dark { resize: vertical; }
 }
 
 /* ---------- PDF export (light, print-friendly) ---------- */
+/* html2canvas finds where text sits on its line by setting a 1px image beside
+   a sample of it, in a hidden div of its own at the end of <body>. Tailwind
+   makes every image a block, which drops that one to the next line - so every
+   line of text in a render came out a few pixels low, off its chips and badges.
+   Kept inline, it measures the baseline it is meant to. */
+body > div[style*="visibility: hidden"] > img { display: inline !important; }
+
+
 .pdf-offscreen {
   position: fixed;
   top: 0;
