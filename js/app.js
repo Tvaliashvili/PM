@@ -121,7 +121,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-daily-print', '#btn-report-daily-word', '#btn-report-project', '#btn-report-project-print', '#btn-report-project-word', '#btn-add-unit', '#btn-add-task', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental',
+  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-daily-print', '#btn-report-project', '#btn-report-project-print', '#btn-add-unit', '#btn-add-task', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -3519,8 +3519,8 @@ function projectReportArgs(project) {
 async function exportProjectReport(e) {
   if (exporting || !requireProject()) return;
   const btn = e.currentTarget;
-  const printable = btn.id === 'btn-report-project-print';
-  const word = btn.id === 'btn-report-project-word';
+  // Printable means Word: its pages are Word's to lay out, and can be moved by hand.
+  const word = btn.id === 'btn-report-project-print';
   const label = btn.querySelector('span') ?? btn;
   const original = label.textContent;
 
@@ -3532,7 +3532,7 @@ async function exportProjectReport(e) {
   try {
     const project = currentProject();
     const page = await buildProjectReport(projectReportArgs(project));
-    await downloadProjectReport(page, project, { printable, word });
+    await downloadProjectReport(page, project, { word });
   } catch (err) {
     toast(err.message || 'Could not build the report.', 'error');
   } finally {
@@ -3547,8 +3547,7 @@ let exporting = false;
 async function exportDailyReport(e) {
   if (exporting || !requireProject()) return;
   const btn = e.currentTarget;
-  const printable = btn.id === 'btn-report-daily-print';
-  const word = btn.id === 'btn-report-daily-word';
+  const word = btn.id === 'btn-report-daily-print';
   const label = btn.querySelector('span') ?? btn;
   const original = label.textContent;
   const project = state.projects.find((p) => p.id === state.projectId);
@@ -3559,7 +3558,7 @@ async function exportDailyReport(e) {
   toast('Building today\'s report…');
 
   try {
-    await generateDailyReport({ db, project, progress: state.progress, printable, word });
+    await generateDailyReport({ db, project, progress: state.progress, word });
     toast('Daily report downloaded.', 'success');
   } catch (err) {
     toast(err.message || 'Could not generate the report.', 'error');
@@ -3647,10 +3646,8 @@ $('#form-edit-project').addEventListener('submit', saveEditProject);
 $('#form-delete-project').addEventListener('submit', confirmDeleteProject);
 $('#btn-report-daily').addEventListener('click', exportDailyReport);
 $('#btn-report-daily-print').addEventListener('click', exportDailyReport);
-$('#btn-report-daily-word').addEventListener('click', exportDailyReport);
 $('#btn-report-project').addEventListener('click', exportProjectReport);
 $('#btn-report-project-print').addEventListener('click', exportProjectReport);
-$('#btn-report-project-word').addEventListener('click', exportProjectReport);
 
 if (db) {
   $('#form-login').addEventListener('submit', signIn);
