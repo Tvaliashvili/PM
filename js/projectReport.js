@@ -470,6 +470,7 @@ export async function buildProjectReport({
       const left = x(t.planned_start);
       const width = Math.max(0.8, x(addDays(t.planned_finish, 1)) - left);
       // The time delays added, drawn on past the planned bar in a colour of its own.
+      // It starts a hair inside the bar, so rounding leaves no seam between them.
       const ext = Number(t.extension_days) || 0;
       const extLeft = left + width;
       const extWidth = ext ? Math.max(0.4, x(addDays(dueDate(t), 1)) - extLeft) : 0;
@@ -483,10 +484,10 @@ export async function buildProjectReport({
           </div>
           <div class="rpt-g-track">
             ${grid}
-            <div class="rpt-g-bar rpt-g-${s.key}" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%">
+            <div class="rpt-g-bar rpt-g-${s.key}${ext ? ' rpt-g-bar-extended' : ''}" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%">
               <div class="rpt-g-fill" style="width:${done}%"></div>
             </div>
-            ${ext ? `<div class="rpt-g-ext" style="left:${extLeft.toFixed(2)}%;width:${extWidth.toFixed(2)}%"></div>` : ''}
+            ${ext ? `<div class="rpt-g-ext" style="left:${(extLeft - 0.1).toFixed(2)}%;width:${(extWidth + 0.1).toFixed(2)}%"></div>` : ''}
           </div>
           <div class="rpt-g-pct">
             <strong>${done}%</strong>

@@ -1107,6 +1107,9 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
   position: absolute; top: 50%; height: 14px; margin-top: -7px;
   border-radius: 0 4px 4px 0; background: #7dd3fc; z-index: 1;
 }
+/* A bar with an extension is one shape with it: rounded at its start and at
+   the extension's end, square where the two meet. */
+.rpt-g-bar-extended { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .rpt-sw-ext { background: #7dd3fc; }
 /* The promised finish, where delays have pushed it out, struck through. The
    line is drawn here rather than with text-decoration, which html2canvas puts
