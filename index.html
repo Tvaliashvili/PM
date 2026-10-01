@@ -881,7 +881,7 @@
     <div class="modal-body space-y-4">
       <p id="payments-summary" class="text-sm text-slate-400"></p>
       <div id="payments-list" class="overflow-x-auto"></div>
-      <form id="form-payment" class="grid grid-cols-1 sm:grid-cols-[9rem_9rem_9rem_1fr_auto] gap-3 items-end pt-3 border-t border-ink-700">
+      <form id="form-payment" class="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end pt-3 border-t border-ink-700">
         <label class="block">
           <span class="form-label">Date paid</span>
           <input name="paid_on" type="date" required class="input-dark w-full">
@@ -894,13 +894,13 @@
           <span class="form-label">Retention held</span>
           <input name="retention" type="number" min="0" step="0.01" class="input-dark w-full" placeholder="0">
         </label>
-        <label class="block">
+        <label class="block sm:col-span-2">
           <span class="form-label">Note</span>
           <input name="note" maxlength="200" class="input-dark w-full" placeholder="e.g. Advance, invoice #12">
         </label>
         <button type="submit" class="btn btn-primary justify-center">Add Payment</button>
-        <p id="payment-net" class="text-sm text-slate-400 sm:col-span-5"></p>
-        <p class="form-error hidden sm:col-span-5" data-error></p>
+        <p id="payment-net" class="text-sm text-slate-400 sm:col-span-3"></p>
+        <p class="form-error hidden sm:col-span-3" data-error></p>
       </form>
     </div>
   </dialog>
