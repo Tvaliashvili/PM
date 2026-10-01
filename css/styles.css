@@ -579,7 +579,6 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
   color: #b45309;
 }
 .pdf-page h1 { font-size: 22px; font-weight: 700; color: #0f172a; line-height: 1.35; }
@@ -587,7 +586,6 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
   font-size: 13px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: #0f172a;
   margin-bottom: 8px;
 }
@@ -607,7 +605,6 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
   color: #b45309;
 }
 .pdf-muted  { color: #64748b; }
@@ -696,7 +693,6 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
 .doc-signature-label {
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #b45309;
 }
@@ -777,7 +773,6 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
 .rpt-eyebrow {
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #fbbf24;
 }
