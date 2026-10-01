@@ -432,8 +432,8 @@ export async function buildProjectReport({
               <tr>
                 <td>${esc(taskBi(t))}</td>
                 <td>${t.contractor_id ? esc(nameOf(t.contractor_id)) : '-'}</td>
-                <td>${d(t.baseline_finish)}</td>
-                <td>${finishOf(t)}</td>
+                <td><span class="rpt-was">${d(t.baseline_finish)}</span></td>
+                <td>${d(dueDate(t))}</td>
                 <td class="num ${days > 0 ? 'rpt-late' : ''}">${days > 0 ? '+' : ''}${days}</td>
               </tr>`).join('')}
           </tbody>
