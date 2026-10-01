@@ -1036,7 +1036,7 @@ export async function buildProjectReport({
     <div class="rpt-activity rpt-avoid">
       ${manpowerChart || '<div></div>'}
       ${siteWorkerDays ? tile('საშუალო დასწრება', 'Average on site', num.format(allAvg),
-    `${L('მუშა დღეში', 'workers a day')} · ${num.format(siteWorkerDays)} ${L('კაც-დღე', 'worker-days')} ${L('სულ', 'in all')}`) : ''}
+    `${L('პერსონალი დღეში', 'staff a day')} · ${num.format(siteWorkerDays)} ${L('კაც-დღე', 'worker-days')} ${L('სულ', 'in all')}`) : ''}
     </div>` : '';
 
   const logsSection = `
@@ -1052,7 +1052,7 @@ export async function buildProjectReport({
               <strong>${esc(dateKa(l.log_date))}</strong>
               <span class="rpt-muted">${esc(dateEn(l.log_date))}</span>
               <span class="rpt-log-meta">
-                ${l.weather ? esc(bi(l.weather)) : ''}${total ? ` · ${total} ${L('მუშა', 'workers')}` : ''}
+                ${l.weather ? esc(bi(l.weather)) : ''}${total ? ` · ${total} ${L('პერსონალი', 'staff')}` : ''}
               </span>
             </div>
             ${crew.length ? `<p class="rpt-muted rpt-crew">${crew.map(([k, n]) => `${esc(bi(tradeLabel(k)))} ${n}`).join(' · ')}</p>` : ''}
