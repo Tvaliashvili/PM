@@ -55,29 +55,30 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ));
 
-// Money is shown in the open project's currency ($ or ₾).
+// Thousands are grouped with a (non-breaking) space - 204 300.00, not 204,300.00 -
+// so a comma is never mistaken for the decimal point.
+const spaced = (fmt) => ({
+  format: (n) => fmt.formatToParts(n).map((p) => (p.type === 'group' ? ' ' : p.value)).join(''),
+});
+
+// Money is shown in the open project's currency ($ or ₾), always with the
+// cents (280 140.00), so a round sum is never read as a rounded one.
 const moneyFormats = new Map();
-function moneyFormat(decimals) {
+function moneyFormat() {
   const currency = state.projects.find((p) => p.id === state.projectId)?.currency ?? DEFAULT_CURRENCY;
-  const key = `${currency}:${decimals}`;
-  if (!moneyFormats.has(key)) {
-    moneyFormats.set(key, new Intl.NumberFormat(undefined, {
+  if (!moneyFormats.has(currency)) {
+    moneyFormats.set(currency, spaced(new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency,
       currencyDisplay: 'narrowSymbol',
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals,
-    }));
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })));
   }
-  return moneyFormats.get(key);
+  return moneyFormats.get(currency);
 }
-// Whole amounts read better without the trailing zeros, but a rate of 65.50 is
-// not 66 and a day's pay of 196.50 is not 197 - so the pence show when there
-// are any. Anything within half a penny of round is treated as round, since
-// that is a floating-point artefact rather than money.
-const isRound = (n) => Math.abs(Number(n) - Math.round(Number(n))) < 0.005;
-const money  = { format: (n) => moneyFormat(isRound(n) ? 0 : 2).format(n) };
-const money2 = { format: (n) => moneyFormat(2).format(n) };
+const money  = { format: (n) => moneyFormat().format(n) };
+const money2 = money;
 
 const todayISO = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD, local time
 
@@ -507,7 +508,7 @@ const UNIT_STATUS_CHIP = {
   finished:    'status-done',
   handed_over: 'status-handed',
 };
-const areaFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+const areaFormat = spaced(new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }));
 const numOrNull = (v) => (v === '' || v == null ? null : Number(v));
 
 async function loadUnits(projectId) {
@@ -1130,7 +1131,7 @@ async function refreshDashboard(projectId) {
   const days = delays.data.reduce((sum, d) => sum + delayDaysLost(d), 0);
   const stillOpen = delays.data.filter(delayIsOngoing).length;
   $('#kpi-delays').textContent = delays.data.length;
-  $('#kpi-delays-meta').textContent = `${days.toLocaleString()} ${days === 1 ? 'day' : 'days'} lost`
+  $('#kpi-delays-meta').textContent = `${areaFormat.format(days)} ${days === 1 ? 'day' : 'days'} lost`
     + (stillOpen ? ` · ${stillOpen} ongoing` : '');
 
   state.delays = delays.data;
@@ -1532,7 +1533,7 @@ async function saveEditProject(e) {
 // =============================================================
 // BOQ & cash flow - built from timetable items and their payments
 // =============================================================
-const qtyFormat = new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 });
+const qtyFormat = spaced(new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }));
 const sumOf = (items, key) => items.reduce((sum, i) => sum + Number(i[key] || 0), 0);
 const monthLabel = (ym) => new Date(`${ym}-01T00:00`).toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
 

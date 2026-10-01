@@ -26,7 +26,9 @@ const dayDiff = (a, b) => Math.round((toDate(b) - toDate(a)) / DAY_MS);
 // Language-neutral dates: 26.09.2026 / 26.09
 const d = (v) => (v ? v.slice(0, 10).split('-').reverse().join('.') : '-');
 const dm = (v) => v.slice(5, 10).split('-').reverse().join('.');
-const num = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 2 });
+// Thousands grouped with a non-breaking space, matching money in app.js.
+const numFmt = new Intl.NumberFormat('en-GB', { maximumFractionDigits: 2 });
+const num = { format: (n) => numFmt.formatToParts(n).map((p) => (p.type === 'group' ? ' ' : p.value)).join('') };
 const pctOf = (part, whole) => (whole ? Math.round((part / whole) * 100) : 0);
 const clamp = (v, lo = 0, hi = 100) => Math.min(hi, Math.max(lo, v));
 

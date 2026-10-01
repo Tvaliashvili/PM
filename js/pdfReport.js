@@ -199,7 +199,7 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
   set('weather', weather || bi('Not recorded'));
   set('manpower-total', workers);
   set('delay-count', allDelays.length);
-  set('delay-days', daysLost.toLocaleString('en-GB'));
+  set('delay-days', daysLost.toLocaleString('en-GB').replace(/,/g, '\u00A0'));
   if (rooms) set('total-flats', roomProgress.total
     ? `${roomProgress.done} / ${roomProgress.total} (${Math.round((roomProgress.done / roomProgress.total) * 100)}%)`
     : '-');
@@ -253,8 +253,8 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
       { text: bi(d.delay_cause) + (carried.has(d) ? ` (${sinceBi(d.created_at.slice(0, 10))})` : '') },
       ...(rooms ? [{ text: flatLabelBi(d.flats) }] : []),
       { text: delayIsOngoing(d)
-        ? `${delayDaysLost(d, day.date).toLocaleString('en-GB')} · ${bi('Ongoing')}`
-        : delayDaysLost(d, day.date).toLocaleString('en-GB'), className: 'num' },
+        ? `${delayDaysLost(d, day.date).toLocaleString('en-GB').replace(/,/g, '\u00A0')} · ${bi('Ongoing')}`
+        : delayDaysLost(d, day.date).toLocaleString('en-GB').replace(/,/g, '\u00A0'), className: 'num' },
       { text: [d.description, d.description_en].filter(Boolean).join('\n') || '-', className: 'pdf-bi' },
     ]));
   } else {
