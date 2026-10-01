@@ -117,7 +117,7 @@ export const KA = {
   'Total': 'სულ',
   'No manpower recorded.': 'სამუშაო ძალა არ არის ჩაწერილი.',
   'No delays recorded today.': 'დღეს შეფერხებები არ დაფიქსირებულა.',
-  'No site notes recorded.': 'ობიექტის შენიშვნები არ არის.',
+  'No site notes recorded.': 'ობიექტის ჩანაწერები არ არის.',
   'No daily log or delays were recorded for this project today.':
     'დღეს ამ პროექტზე დღიური ჩანაწერი ან შეფერხება არ დაფიქსირებულა.',
   'AI summary unavailable': 'AI შეჯამება მიუწვდომელია',
