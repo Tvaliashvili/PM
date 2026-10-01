@@ -98,8 +98,8 @@ export const DELAY_CAUSES = [
 export const REPORT_AUTHOR = {
   name:    'Sandro Tvaliashvili',
   nameKa:  'სანდრო თვალიაშვილი',
-  title:   'Data Analytics Project Manager',
-  titleKa: 'მონაცემთა ანალიტიკის პროექტის მენეჯერი',
+  title:   'Project Manager',
+  titleKa: 'პროექტის მენეჯერი',
   signature: SIGNATURE_PNG,
 };
 
