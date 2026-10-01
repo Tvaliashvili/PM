@@ -633,7 +633,7 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
 
 .pdf-section { margin-top: 18px; }
 .pdf-note { margin-top: 6px; font-size: 10px; font-style: italic; color: #64748b; }
-.pdf-notes { white-space: pre-wrap; }
+.pdf-notes { white-space: pre-wrap; text-align: justify; }
 
 .pdf-page table { width: 100%; border-collapse: collapse; font-size: 11px; }
 /* Every cell sits in the middle of its row and centred across it, prose and
@@ -856,7 +856,7 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
 .rpt-log-meta { margin-left: auto; color: #475569; }
 .rpt-log-meta em { margin-left: 3px; }
 .rpt-crew { margin-bottom: 6px; font-size: 10.5px; }
-.rpt-notes { white-space: pre-wrap; }
+.rpt-notes { white-space: pre-wrap; text-align: justify; }
 .rpt-notes-en { color: #475569; }
 
 /* Report palette: plan = slate, done = green, active = blue, paid = amber, overdue = rose */
