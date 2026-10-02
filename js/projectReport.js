@@ -531,7 +531,7 @@ export async function buildProjectReport({
   const timeline = `
     <section class="rpt-section">
       ${H('სამუშაო გრაფიკი', 'Timeline', `${progress.count} ${L('სამუშაო', 'items')}`)}
-      ${tasks.length ? clickHint('დააჭირეთ სამუშაოს - ნახავთ ვადებს, გადახდებს, მასალებს და შეფერხებებს', 'Click an activity to see its dates, payments, materials and delays') : ''}
+      ${tasks.length ? clickHint('სამუშაოზე დაჭერით ნახავთ ვადებს, გადახდებს, მასალებს და შეფერხებებს', 'Click an activity to see its dates, payments, materials and delays') : ''}
       ${gantt}
     </section>`;
 
@@ -915,7 +915,7 @@ export async function buildProjectReport({
         ${retentionHeld ? tile('დაკავებული გარანტია', 'Retention held', m(retentionHeld),
     project.retention_pct ? `${Number(project.retention_pct)}% ${L('ყოველი გადახდიდან', 'of each payment')}` : '', 'muted') : ''}
       </div>
-      ${monthKeys.length ? sCurve + clickHint('დააჭირეთ თვეს - ნახავთ, რაზე დაიხარჯა', 'Click a month to see what the money was spent on') + monthTable : none}
+      ${monthKeys.length ? sCurve + clickHint('თვეზე დაჭერით ნახავთ, რაზე დაიხარჯა თანხა', 'Click a month to see what the money was spent on') + monthTable : none}
       ${variationsBlock}
       ${itemCosts}
       ${siteCostsBlock}
@@ -935,7 +935,7 @@ export async function buildProjectReport({
   const contractorsSection = `
     <section class="rpt-section">
       ${H('კონტრაქტორები', 'Contractors', `${contractors.length}`)}
-      ${contractors.length ? clickHint('დააჭირეთ კონტრაქტორს - ნახავთ მის სამუშაოებს, გადახდებს და შეფერხებებს', 'Click a contractor to see their jobs, payments and delays') : ''}
+      ${contractors.length ? clickHint('კონტრაქტორზე დაჭერით ნახავთ მის სამუშაოებს, გადახდებს და შეფერხებებს', 'Click a contractor to see their jobs, payments and delays') : ''}
       ${contractors.length ? `
         <div class="rpt-cards">
           ${contractors.map((c) => {
@@ -1223,7 +1223,7 @@ export async function buildProjectReport({
   const logsSection = `
     <section class="rpt-section">
       ${H('ობიექტზე აქტივობა', 'Site Activity', series.length ? `${series.length} ${L('ჩანაწერი', 'logs')}` : '')}
-      ${series.length > 1 ? clickHint('დააჭირეთ დღის სვეტს - ნახავთ ვინ იყო ობიექტზე და რა გაკეთდა', 'Click a day’s bar to see who was on site and what was done') : ''}
+      ${series.length > 1 ? clickHint('დღის სვეტზე დაჭერით ნახავთ, ვინ იყო ობიექტზე და რა გაკეთდა', 'Click a day’s bar to see who was on site and what was done') : ''}
       ${activityBlock}
       ${logs.length ? logs.slice(0, 5).map((l) => {
         const crew = Object.entries(l.manpower || {}).filter(([, n]) => n > 0);
@@ -1743,7 +1743,7 @@ function reportViewer(POPUPS) {
   });
   // Every click-able part gets a tooltip saying so.
   document.querySelectorAll('[data-pop]').forEach((el) => {
-    if (!el.title) el.title = 'დააჭირეთ დეტალებისთვის · Click for details';
+    if (!el.title) el.title = 'დაჭერით ნახავთ დეტალებს · Click for details';
   });
   // Contents: one link per section heading, Georgian with the English beside it.
   const nav = document.getElementById('rpt-nav');
