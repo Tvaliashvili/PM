@@ -116,10 +116,6 @@
           <svg viewBox="0 0 24 24" class="nav-icon"><path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zM20.7 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
           Variations
         </a>
-        <a href="#reports" data-nav="reports" class="nav-link">
-          <svg viewBox="0 0 24 24" class="nav-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11zM8 13h8v2H8v-2zm0 4h5v2H8v-2z"/></svg>
-          PDF Reports
-        </a>
       </nav>
 
       <div class="p-4 border-t border-ink-700 flex items-center justify-between gap-2 text-xs text-slate-500">
@@ -281,10 +277,22 @@
               <h1 class="text-xl font-semibold text-white">Daily Logs</h1>
               <p class="text-sm text-slate-500">Weather, manpower and site notes - and ask Gemini anything about the project.</p>
             </div>
-            <button id="btn-new-log-page" class="btn btn-primary">
-              <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
-              New Daily Log
-            </button>
+            <div class="grid grid-cols-2 gap-2 shrink-0 lg:flex lg:items-center">
+              <button id="btn-report-daily" class="btn btn-secondary" title="One day's log as a PDF or Word file - pick the date">
+                Daily Report
+              </button>
+              <button id="btn-report-project" class="btn btn-secondary"
+                      title="The whole project on one page, in Georgian and English">
+                <span>Project Report</span>
+              </button>
+              <button id="btn-report-project-print" class="btn btn-secondary" title="The project report as a Word file on A4, to arrange and print">
+                <span>Project Report (Word)</span>
+              </button>
+              <button id="btn-new-log-page" class="btn btn-primary">
+                <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
+                New Daily Log
+              </button>
+            </div>
           </div>
 
           <!-- Ask Gemini -->
@@ -503,41 +511,6 @@
         </section>
 
         <!-- PDF REPORTS -->
-        <section id="section-reports" data-section="reports" class="module hidden">
-          <div class="module-header">
-            <div>
-              <h1 class="text-xl font-semibold text-white">PDF Reports</h1>
-              <p class="text-sm text-slate-500">Generate and export project reports.</p>
-            </div>
-          </div>
-          <div id="reports-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div class="panel flex flex-col">
-              <h2 class="panel-title">Daily Site Report</h2>
-              <p class="text-sm text-slate-400 mb-4">
-                Today's weather, manpower, delays, site notes and photos, in Georgian and English.
-                Downloads as <span class="text-slate-300">Daily_Report_ProjectName_YYYY-MM-DD.pdf</span>.
-                One long PDF page to read on screen, or a Word file on A4 to arrange and print.
-              </p>
-              <div class="flex flex-wrap gap-2 mt-auto">
-                <button id="btn-report-daily" class="btn btn-primary"><span>Generate Daily Report</span></button>
-                <button id="btn-report-daily-print" class="btn btn-secondary"><span>Printable (Word)</span></button>
-              </div>
-            </div>
-            <div class="panel flex flex-col">
-              <h2 class="panel-title">Project Report</h2>
-              <p class="text-sm text-slate-400 mb-4">
-                The whole project on one designed page, in Georgian and English: key figures, progress vs plan, timetable,
-                contractors, budget &amp; cash flow, rooms (for sites that have them), recent logs and delays.
-                One long PDF page to read on screen, or a Word file on A4 to arrange and print.
-              </p>
-              <div class="flex flex-wrap gap-2 mt-auto">
-                <button id="btn-report-project" class="btn btn-primary"><span>Generate Project Report</span></button>
-                <button id="btn-report-project-print" class="btn btn-secondary"><span>Printable (Word)</span></button>
-              </div>
-            </div>
-          </div>
-        </section>
-
       </main>
     </div>
   </div>
@@ -1113,6 +1086,32 @@
   </dialog>
 
   <!-- Equipment rental (add / edit) -->
+  <!-- Daily report for a chosen day -->
+  <dialog id="modal-daily-report" class="modal modal-sm" aria-labelledby="daily-report-title">
+    <form id="form-daily-report">
+      <div class="modal-header">
+        <h2 id="daily-report-title">Daily Report</h2>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body space-y-3">
+        <label class="block">
+          <span class="form-label">Day</span>
+          <input name="date" type="date" required class="input-dark w-full">
+        </label>
+        <p id="daily-report-hint" class="text-xs text-slate-500"></p>
+        <p class="text-xs text-slate-500">
+          Weather, manpower, delays, site notes and photos of that day, in Georgian and English. PDF is one long page
+          to read on screen; Word is A4, to arrange and print.
+        </p>
+        <p class="form-error hidden" data-error></p>
+      </div>
+      <div class="modal-footer">
+        <button type="submit" value="word" class="btn btn-secondary"><span>Word</span></button>
+        <button type="submit" value="pdf" class="btn btn-primary"><span>PDF</span></button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Activities from an MS Project file -->
   <dialog id="modal-import" class="modal modal-wide" aria-labelledby="import-title">
     <form id="form-import">

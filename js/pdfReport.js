@@ -1,20 +1,21 @@
 // =============================================================
 // Daily PDF report - bilingual (Georgian / English)
-// Today's daily_logs + delays → html2pdf
+// One day's daily_logs + delays → html2pdf
 // =============================================================
 import {
   MANPOWER_TRADES, REPORT_AUTHOR,
   SITE_EVENT_KINDS, INCIDENT_SEVERITIES, VARIATION_STATUSES,
 } from './config.js';
-import { rentalEnd, delayIsOngoing, delayDaysLost } from './schedule.js';
+import { rentalEnd, delayIsOngoing, delayDaysLost, delayCovers } from './schedule.js';
 import { ka, bi, biName, dateKa, dateEn, signatureHtml, roomLabelBi } from './bilingual.js';
 import { fetchPhotos, signPhotos } from './photos.js';
 import { savePdf } from './pdfSave.js';
 import { saveDocx } from './docxSave.js';
 
 // ---------- Helpers ----------
-function todayRange() {
-  const start = new Date();
+/** One day, local time: today, or the YYYY-MM-DD given. */
+function dayRange(date) {
+  const start = date ? new Date(`${date}T00:00`) : new Date();
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
   end.setDate(end.getDate() + 1);
@@ -79,13 +80,13 @@ async function fetchTodayData(db, projectId, day, { withRooms = false } = {}) {
         + 'crew:daily_manpower(trade, workers, contractors(name, name_ka))')
       .eq('project_id', projectId)
       .eq('log_date', day.date),
-    // Logged today, plus anything still running from an earlier day - an open
-    // delay is today's problem too.
+    // Logged that day, plus anything from an earlier day still running on it -
+    // an open delay is that day's problem too. Which earlier ones were still
+    // running is worked out below, from each delay's own days.
     db.from('delays')
       .select('id, delay_cause, duration_days, resolved_on, description, description_en, created_at, flats(block, floor, flat_number)')
       .eq('project_id', projectId)
       .lt('created_at', day.endISO)
-      .or(`created_at.gte.${day.startISO},duration_days.is.null`)
       .order('created_at'),
     db.from('equipment_rentals')
       .select('equipment, equipment_ka, supplier, supplier_ka, start_date, days')
@@ -121,7 +122,7 @@ async function fetchTodayData(db, projectId, day, { withRooms = false } = {}) {
   const onHire = rentals.data.filter((r) => rentalEnd(r) >= day.date);
   // Today's figures count today's delays; the ones carried over are listed apart.
   const today = delays.data.filter((d) => d.created_at >= day.startISO);
-  const carried = delays.data.filter((d) => d.created_at < day.startISO);
+  const carried = delays.data.filter((d) => d.created_at < day.startISO && delayCovers(d, day.date));
   // A room counts as done once it is finished or handed over.
   const roomProgress = {
     total: rooms.data.length,
@@ -203,7 +204,9 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
   if (rooms) set('total-flats', roomProgress.total
     ? `${roomProgress.done} / ${roomProgress.total} (${Math.round((roomProgress.done / roomProgress.total) * 100)}%)`
     : '-');
-  set('progress', progress?.count
+  // An earlier day's report has no progress figure: the timetable only knows
+  // where the work stands now, not where it stood then.
+  set('progress', progress === null ? '-' : progress?.count
     ? `${progress.actualPct}% (${ka('plan')}/plan ${progress.plannedPct}%)`
     : bi('No timetable'));
 
@@ -330,12 +333,12 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
 
 // ---------- 4. Export ----------
 /**
- * Builds today's bilingual report for `project` and downloads it as
+ * Builds the bilingual report of one day (today unless `date` is given) for `project` and downloads it as
  * Daily_Report_<name>_<YYYY-MM-DD>.pdf - or, with `word`, as a .docx to arrange
  * by hand before printing.
  */
-export async function generateDailyReport({ db, project, progress, printable = false, word = false }) {
-  const day = todayRange();
+export async function generateDailyReport({ db, project, progress, date, printable = false, word = false }) {
+  const day = dayRange(date);
   const { logs, delays, carriedDelays, rentals, roomProgress, events, variations } =
     await fetchTodayData(db, project.id, day, { withRooms: Boolean(project.has_rooms) });
   const manpower = mergeManpower(logs);

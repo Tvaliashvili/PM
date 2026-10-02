@@ -124,7 +124,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-daily-print', '#btn-report-project', '#btn-report-project-print', '#btn-add-unit', '#btn-add-task', '#btn-import-mpp', '#btn-import-template', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental', '#btn-add-material',
+  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-project', '#btn-report-project-print', '#btn-add-unit', '#btn-add-task', '#btn-import-mpp', '#btn-import-template', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental', '#btn-add-material',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -4119,27 +4119,55 @@ async function exportProjectReport(e) {
 
 let exporting = false;
 
+// The daily report of any day - a client may ask for last Tuesday's.
+function openDailyReportModal() {
+  if (!requireProject()) return;
+  const form = $('#form-daily-report');
+  form.elements.date.value = todayISO();
+  form.elements.date.max = todayISO();
+  showFormError(form, '');
+  updateDailyReportHint();
+  openModal('modal-daily-report');
+}
+
+function updateDailyReportHint() {
+  const date = $('#form-daily-report').elements.date.value;
+  const logged = state.siteLogs.some((l) => l.log_date === date);
+  $('#daily-report-hint').textContent = !date || logged ? ''
+    : 'No daily log on this day - the report will have only its delays, equipment and events.';
+}
+
 async function exportDailyReport(e) {
+  e.preventDefault();
   if (exporting || !requireProject()) return;
-  const btn = e.currentTarget;
-  const word = btn.id === 'btn-report-daily-print';
+  const form = e.currentTarget;
+  const date = form.elements.date.value;
+  if (!date) {
+    showFormError(form, 'Pick the day.');
+    return;
+  }
+  const btn = e.submitter ?? $('[value=pdf]', form);
+  const word = btn.value === 'word';
   const label = btn.querySelector('span') ?? btn;
   const original = label.textContent;
   const project = state.projects.find((p) => p.id === state.projectId);
+  const today = date === todayISO();
 
   exporting = true;
-  btn.disabled = true;
+  $$('[type=submit]', form).forEach((b) => { b.disabled = true; });
   label.textContent = 'Generating…';
-  toast('Building today\'s report…');
+  toast(`Building the report of ${formatDate(date)}…`);
 
   try {
-    await generateDailyReport({ db, project, progress: state.progress, word });
+    // Progress is where the timetable stands now, so only today's report has it.
+    await generateDailyReport({ db, project, progress: today ? state.progress : null, date, word });
+    closeModal('modal-daily-report');
     toast('Daily report downloaded.', 'success');
   } catch (err) {
-    toast(err.message || 'Could not generate the report.', 'error');
+    showFormError(form, err.message || 'Could not generate the report.');
   } finally {
     exporting = false;
-    btn.disabled = !state.projectId;
+    $$('[type=submit]', form).forEach((b) => { b.disabled = false; });
     label.textContent = original;
   }
 }
@@ -4228,8 +4256,9 @@ $('#ask-answer').addEventListener('click', onAskLangToggle);
 $('#btn-edit-project').addEventListener('click', openEditProjectModal);
 $('#form-edit-project').addEventListener('submit', saveEditProject);
 $('#form-delete-project').addEventListener('submit', confirmDeleteProject);
-$('#btn-report-daily').addEventListener('click', exportDailyReport);
-$('#btn-report-daily-print').addEventListener('click', exportDailyReport);
+$('#btn-report-daily').addEventListener('click', openDailyReportModal);
+$('#form-daily-report').addEventListener('submit', exportDailyReport);
+$('#form-daily-report').addEventListener('input', updateDailyReportHint);
 $('#btn-report-project').addEventListener('click', exportProjectReport);
 $('#btn-report-project-print').addEventListener('click', exportProjectReport);
 
