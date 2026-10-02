@@ -741,8 +741,15 @@ function openRoomWork(flatId) {
 const workTagKey = (w) => String(w.work || w.work_en || '').trim().toLowerCase().replace(/\s+/g, ' ');
 function workTags() {
   const tags = new Map();
-  for (const w of state.work) tags.set(workTagKey(w), w); // oldest first, so the last one stays
-  return [...tags].map(([key, w]) => ({ key, ka: w.work, en: w.work_en, unit: w.unit, contractor_id: w.contractor_id }))
+  const named = new Map(); // the latest entry with both languages, so a work translated once is never translated again
+  for (const w of state.work) { // oldest first, so the last one stays
+    tags.set(workTagKey(w), w);
+    if (w.work && w.work_en && w.work_en !== w.work) named.set(workTagKey(w), w);
+  }
+  return [...tags].map(([key, w]) => {
+    const names = named.get(key) ?? w;
+    return { key, ka: names.work, en: names.work_en, unit: w.unit, contractor_id: w.contractor_id };
+  })
     .sort((a, b) => String(a.ka || a.en).localeCompare(String(b.ka || b.en)));
 }
 
