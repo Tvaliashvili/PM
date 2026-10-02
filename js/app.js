@@ -3855,17 +3855,8 @@ async function downloadTemplate() {
   ]);
   const sheet = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, ...rows]);
   sheet['!cols'] = [{ wch: 45 }, { wch: 45 }, { wch: 12 }, { wch: 12 }];
-  const help = XLSX.utils.aoa_to_sheet([
-    ['How to fill in the Timetable sheet'],
-    ['One activity per row. Write its name in Georgian, English or both - a name left empty is translated on import.'],
-    ['Start and Finish: dates, e.g. 05.01.2026 (day first). You can paste the Task Name, Start and Finish columns straight from MS Project.'],
-    ['Activities already on the timetable are matched by name, and only their dates change.'],
-    ['Save, then use Import on the Timetable page.'],
-  ]);
-  help['!cols'] = [{ wch: 110 }];
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, 'Timetable');
-  XLSX.utils.book_append_sheet(book, help, 'How to');
   const project = currentProject();
   XLSX.writeFile(book, `${(project?.name || 'Timetable').replace(/[\\/:*?"<>|]+/g, ' ').trim()} - timetable.xlsx`);
 }
@@ -4159,19 +4150,8 @@ async function downloadRoomsTemplate() {
   ]);
   const sheet = XLSX.utils.aoa_to_sheet([ROOM_HEADERS, ...rows]);
   sheet['!cols'] = [{ wch: 8 }, { wch: 7 }, { wch: 10 }, { wch: 14 }, { wch: 10 }, { wch: 13 }, { wch: 40 }];
-  const help = XLSX.utils.aoa_to_sheet([
-    ['How to fill in the Rooms sheet'],
-    ['One room per row. Floor and Room no. are needed; everything else can stay empty.'],
-    ['Block: only if the building has more than one (A, B…). Floor: a whole number - 0 is the ground floor, -1 a basement.'],
-    [`Type, one of: ${UNIT_TYPES.join(', ')}`],
-    [`Status, one of: ${Object.values(UNIT_STATUSES).join(', ')} - empty means Not started.`],
-    ['A room already in the app (same block and number) is updated; an empty cell leaves that detail as it is.'],
-    ['Save, then use Import on the Rooms page.'],
-  ]);
-  help['!cols'] = [{ wch: 110 }];
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, 'Rooms');
-  XLSX.utils.book_append_sheet(book, help, 'How to');
   const project = currentProject();
   XLSX.writeFile(book, `${(project?.name || 'Project').replace(/[\\/:*?"<>|]+/g, ' ').trim()} - rooms.xlsx`);
 }
