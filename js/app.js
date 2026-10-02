@@ -887,7 +887,8 @@ function renderSchedule() {
         </td>
         <td class="task-name">${esc(t.name)}${t.name_ka && t.name_ka !== t.name ? `<span class="block text-xs text-slate-500">${esc(t.name_ka)}</span>` : ''}</td>
         <td>
-          <select class="select-dark select-inline" data-task-contractor="${esc(t.id)}"
+          <select class="select-dark select-inline select-contractor" data-task-contractor="${esc(t.id)}"
+                  title="${esc(contractorName(t.contractor_id) || 'No contractor')}"
                   aria-label="Contractor for ${esc(t.name)}">${contractorOptions(t.contractor_id ?? '')}</select>
         </td>
         <td class="whitespace-nowrap">${esc(formatDate(t.planned_start))}</td>

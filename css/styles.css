@@ -212,6 +212,17 @@ html, body { background: var(--ink-950); }
   background-color: transparent;
 }
 .select-inline:hover { background-color: var(--ink-800); }
+/* The timetable's contractor picker: a long company name is cut short (the
+   full name is in its tooltip and in the open list) so the table doesn't
+   scroll sideways. */
+.select-contractor {
+  min-width: 0;
+  width: 10rem;
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .btn-sm { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
 .kpi-value-sm { font-size: 1.5rem; overflow-wrap: anywhere; }
