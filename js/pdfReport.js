@@ -77,7 +77,8 @@ async function fetchTodayData(db, projectId, day, { withRooms = false } = {}) {
   const [logs, delays, rentals, rooms, events, variations] = await Promise.all([
     db.from('daily_logs')
       .select('id, log_date, weather, manpower, notes, notes_en, day_rate, '
-        + 'crew:daily_manpower(trade, workers, contractors(name, name_ka))')
+        + 'crew:daily_manpower(trade, workers, contractors(name, name_ka)), '
+        + 'work:work_done(work, work_en, quantity, unit, created_at, contractors(name, name_ka), flats(block, floor, flat_number))')
       .eq('project_id', projectId)
       .eq('log_date', day.date),
     // Logged that day, plus anything from an earlier day still running on it -
@@ -174,13 +175,33 @@ function addEmptyRow(tbody, colspan, text) {
   tbody.appendChild(tr);
 }
 
+/**
+ * Where the day falls in the programme: "214 / 365" - day 214 of a 365-day
+ * project, both counted from the start date. '-' without both dates, or before
+ * the start.
+ */
+function projectDay(project, date) {
+  const { start_date: start, end_date: end } = project;
+  if (!start || !end || date < start) return '-';
+  const days = (a, b) => Math.round((new Date(`${b}T00:00`) - new Date(`${a}T00:00`)) / 86_400_000) + 1;
+  return `${days(start, date)} / ${days(start, end)}`;
+}
+
+/** "200 m²" - or '' when no quantity was given. */
+const quantityOf = (w) => (w.quantity != null
+  ? `${Number(w.quantity).toLocaleString('en-GB', { maximumFractionDigits: 3 }).replace(/,/g, ' ')}${w.unit ? ` ${w.unit}` : ''}`
+  : '');
+
 function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, roomProgress, photoUrls = [], manpower, events = [], variations = [] }) {
   const page = document.getElementById('daily-report-template').content.firstElementChild.cloneNode(true);
   const set = (field, value) => { page.querySelector(`[data-field="${field}"]`).textContent = value; };
   const rooms = Boolean(project.has_rooms);
-  // Four facts in a row, or five with the rooms - the last one then spans two.
-  if (!rooms) page.querySelectorAll('[data-rooms-only]').forEach((el) => el.remove());
-  page.querySelector('.pdf-facts').classList.add(rooms ? 'pdf-facts-5' : 'pdf-facts-4');
+  // Six facts, two rows of three - or five without the rooms, the last one
+  // then spanning two.
+  if (!rooms) {
+    page.querySelectorAll('[data-rooms-only]').forEach((el) => el.remove());
+    page.querySelector('.pdf-facts').classList.add('pdf-facts-5');
+  }
 
   // Site details
   const workers = manpower.reduce((sum, [, n]) => sum + n, 0);
@@ -198,6 +219,7 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
   set('date-en', dateEn(day.date));
   set('weather', weather || bi('Not recorded'));
   set('manpower-total', workers);
+  set('project-day', projectDay(project, day.date));
   set('delay-count', allDelays.length);
   set('delay-days', daysLost.toLocaleString('en-GB').replace(/,/g, '\u00A0'));
   if (rooms) set('total-flats', roomProgress.total
@@ -228,6 +250,22 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
     addRow(mpRows, [{ text: bi('Total'), className: 'pdf-strong' }, { text: workers, className: 'num pdf-strong' }]);
   } else {
     addEmptyRow(mpRows, 2, bi('No manpower recorded.'));
+  }
+
+  // Work done that day, where and by whom (section hidden when none was recorded)
+  const work = logs.flatMap((l) => l.work ?? [])
+    .sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')));
+  if (work.length) {
+    if (!rooms) page.querySelectorAll('[data-work-room]').forEach((el) => el.remove());
+    const workRows = page.querySelector('[data-rows="work"]');
+    work.forEach((w) => addRow(workRows, [
+      ...(rooms ? [{ text: w.flats ? flatLabelBi(w.flats) : bi('Site-wide') }] : []),
+      { text: [w.work, w.work_en !== w.work ? w.work_en : ''].filter(Boolean).join('\n'), className: 'pdf-bi' },
+      { text: biName(w.contractors?.name, w.contractors?.name_ka) || '-' },
+      { text: quantityOf(w) || '-', className: 'num' },
+    ]));
+  } else {
+    page.querySelector('[data-section="work"]').remove();
   }
 
   // Equipment on hire today (section hidden when there is none)

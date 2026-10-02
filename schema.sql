@@ -759,3 +759,34 @@ create policy "authenticated_full_access" on public.materials
   for all to authenticated using (true) with check (true);
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 24. Work done, line by line, on each daily log
+-- What was done that day, where and by whom: "Block A, flat 301 - gypsum
+-- board, 200 m², Giorgi's company". The room is optional (a facade or the
+-- yard is not in one), and so is the quantity (some work is not measured).
+-- work is the Georgian, work_en the English. The day and the project come
+-- from the log, so deleting the log deletes its lines.
+-- -------------------------------------------------------------
+create table if not exists public.work_done (
+  id             uuid primary key default gen_random_uuid(),
+  daily_log_id   uuid not null references public.daily_logs(id) on delete cascade,
+  flat_id        uuid references public.flats(id) on delete set null,
+  contractor_id  uuid references public.contractors(id) on delete set null,
+  work           text not null,
+  work_en        text,
+  quantity       numeric(14,3) check (quantity is null or quantity >= 0),
+  unit           text,
+  created_at     timestamptz not null default now()
+);
+
+create index if not exists work_done_log_idx on public.work_done (daily_log_id);
+create index if not exists work_done_flat_idx on public.work_done (flat_id);
+create index if not exists work_done_contractor_idx on public.work_done (contractor_id);
+
+alter table public.work_done enable row level security;
+drop policy if exists "authenticated_full_access" on public.work_done;
+create policy "authenticated_full_access" on public.work_done
+  for all to authenticated using (true) with check (true);
+
+notify pgrst, 'reload schema';

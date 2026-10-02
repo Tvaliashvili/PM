@@ -50,7 +50,7 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
       .eq("project_id", projectId).order("planned_start"),
     sb.from("contractors").select("id, name, name_ka, trade").eq("project_id", projectId),
     sb.from("daily_logs")
-      .select("log_date, weather, manpower, day_rate, notes, notes_en")
+      .select("log_date, weather, manpower, day_rate, notes, notes_en, work:work_done(work, work_en, quantity, unit, contractor_id, flats(block, floor, flat_number))")
       // Every log, newest first - four years of daily logs on one project.
       .eq("project_id", projectId).order("log_date", { ascending: false }).limit(1500),
     sb.from("delays")
@@ -156,7 +156,20 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
       item: taskName.get(m.task_id) ?? null,
       contractor: contractorName.get(taskContractor.get(m.task_id)) ?? null,
     })),
-    daily_logs: logs.data ?? [], // newest first; manpower.day_workers are paid day_rate each per day
+    // Newest first; manpower.day_workers are paid day_rate each per day. work is
+    // what was done that day: where (room, or null outside rooms), what, how
+    // much and by which contractor.
+    daily_logs: (logs.data ?? []).map((l: any) => ({
+      ...l,
+      work: (l.work ?? []).map((w: any) => ({
+        room: w.flats ? `${w.flats.block ? `${w.flats.block}-` : ""}${w.flats.flat_number} (floor ${w.flats.floor})` : null,
+        work: w.work,
+        work_en: w.work_en,
+        quantity: w.quantity,
+        unit: w.unit,
+        contractor: contractorName.get(w.contractor_id) ?? null,
+      })),
+    })),
   };
 
   // Keep within the budget by dropping the oldest logs.

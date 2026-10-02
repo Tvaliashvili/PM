@@ -593,6 +593,7 @@ function renderUnits() {
       <td><span class="status-chip ${UNIT_STATUS_CHIP[u.status] ?? 'status-pending'}">${esc(UNIT_STATUSES[u.status] ?? u.status)}</span></td>
       <td class="max-w-[16rem] truncate text-slate-400" title="${esc(u.notes ?? '')}">${esc(u.notes ?? '')}</td>
       <td class="text-right whitespace-nowrap">
+        <button type="button" class="table-action" data-unit-work="${esc(u.id)}">Work</button>
         <button type="button" class="table-action" data-unit-edit="${esc(u.id)}">Edit</button>
         <button type="button" class="table-action is-danger" data-unit-delete="${esc(u.id)}">Delete</button>
       </td>
@@ -674,6 +675,44 @@ async function saveUnit(e) {
   if (projectId === state.projectId) loadUnits(projectId);
 }
 
+/** Everything the daily logs say was done in one room, oldest first. */
+async function openRoomWork(flatId) {
+  const flat = state.flats.find((f) => f.id === flatId);
+  if (!flat) return;
+  $('#room-work-title').textContent = `Work done - ${roomLabel(flat)}`;
+  $('#room-work-sub').textContent = [`Floor ${flat.floor}`, flat.unit_type, UNIT_STATUSES[flat.status]].filter(Boolean).join(' · ');
+  const list = $('#room-work-list');
+  list.innerHTML = '<div class="empty-state">Loading…</div>';
+  openModal('modal-room-work');
+
+  const { data, error } = await db.from('work_done')
+    .select('work, work_en, quantity, unit, contractor_id, created_at, log:daily_logs!inner(log_date, project_id)')
+    .eq('flat_id', flatId)
+    .eq('log.project_id', state.projectId);
+  if (error) {
+    list.innerHTML = `<div class="empty-state">Could not load the work: ${esc(error.message)}</div>`;
+    return;
+  }
+  if (!data.length) {
+    list.innerHTML = '<div class="empty-state">No work recorded in this room yet - add it in the Work done section of a daily log.</div>';
+    return;
+  }
+  const rows = data
+    .sort((a, b) => a.log.log_date.localeCompare(b.log.log_date) || String(a.created_at).localeCompare(String(b.created_at)))
+    .map((w) => `
+      <tr>
+        <td class="whitespace-nowrap">${esc(formatDate(w.log.log_date))}</td>
+        <td>${esc(w.work || w.work_en)}${w.work_en && w.work_en !== w.work ? `<span class="block text-xs text-slate-500">${esc(w.work_en)}</span>` : ''}</td>
+        <td>${w.contractor_id ? esc(contractorName(w.contractor_id)) : '<span class="text-slate-500">-</span>'}</td>
+        <td class="num whitespace-nowrap">${esc(quantityText(w)) || '<span class="text-slate-500">-</span>'}</td>
+      </tr>`).join('');
+  list.innerHTML = `
+    <table class="data-table">
+      <thead><tr><th>Date</th><th>Work</th><th>Contractor</th><th class="num">Quantity</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
 async function onUnitsTableClick(e) {
   const floor = e.target.closest('[data-unit-floor]');
   if (floor) {
@@ -682,6 +721,11 @@ async function onUnitsTableClick(e) {
     return;
   }
 
+  const work = e.target.closest('[data-unit-work]');
+  if (work) {
+    openRoomWork(work.dataset.unitWork);
+    return;
+  }
   const edit = e.target.closest('[data-unit-edit]');
   if (edit) {
     openUnitModal(state.flats.find((u) => u.id === edit.dataset.unitEdit));
@@ -2532,6 +2576,27 @@ function delayLineFor(logDate) {
   return `<p class="log-card-delays">Delay running: ${parts.map((t) => esc(t)).join(' &middot; ')}</p>`;
 }
 
+const flatName = (id) => {
+  const flat = state.flats.find((f) => f.id === id);
+  return flat ? roomLabel(flat) : '';
+};
+const quantityText = (w) => (w.quantity != null ? `${qtyFormat.format(w.quantity)}${w.unit ? ` ${w.unit}` : ''}` : '');
+
+/** A log's work lines on its card: "Block A · Room 301 - Gypsum board 200 m² (Giorgi)". */
+function workList(work) {
+  if (!work?.length) return '';
+  const items = [...work]
+    .sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')))
+    .map((w) => {
+      const where = flatName(w.flat_id);
+      const extra = [quantityText(w), w.contractor_id ? contractorName(w.contractor_id) : ''].filter(Boolean).join(' · ');
+      return `<li>${where ? `<span class="text-white">${esc(where)}</span> - ` : ''}${esc(w.work || w.work_en)}`
+        + `${w.work_en && w.work_en !== w.work ? ` <span class="text-slate-500">/ ${esc(w.work_en)}</span>` : ''}`
+        + `${extra ? ` <span class="text-slate-400">(${esc(extra)})</span>` : ''}</li>`;
+    });
+  return `<ul class="log-card-work">${items.join('')}</ul>`;
+}
+
 const logCard = (l) => {
   const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key;
   const nameOf = (id) => state.contractors.find((c) => c.id === id)?.name ?? 'Hired by the client';
@@ -2556,6 +2621,7 @@ const logCard = (l) => {
         </span>
       </div>
       ${crew.length ? `<p class="log-card-crew">${crew.map((line) => esc(line)).join(' &middot; ')}</p>` : ''}
+      ${workList(l.work)}
       ${delayLineFor(l.log_date)}
       <div class="log-notes">
         <p><span class="log-lang">ქართული</span>${esc(l.notes || '-')}</p>
@@ -2576,7 +2642,8 @@ async function loadLogs(projectId, { more = false } = {}) {
   let q = db
     .from('daily_logs')
     .select('id, log_date, weather, manpower, notes, notes_en, raw_text, day_rate, guard_rate, '
-      + 'crew:daily_manpower(contractor_id, trade, workers)', { count: 'exact' })
+      + 'crew:daily_manpower(contractor_id, trade, workers), '
+      + 'work:work_done(id, flat_id, contractor_id, work, work_en, quantity, unit, created_at)', { count: 'exact' })
     .eq('project_id', projectId);
   if (logFilter.from) q = q.gte('log_date', logFilter.from);
   if (logFilter.to) q = q.lte('log_date', logFilter.to);
@@ -2870,6 +2937,103 @@ function crewByTrade(entries) {
   return totals;
 }
 
+// ---------- Work done: one line per job, optionally in a room ----------
+const roomsOn = () => hasRooms(currentProject()) && state.flats.length > 0;
+
+function workRoomOptions(selected) {
+  const chosen = selected ?? '';
+  return `<option value=""${chosen === '' ? ' selected' : ''}>Not in a room</option>`
+    + state.flats.map((f) => (
+      `<option value="${esc(f.id)}"${f.id === chosen ? ' selected' : ''}>${esc(roomLabel(f))}</option>`
+    )).join('');
+}
+
+function workContractorOptions(selected) {
+  const chosen = selected ?? '';
+  return `<option value=""${chosen === '' ? ' selected' : ''}>- Contractor -</option>`
+    + state.contractors.map((c) => (
+      `<option value="${esc(c.id)}"${c.id === chosen ? ' selected' : ''}>${esc(c.name)}</option>`
+    )).join('');
+}
+
+/**
+ * One work line. The text box shows the Georgian (or the English when there is
+ * no Georgian); both are kept on the row, and editing the text drops the other
+ * language so it is translated afresh on save.
+ */
+function addWorkRow(entry = {}) {
+  const row = document.createElement('div');
+  row.className = roomsOn() ? 'work-row' : 'work-row work-row-no-rooms';
+  const shown = entry.work || entry.work_en || '';
+  row.dataset.ka = entry.work ?? '';
+  row.dataset.en = entry.work_en ?? '';
+  row.dataset.shown = shown;
+  row.innerHTML = `
+    ${roomsOn() ? `<select class="select-dark" data-work="room">${workRoomOptions(entry.flat_id)}</select>` : ''}
+    <input class="input-dark" data-work="text" maxlength="300" value="${esc(shown)}"
+           placeholder="მაგ. თაბაშირ-მუყაოს მონტაჟი / Gypsum board">
+    <select class="select-dark" data-work="contractor">${workContractorOptions(entry.contractor_id)}</select>
+    <input type="number" min="0" step="any" class="input-dark" data-work="quantity" placeholder="Qty"
+           value="${entry.quantity != null ? esc(String(entry.quantity)) : ''}">
+    <select class="select-dark" data-work="unit">
+      <option value="">-</option>
+      ${BOQ_UNITS.map((u) => `<option value="${esc(u)}"${u === entry.unit ? ' selected' : ''}>${esc(u)}</option>`).join('')}
+    </select>
+    <button type="button" class="table-action" data-work-remove aria-label="Remove this line">&times;</button>`;
+  $('#work-rows').appendChild(row);
+}
+
+function renderWorkRows(entries) {
+  $('#work-rows').replaceChildren();
+  [...(entries ?? [])]
+    .sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')))
+    .forEach(addWorkRow);
+}
+
+/**
+ * The work lines in the form, both languages filled in: a line typed in one is
+ * translated, "კედელი / Wall" is split. Returns { lines, untranslated }, where
+ * untranslated is Gemini's error if it couldn't help - the lines then keep the
+ * language they were written in.
+ */
+async function readWorkRows() {
+  const lines = $$('#work-rows .work-row').map((row) => {
+    const text = $('[data-work="text"]', row).value.trim();
+    const quantity = numOrNull($('[data-work="quantity"]', row).value);
+    const line = {
+      flat_id: $('[data-work="room"]', row)?.value || null,
+      contractor_id: $('[data-work="contractor"]', row).value || null,
+      quantity: quantity > 0 ? quantity : null,
+      unit: quantity > 0 ? $('[data-work="unit"]', row).value || null : null,
+    };
+    if (!text) return null;
+    if (text === row.dataset.shown && (row.dataset.ka || row.dataset.en)) {
+      return { ...line, work: row.dataset.ka || null, work_en: row.dataset.en || null };
+    }
+    const both = splitBilingual(text);
+    if (both) return { ...line, work: both.ka, work_en: both.en };
+    return isGeorgian(text) ? { ...line, work: text, work_en: null } : { ...line, work: null, work_en: text };
+  }).filter(Boolean);
+
+  // Missing languages, translated in one go (translateNames reads { name, name_ka }).
+  const gaps = lines.filter((l) => !l.work || !l.work_en)
+    .map((l) => ({ line: l, name: l.work_en || l.work, name_ka: l.work }));
+  const untranslated = gaps.length ? await translateNames(gaps) : '';
+  for (const g of gaps) {
+    g.line.work = g.name_ka || g.line.work || g.line.work_en;
+    g.line.work_en = g.name !== g.name_ka ? g.name : g.line.work_en;
+  }
+  return { lines, untranslated };
+}
+
+/** Replaces a log's work lines with what the form holds. */
+async function saveWork(logId, lines) {
+  const { error } = await db.from('work_done').delete().eq('daily_log_id', logId);
+  if (error) return error;
+  if (!lines.length) return null;
+  return (await db.from('work_done').insert(lines.map((l) => ({ daily_log_id: logId, ...l })))).error;
+}
+
 /** Replaces a log's crew lines with what the form holds. */
 async function saveCrew(logId, crew) {
   const { error } = await db.from('daily_manpower').delete().eq('daily_log_id', logId);
@@ -3029,6 +3193,7 @@ function openDailyLogModal(log = null) {
     f.log_date.value = log.log_date;
     f.weather.value = log.weather || '';
     renderCrewRows(log.crew);
+    renderWorkRows(log.work);
     f.notes.value = log.notes || '';
     f.notes_en.value = log.notes_en || '';
     f.raw_text.value = log.raw_text || '';
@@ -3039,6 +3204,7 @@ function openDailyLogModal(log = null) {
     f.day_rate.value = currentProject()?.day_rate ?? '';
     f.guard_rate.value = currentProject()?.guard_rate ?? '';
     renderCrewRows([]);
+    renderWorkRows([]);
   }
   updateManpowerTotal();
   resetPicker('log', log ? { dailyLogId: log.id } : null);
@@ -3070,12 +3236,17 @@ async function processLogText() {
   const btn = $('#btn-parse-log');
   showFormError(form, '');
   setBusy(btn, true, 'Processing…');
+  // Rooms and contractors go by short keys, mapped back to their ids below.
+  const rooms = roomsOn() ? state.flats : [];
   const { data, error } = await db.functions.invoke('parse-log', {
     body: {
       text: raw,
       today: todayISO(),
       trades: MANPOWER_TRADES.map((t) => ({ key: t.key, label: t.label, ka: ka(t.label) })),
       weather: WEATHER_OPTIONS.map((w) => ({ key: w, label: w, ka: ka(w) })),
+      rooms: rooms.map((r, i) => ({ key: `r${i + 1}`, label: `${roomLabel(r)}, floor ${r.floor}` })),
+      contractors: state.contractors.map((c, i) => ({ key: `c${i + 1}`, label: c.name, ka: c.name_ka || undefined })),
+      units: BOQ_UNITS,
     },
   });
   setBusy(btn, false);
@@ -3094,6 +3265,15 @@ async function processLogText() {
     .filter((e) => e.workers > 0));
   f.notes.value = data.notes_ka || '';
   f.notes_en.value = data.notes_en || '';
+  const byKey = (list, prefix, key) => (key ? list[Number(key.slice(prefix.length)) - 1]?.id ?? null : null);
+  renderWorkRows((data.work ?? []).map((w) => ({
+    flat_id: byKey(rooms, 'r', w.room),
+    contractor_id: byKey(state.contractors, 'c', w.contractor),
+    work: w.work_ka || null,
+    work_en: w.work_en || null,
+    quantity: w.quantity,
+    unit: w.unit,
+  })));
   updateManpowerTotal();
   toast('Log processed - check the details, then save.', 'success');
 }
@@ -3126,7 +3306,8 @@ async function saveDailyLog(e) {
   const logId = form.dataset.logId;
 
   showFormError(form, '');
-  setBusy(btn, true);
+  setBusy(btn, true, 'Saving…');
+  const { lines: work, untranslated } = await readWorkRows();
   const { data: saved, error } = logId
     ? await db.from('daily_logs').update(row).eq('id', logId).select('id').single()
     : await db.from('daily_logs').insert(row).select('id').single();
@@ -3147,6 +3328,13 @@ async function saveDailyLog(e) {
     showFormError(form, `The log was saved, but the crew lines were not: ${crewError.message}`);
     return;
   }
+  const workError = await saveWork(saved.id, work);
+  if (workError) {
+    setBusy(btn, false);
+    showFormError(form, `The log was saved, but the work lines were not: ${workError.message}`);
+    return;
+  }
+  if (untranslated) toast(`Work lines saved in one language - Gemini couldn't translate them: ${untranslated}`, 'error');
 
   const photoError = await commitPhotos('log', { dailyLogId: saved.id });
   setBusy(btn, false);
@@ -4279,6 +4467,10 @@ $('#events-table').addEventListener('click', onEventsClick);
 $('#form-task').addEventListener('submit', saveTask);
 $('#form-task').addEventListener('input', onTaskInput);
 $('#form-task').addEventListener('change', onTaskNameChange);
+$('#btn-add-work').addEventListener('click', () => addWorkRow());
+$('#work-rows').addEventListener('click', (e) => {
+  if (e.target.closest('[data-work-remove]')) e.target.closest('.work-row').remove();
+});
 $('#schedule-table').addEventListener('change', onScheduleChange);
 $('#schedule-table').addEventListener('click', onTaskTableClick);
 $('#boq-table').addEventListener('click', onTaskTableClick);

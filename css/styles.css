@@ -631,7 +631,6 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
   margin: 16px 0;
 }
 .pdf-facts-5 > div:last-child { grid-column: span 2; }
-.pdf-facts-4 { grid-template-columns: repeat(4, 1fr); }
 .pdf-facts > div {
   padding: 8px 10px;
   background: #f8fafc;
@@ -1252,6 +1251,23 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
   .crew-row { grid-template-columns: 1fr 1fr; }
   .crew-row > :last-child { justify-self: end; }
 }
+
+/* A work line in the daily log: room, what was done, who, how much, remove. */
+.work-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 2fr) minmax(0, 1.2fr) 5rem 5.5rem auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+.work-row-no-rooms { grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) 5rem 5.5rem auto; }
+@media (max-width: 640px) {
+  .work-row, .work-row-no-rooms { grid-template-columns: 1fr 1fr; }
+  .work-row [data-work="text"] { grid-column: span 2; }
+  .work-row > :last-child { justify-self: end; }
+}
+.log-card-work { margin: 0.25rem 0 0.5rem; padding-left: 1rem; list-style: disc; font-size: 0.8rem; color: #cbd5e1; }
+.log-card-work li { margin: 0.1rem 0; }
+.log-card-work .text-slate-500 { font-size: 0.75rem; }
 
 /* Floor tabs over the room list: one floor at a time instead of a long scroll. */
 .floor-tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
