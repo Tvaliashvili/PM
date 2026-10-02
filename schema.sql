@@ -714,3 +714,48 @@ notify pgrst, 'reload schema';
 alter table public.delay_impacts drop column if exists days_lost;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 23. Materials the client buys for a job
+-- Some contractors price only their labour, and the client supplies the
+-- materials. Each item then has two budgets: budget (the contract, what the
+-- contractor is paid) and material_budget (what the client expects to spend on
+-- materials for it). Each purchase is dated and names the job it was bought
+-- for, so the contractor on that job is who it was supplied to. task_id null =
+-- general site stock; deleting a job keeps its purchases as general ones.
+-- -------------------------------------------------------------
+alter table public.schedule_tasks
+  add column if not exists material_budget numeric(14,2) not null default 0
+  check (material_budget >= 0);
+
+create table if not exists public.materials (
+  id          uuid primary key default gen_random_uuid(),
+  project_id  uuid not null references public.projects(id) on delete cascade,
+  task_id     uuid references public.schedule_tasks(id) on delete set null,
+  bought_on   date not null default current_date,
+  item        text not null,
+  item_ka     text,
+  quantity    numeric(14,3) check (quantity is null or quantity >= 0),
+  unit        text,
+  unit_price  numeric(14,2) check (unit_price is null or unit_price >= 0),
+  amount      numeric(14,2) not null check (amount >= 0),
+  supplier    text,
+  supplier_ka text,
+  note        text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists materials_project_idx on public.materials (project_id, bought_on);
+create index if not exists materials_task_idx on public.materials (task_id);
+
+drop trigger if exists set_updated_at on public.materials;
+create trigger set_updated_at before update on public.materials
+  for each row execute function public.set_updated_at();
+
+alter table public.materials enable row level security;
+drop policy if exists "authenticated_full_access" on public.materials;
+create policy "authenticated_full_access" on public.materials
+  for all to authenticated using (true) with check (true);
+
+notify pgrst, 'reload schema';

@@ -154,12 +154,12 @@ async function fetchExtras(db, projectId, today) {
  */
 export async function buildProjectReport({
   db, project, tasks, payments, contractors, contractorDelays, units, progress, money,
-  siteCosts = [], rentals = [], siteLogs = [],
+  siteCosts = [], rentals = [], siteLogs = [], materials = [],
 }) {
   const today = iso(new Date());
   const { logs, delays, events, variations } = await fetchExtras(db, project.id, today);
   const cost = costPosition(tasks, payments, today, siteCosts);
-  const perf = contractorPerformance(tasks, contractorDelays, payments, today); // all-time delays
+  const perf = contractorPerformance(tasks, contractorDelays, payments, today, materials); // all-time delays
   const manDays = contractorManDays(siteLogs); // who actually put men on the job
   const rooms = Boolean(project.has_rooms); // sites like a stadium have no rooms
   const contractorById = new Map(contractors.map((c) => [c.id, c]));
@@ -196,6 +196,7 @@ export async function buildProjectReport({
     cost.labour || cost.guard || cost.rental
       ? `${L('მ.შ. ობიექტის ხარჯები', 'incl. site costs')} ${m(cost.labour + cost.guard + cost.rental)}`
       : '',
+    cost.material ? `${L('მ.შ. მასალები', 'incl. materials')} ${m(cost.material)}` : '',
   ].filter(Boolean).join('<br>');
   const delayDays = delays.reduce((s, x) => s + delayDaysLost(x, today), 0);
   const ongoingDelays = delays.filter(delayIsOngoing);
@@ -322,9 +323,9 @@ export async function buildProjectReport({
   if (cost.budget && cost.spent > cost.budget) {
     alerts.push(['bad', `ბიუჯეტი გადაჭარბებულია ${m(cost.spent - cost.budget)}-ით`,
       `Over budget by ${m(cost.spent - cost.budget)}`]);
-  } else if (cost.contracts > cost.earned + 0.5) {
-    alerts.push(['warn', `კონტრაქტორებზე გადახდილია ${m(cost.contracts - cost.earned)}-ით მეტი, ვიდრე შესრულებულია`,
-      `Contractors paid ${m(cost.contracts - cost.earned)} ahead of work done`]);
+  } else if (cost.contracts > cost.earnedWork + 0.5) {
+    alerts.push(['warn', `კონტრაქტორებზე გადახდილია ${m(cost.contracts - cost.earnedWork)}-ით მეტი, ვიდრე შესრულებულია`,
+      `Contractors paid ${m(cost.contracts - cost.earnedWork)} ahead of work done`]);
   }
   if (delays.length) {
     const byCause = new Map();
@@ -649,7 +650,8 @@ export async function buildProjectReport({
   const actual = actualSpendByMonth(payments);
   const site = siteCostsByMonth(siteCosts, today);
   const spentIn = (k) => (actual.get(k) ?? 0)
-    + (site.get(k)?.labour ?? 0) + (site.get(k)?.guard ?? 0) + (site.get(k)?.rental ?? 0);
+    + (site.get(k)?.labour ?? 0) + (site.get(k)?.guard ?? 0) + (site.get(k)?.rental ?? 0)
+    + (site.get(k)?.material ?? 0);
   const monthKeys = [...new Set([...planned.keys(), ...actual.keys(), ...site.keys()])].sort();
   const thisMonth = today.slice(0, 7);
   const hasSite = site.size > 0;
@@ -717,7 +719,8 @@ export async function buildProjectReport({
           <th class="num">${L('კონტრაქტები', 'Contracts')}</th>
           ${hasSite ? `<th class="num">${L('დღიური მუშები', 'Daily workers')}</th>
             <th class="num">${L('დარაჯები', 'Guards')}</th>
-            <th class="num">${L('ქირა', 'Rentals')}</th>` : ''}
+            <th class="num">${L('ქირა', 'Rentals')}</th>
+            <th class="num">${L('მასალები', 'Materials')}</th>` : ''}
           <th class="num">${L('ჯამური გეგმა', 'Cumulative plan')}</th>
           <th class="num">${L('ჯამური ხარჯი', 'Cumulative spent')}</th>
         </tr>
@@ -726,7 +729,7 @@ export async function buildProjectReport({
         ${monthKeys.map((k) => {
           const p = planned.get(k) ?? 0;
           const a = actual.get(k) ?? 0;
-          const sc = site.get(k) ?? { labour: 0, guard: 0, rental: 0 };
+          const sc = site.get(k) ?? { labour: 0, guard: 0, rental: 0, material: 0 };
           cp += p;
           ca += spentIn(k);
           return `
@@ -736,7 +739,8 @@ export async function buildProjectReport({
               <td class="num">${a ? m(a) : '-'}</td>
               ${hasSite ? `<td class="num">${sc.labour ? m(sc.labour) : '-'}</td>
                 <td class="num">${sc.guard ? m(sc.guard) : '-'}</td>
-                <td class="num">${sc.rental ? m(sc.rental) : '-'}</td>` : ''}
+                <td class="num">${sc.rental ? m(sc.rental) : '-'}</td>
+                <td class="num">${sc.material ? m(sc.material) : '-'}</td>` : ''}
               <td class="num">${m(cp)}</td>
               <td class="num">${k <= thisMonth ? m(ca) : '-'}</td>
             </tr>`;
@@ -810,6 +814,39 @@ export async function buildProjectReport({
         </tbody>
       </table>` : ''}` : '';
 
+  // Materials the client bought and handed to a contractor, by job
+  const taskById = new Map(tasks.map((t) => [t.id, t]));
+  const materialsBlock = materials.length ? `
+    <h3 class="rpt-sub-h">${L('დამკვეთის მიერ შეძენილი მასალები', 'Materials bought by the client')}</h3>
+    <table class="rpt-compact">
+      <thead>
+        <tr>
+          <th>${L('თარიღი', 'Date')}</th><th>${L('მასალა', 'Material')}</th>
+          <th>${L('სამუშაო / კონტრაქტორი', 'Job / contractor')}</th>
+          <th class="num">${L('რაოდენობა', 'Quantity')}</th><th class="num">${L('თანხა', 'Amount')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${[...materials].sort((a, b) => a.bought_on.localeCompare(b.bought_on)).map((x) => {
+          const t = taskById.get(x.task_id);
+          const job = t
+            ? [esc(taskBi(t)), t.contractor_id ? esc(nameOf(t.contractor_id)) : ''].filter(Boolean).join(' · ')
+            : L('ზოგადი', 'General');
+          return `
+            <tr>
+              <td>${d(x.bought_on)}</td>
+              <td>${esc(biName(x.item, x.item_ka))}</td>
+              <td>${job}</td>
+              <td class="num">${x.quantity != null ? `${num.format(x.quantity)} ${esc(x.unit || '')}` : '-'}</td>
+              <td class="num">${m(x.amount)}</td>
+            </tr>`;
+        }).join('')}
+      </tbody>
+      <tfoot>
+        <tr><td colspan="4">${L('სულ', 'Total')}</td><td class="num">${m(materials.reduce((s, x) => s + Number(x.amount || 0), 0))}</td></tr>
+      </tfoot>
+    </table>` : '';
+
   // ---------- Variations ----------
   // The contract sum the client signed, plus what has been approved on top of
   // it. An instructed-but-unpriced variation is work already being done that
@@ -876,6 +913,7 @@ export async function buildProjectReport({
       ${variationsBlock}
       ${itemCosts}
       ${siteCostsBlock}
+      ${materialsBlock}
     </section>`;
 
   // ---------- Contractors: one card each ----------
@@ -920,6 +958,7 @@ export async function buildProjectReport({
                   </p>` : ''}
                 <div class="rpt-card-money">
                   <span>${L('გადახდილი', 'Paid')}<span class="rpt-card-value"><b>${m(paid)}</b>${budget ? ` / ${m(budget)}` : ''}</span></span>
+                  ${s?.materials ? `<span>${L('მიწოდებული მასალა', 'Materials supplied')}<span class="rpt-card-value"><b>${m(s.materials)}</b></span></span>` : ''}
                   <span>${L('შეფერხება (დღე)', 'Delays (days)')}<span class="rpt-card-value"><b>${s?.delayDays ?? 0}</b></span></span>
                   ${s?.excusedDays ? `<span>${L('სხვისი ბრალით (დღე)', 'Excused (days)')}<span class="rpt-card-value"><b>${s.excusedDays}</b></span></span>` : ''}
                 </div>

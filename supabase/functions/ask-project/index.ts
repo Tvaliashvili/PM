@@ -15,7 +15,7 @@ const MAX_QUESTION_CHARS = 1_000;
 // roughly 1.5M characters of JSON. Only past that are the oldest logs dropped.
 const MAX_CONTEXT_CHARS = 1_500_000;
 
-const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget; due is the planned finish pushed out by extension_days, the days delays held the item up - judge an item late or overdue against due, never planned_finish), contractors, delays (counted in whole days lost, described in Georgian and English; a delay with ongoing=true has not been settled yet - its days_lost is the count so far and keeps growing; contractor_at_fault caused it and held_up lists the work it stopped, with the contractor who was waiting - each of those items lost this delay's whole days_lost, so when judging whether someone is running late, take those days off the waiting contractor and count them against the one at fault, and say so), payments to contractors, daily workers (manpower.day_workers, each paid the log's day_rate for that day) and equipment rentals (daily_rate × days).
+const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget; due is the planned finish pushed out by extension_days, the days delays held the item up - judge an item late or overdue against due, never planned_finish), contractors, delays (counted in whole days lost, described in Georgian and English; a delay with ongoing=true has not been settled yet - its days_lost is the count so far and keeps growing; contractor_at_fault caused it and held_up lists the work it stopped, with the contractor who was waiting - each of those items lost this delay's whole days_lost, so when judging whether someone is running late, take those days off the waiting contractor and count them against the one at fault, and say so), payments to contractors, daily workers (manpower.day_workers, each paid the log's day_rate for that day), equipment rentals (daily_rate × days) and materials the client bought for a work item and supplied to its contractor (the item's budget is the contractor's price; material_budget is what the client planned to spend on materials for it).
 
 Rules:
 - Answer twice, whatever language the question is in: "ka" in natural, professional Georgian as used in Georgian construction reporting, and "en" in English. The two must state the same facts and figures - neither leaves out something the other says. Write each as it would be written in that language, not word for word from the other.
@@ -43,10 +43,10 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
   if (!projectId) return json({ error: "No project selected" }, 400);
 
   const sb = userClient(req);
-  const [project, tasks, contractors, logs, delays, payments, rentals] = await Promise.all([
+  const [project, tasks, contractors, logs, delays, payments, rentals, materials] = await Promise.all([
     sb.from("projects").select("name, name_ka, location, location_ka, client_name, client_name_ka, start_date, end_date, currency, has_rooms").eq("id", projectId).single(),
     sb.from("schedule_tasks")
-      .select("id, name, name_ka, planned_start, planned_finish, progress_pct, done_at, contractor_id, budget")
+      .select("id, name, name_ka, planned_start, planned_finish, progress_pct, done_at, contractor_id, budget, material_budget")
       .eq("project_id", projectId).order("planned_start"),
     sb.from("contractors").select("id, name, name_ka, trade").eq("project_id", projectId),
     sb.from("daily_logs")
@@ -58,9 +58,10 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
       .eq("project_id", projectId).order("created_at", { ascending: false }).limit(1000),
     sb.from("task_payments").select("task_id, paid_on, amount, note").eq("project_id", projectId).order("paid_on"),
     sb.from("equipment_rentals").select("equipment, equipment_ka, supplier, supplier_ka, start_date, days, daily_rate, note").eq("project_id", projectId).order("start_date"),
+    sb.from("materials").select("task_id, bought_on, item, item_ka, quantity, unit, unit_price, amount, supplier, note").eq("project_id", projectId).order("bought_on"),
   ]);
 
-  const failed = [project, tasks, contractors, logs, delays, payments, rentals].find((r) => r.error);
+  const failed = [project, tasks, contractors, logs, delays, payments, rentals, materials].find((r) => r.error);
   if (failed) {
     console.error(failed.error);
     return json({ error: "Could not read the project data" }, 500);
@@ -113,6 +114,8 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
       finished_on: t.done_at,
       contractor: contractorName.get(t.contractor_id) ?? null,
       budget: t.budget,
+      // What the client expects to spend on materials it supplies for this item.
+      material_budget: t.material_budget,
     })),
     contractors: contractors.data,
     delays: (delays.data ?? []).map((d: any) => ({
@@ -145,6 +148,14 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
     })),
     // Equipment hire: cost = daily_rate × days, from start_date.
     equipment_rentals: rentals.data ?? [],
+    // Materials the client bought and handed to the contractor on that item
+    // (item null = general site stock). Paid by the client, not the contractor.
+    materials: (materials.data ?? []).map((m) => ({
+      bought_on: m.bought_on, material: m.item, material_ka: m.item_ka, quantity: m.quantity, unit: m.unit,
+      unit_price: m.unit_price, amount: m.amount, supplier: m.supplier, note: m.note,
+      item: taskName.get(m.task_id) ?? null,
+      contractor: contractorName.get(taskContractor.get(m.task_id)) ?? null,
+    })),
     daily_logs: logs.data ?? [], // newest first; manpower.day_workers are paid day_rate each per day
   };
 

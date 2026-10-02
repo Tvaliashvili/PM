@@ -193,7 +193,10 @@ export function forecastFinish({ tasks, startDate, todayIso, actualPct }) {
 }
 
 // ---------- Money (each item's budget, its payments) ----------
-const budgetOf = (task) => Number(task.budget || 0);
+// An item costs its contract (what the contractor is paid) plus the materials
+// the client buys for it.
+const contractOf = (task) => Number(task.budget || 0);
+export const budgetOf = (task) => contractOf(task) + Number(task.material_budget || 0);
 const monthOf = (iso) => iso.slice(0, 7);
 
 /** Planned spend per month (YYYY-MM → amount): each budget spread evenly over its planned days. */
@@ -224,9 +227,10 @@ export function actualSpendByMonth(payments) {
   return months;
 }
 
-// ---------- Site costs outside the BOQ: daily workers and equipment rentals ----------
-// Both become dated entries { date, amount, kind: 'labour' | 'rental' } so they
-// can be added to spending and to the monthly cash flow.
+// ---------- Money paid out besides contract payments ----------
+// Daily workers, guards, equipment rentals and materials all become dated
+// entries { date, amount, kind: 'labour' | 'guard' | 'rental' | 'material' } so
+// they can be added to spending and to the monthly cash flow.
 
 /**
  * What the client pays by the day for one trade: headcount × that log's rate.
@@ -286,13 +290,18 @@ export function rentalCosts(rentals) {
   return out;
 }
 
-/** Site costs per month up to `todayIso` (YYYY-MM → { labour, rental }). */
+/** Materials the client bought, each on the day it was bought. */
+export const materialCosts = (materials) => materials
+  .filter((m) => Number(m.amount) > 0)
+  .map((m) => ({ date: m.bought_on, amount: Number(m.amount), kind: 'material', taskId: m.task_id ?? null }));
+
+/** Site costs per month up to `todayIso` (YYYY-MM → { labour, guard, rental, material }). */
 export function siteCostsByMonth(entries, todayIso) {
   const months = new Map();
   for (const e of entries) {
     if (e.date > todayIso) continue;
     const key = monthOf(e.date);
-    const m = months.get(key) ?? { labour: 0, guard: 0, rental: 0 };
+    const m = months.get(key) ?? { labour: 0, guard: 0, rental: 0, material: 0 };
     m[e.kind] += e.amount;
     months.set(key, m);
   }
@@ -301,23 +310,28 @@ export function siteCostsByMonth(entries, todayIso) {
 
 /**
  * Cost position on `todayIso`:
- *   budget    - total of all item budgets
+ *   budget    - total of all item budgets, contracts and materials
  *   planned   - value of work that should be done by today (budget × planned share)
  *   earned    - value of work actually done (budget × % complete)
+ *   earnedWork - the contract part of earned, to set against contract payments
  *   contracts - payments against timetable items made up to today
  *   labour    - daily-worker pay up to today
+ *   guard     - guards' pay up to today
  *   rental    - equipment hire accrued up to today
- *   spent     - all of the above money: contracts + labour + rental
+ *   material  - materials bought up to today
+ *   spent     - all of the above money
  */
 export function costPosition(tasks, payments, todayIso, siteCosts = []) {
   let budget = 0;
   let planned = 0;
   let earned = 0;
+  let earnedWork = 0;
   for (const task of tasks) {
     const b = budgetOf(task);
     budget += b;
     planned += b * plannedFraction(task, todayIso);
     earned += b * completionOf(task);
+    earnedWork += contractOf(task) * completionOf(task);
   }
   const contracts = payments
     .filter((p) => p.paid_on <= todayIso)
@@ -328,9 +342,10 @@ export function costPosition(tasks, payments, todayIso, siteCosts = []) {
   const labour = upToToday('labour');
   const guard = upToToday('guard');
   const rental = upToToday('rental');
+  const material = upToToday('material');
   return {
-    budget, planned, earned, contracts, labour, guard, rental,
-    spent: contracts + labour + guard + rental,
+    budget, planned, earned, earnedWork, contracts, labour, guard, rental, material,
+    spent: contracts + labour + guard + rental + material,
   };
 }
 
@@ -369,7 +384,9 @@ export function contractorManDays(logs) {
 /**
  * Per-contractor performance on one project. Keyed by contractor_id ('' = unassigned).
  * Each entry: { items, onTime, late, avgDaysLate, overdue, open, delayDays,
- *               excusedDays, excusedItems, budget, paid }
+ *               excusedDays, excusedItems, budget, paid, materialBudget, materials }
+ *   budget/paid - their contract and what they have been paid against it
+ *   materialBudget/materials - materials the client planned and bought for their items
  *   onTime/late - finished items, split by whether done_at was after the due date
  *   overdue     - unfinished items past their due date today
  *   open        - unfinished items not yet overdue (in progress or upcoming)
@@ -377,7 +394,7 @@ export function contractorManDays(logs) {
  *   excusedDays - days his own items were extended by other people's delays
  * `tasks` must carry extension_days (see withExtensions), or nothing is excused.
  */
-export function contractorPerformance(tasks, delays, payments, todayIso) {
+export function contractorPerformance(tasks, delays, payments, todayIso, materials = []) {
   const stats = new Map();
   const entry = (id) => {
     const key = id ?? '';
@@ -385,6 +402,7 @@ export function contractorPerformance(tasks, delays, payments, todayIso) {
       stats.set(key, {
         items: 0, onTime: 0, late: 0, lateDays: 0, overdue: 0, open: 0,
         delayDays: 0, excusedDays: 0, excusedItems: 0, budget: 0, paid: 0,
+        materialBudget: 0, materials: 0,
       });
     }
     return stats.get(key);
@@ -398,7 +416,8 @@ export function contractorPerformance(tasks, delays, payments, todayIso) {
     // this item up are already off its lateness.
     const state = taskState(task, todayIso);
     s.items += 1;
-    s.budget += budgetOf(task);
+    s.budget += contractOf(task);
+    s.materialBudget += Number(task.material_budget || 0);
     // Counted from the day the delay is logged, not once the item runs late:
     // the time was given to him whether or not he has needed it yet.
     const ext = Number(task.extension_days) || 0;
@@ -421,6 +440,9 @@ export function contractorPerformance(tasks, delays, payments, todayIso) {
   }
   for (const d of delays) if (causeOf(d)) entry(causeOf(d)).delayDays += delayDaysLost(d);
   for (const p of payments) entry(taskContractor.get(p.task_id)).paid += Number(p.amount || 0);
+  for (const m of materials) {
+    if (m.task_id && taskContractor.has(m.task_id)) entry(taskContractor.get(m.task_id)).materials += Number(m.amount || 0);
+  }
 
   for (const s of stats.values()) {
     s.avgDaysLate = s.late ? Math.round(s.lateDays / s.late) : 0;

@@ -13,7 +13,7 @@ import { buildProjectReport, downloadProjectReport } from './projectReport.js';
 import {
   scheduleProgress, taskState, durationDays, completionOf, expectedPct,
   plannedSpendByMonth, actualSpendByMonth, costPosition, contractorPerformance,
-  labourCosts, guardCosts, rentalCosts, rentalTotal, rentalEnd, siteCostsByMonth,
+  labourCosts, guardCosts, rentalCosts, rentalTotal, rentalEnd, siteCostsByMonth, materialCosts, budgetOf,
   delayIsOngoing, delayDaysLost, delayStart, delayEnd, delayCovers, causeOf, withExtensions, dueDate,
 } from './schedule.js';
 import { ka, roomLabel } from './bilingual.js';
@@ -42,8 +42,9 @@ const state = {
   events: [],           // safety and quality events, newest first
   variations: [],       // change orders, newest first
   rentals: [],          // equipment_rentals
+  materials: [],        // materials the client bought, newest first
   delays: [],           // every delay on the project, newest first
-  siteCosts: [],        // labourCosts() + rentalCosts() entries
+  siteCosts: [],        // labour, guard, rental and material cost entries
   progress: null,       // scheduleProgress() result
 };
 
@@ -123,7 +124,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-daily-print', '#btn-report-project', '#btn-report-project-print', '#btn-add-unit', '#btn-add-task', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental',
+  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-daily-print', '#btn-report-project', '#btn-report-project-print', '#btn-add-unit', '#btn-add-task', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental', '#btn-add-material',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -264,6 +265,7 @@ async function selectProject(projectId) {
   state.contractors = [];
   state.siteLogs = [];
   state.rentals = [];
+  state.materials = [];
   state.siteCosts = [];
   state.delays = [];
   state.events = [];
@@ -726,12 +728,13 @@ const addDays = (iso, n) => {
 
 const contractorName = (id) => state.contractors.find((c) => c.id === id)?.name ?? '';
 const paidOn = (taskId) => sumOf(state.payments.filter((p) => p.task_id === taskId), 'amount');
+const materialsOn = (taskId) => sumOf(state.materials.filter((m) => m.task_id === taskId), 'amount');
 
 // Items, payments and contractor-linked delays for one project, then every view built on them.
 async function loadSchedule(projectId) {
-  const [tasks, payments, delays, impacts, contractors, siteLogs, rentals] = await Promise.all([
+  const [tasks, payments, delays, impacts, contractors, siteLogs, rentals, materials] = await Promise.all([
     db.from('schedule_tasks')
-      .select('id, name, name_ka, planned_start, planned_finish, baseline_start, baseline_finish, done, done_at, progress_pct, contractor_id, quantity, unit, rate, budget')
+      .select('id, name, name_ka, planned_start, planned_finish, baseline_start, baseline_finish, done, done_at, progress_pct, contractor_id, quantity, unit, rate, budget, material_budget')
       .eq('project_id', projectId)
       .order('planned_start')
       .order('planned_finish'),
@@ -759,10 +762,15 @@ async function loadSchedule(projectId) {
       .select('id, equipment, equipment_ka, supplier, supplier_ka, start_date, days, daily_rate, note')
       .eq('project_id', projectId)
       .order('start_date', { ascending: false }),
+    db.from('materials')
+      .select('id, task_id, bought_on, item, item_ka, quantity, unit, unit_price, amount, supplier, supplier_ka, note')
+      .eq('project_id', projectId)
+      .order('bought_on', { ascending: false })
+      .order('created_at', { ascending: false }),
   ]);
 
   if (projectId !== state.projectId) return;
-  const failed = [tasks, payments, delays, impacts, contractors, siteLogs, rentals].find((r) => r.error);
+  const failed = [tasks, payments, delays, impacts, contractors, siteLogs, rentals, materials].find((r) => r.error);
   if (failed) {
     $('#schedule-table').innerHTML = `<div class="empty-state">Could not load timetable: ${esc(failed.error.message)}</div>`;
     return;
@@ -775,10 +783,12 @@ async function loadSchedule(projectId) {
   state.contractors = contractors.data;
   state.siteLogs = siteLogs.data;
   state.rentals = rentals.data;
+  state.materials = materials.data;
   state.siteCosts = [
     ...labourCosts(state.siteLogs, DAY_WORKER_KEY),
     ...guardCosts(state.siteLogs, GUARD_KEY),
     ...rentalCosts(state.rentals),
+    ...materialCosts(state.materials),
   ];
   renderScheduleViews();
 }
@@ -971,6 +981,7 @@ function openTaskModal(task) {
     f.unit.value = task.unit ?? '';
     f.rate.value = task.rate ?? '';
     f.budget.value = Number(task.budget) ? task.budget : '';
+    f.material_budget.value = Number(task.material_budget) ? task.material_budget : '';
   } else {
     // Start the day after the last item, else at the project start, else today.
     const last = state.tasks.reduce((max, t) => (t.planned_finish > max ? t.planned_finish : max), '');
@@ -1017,6 +1028,7 @@ async function saveTask(e) {
     unit:           fd.get('unit') || null,
     rate:           numOrNull(fd.get('rate')),
     budget:         Number(fd.get('budget') || 0),
+    material_budget: Number(fd.get('material_budget') || 0),
   };
   if (row.planned_finish < row.planned_start) {
     showFormError(form, 'Planned finish must be on or after the planned start.');
@@ -1043,7 +1055,11 @@ async function saveTask(e) {
 async function deleteTask(taskId) {
   const task = state.tasks.find((t) => t.id === taskId);
   const payments = state.payments.filter((p) => p.task_id === taskId).length;
-  const extra = payments ? `\n\nIts ${payments} payment(s) will be deleted too.` : '';
+  const bought = state.materials.filter((m) => m.task_id === taskId).length;
+  const extra = [
+    payments ? `\n\nIts ${payments} payment(s) will be deleted too.` : '',
+    bought ? `\n\nIts ${bought} material purchase(s) are kept, as general materials.` : '',
+  ].join('');
   if (!task || !confirm(`Delete "${task.name}"?${extra}`)) return;
 
   const { error } = await db.from('schedule_tasks').delete().eq('id', task.id);
@@ -1566,9 +1582,14 @@ function renderCosts() {
     c.labour ? `daily workers ${money.format(c.labour)}` : '',
     c.guard ? `guards ${money.format(c.guard)}` : '',
     c.rental ? `rentals ${money.format(c.rental)}` : '',
+    c.material ? `materials ${money.format(c.material)}` : '',
   ].filter(Boolean).join(' · ');
+  const contractTotal = sumOf(state.tasks, 'budget');
+  const materialBudget = sumOf(state.tasks, 'material_budget');
   $('#cash-summary').innerHTML = [
-    statTile('Budget', money.format(c.budget), `${state.tasks.filter((t) => Number(t.budget)).length} priced items`),
+    statTile('Budget', money.format(c.budget), materialBudget
+      ? `Contracts ${money.format(contractTotal)} + materials ${money.format(materialBudget)}`
+      : `${state.tasks.filter((t) => budgetOf(t)).length} priced items`),
     statTile('Planned by today', money.format(c.planned), 'Value of work due by now'),
     statTile('Work done', money.format(c.earned), 'Budget × % complete',
       c.earned < c.planned - 0.5 ? 'negative' : ''),
@@ -1583,16 +1604,17 @@ function renderCosts() {
     lines.push(behind > 0.5
       ? `Schedule: work worth ${money.format(behind)} is behind plan.`
       : 'Schedule: work done is on or ahead of plan.');
-    const over = c.contracts - c.earned;
+    const over = c.contracts - c.earnedWork;
     lines.push(over > 0.5
       ? `Cost: ${money.format(over)} more has been paid to contractors than the value of work done (advances or overspend).`
       : `Cost: contract payments are ${money.format(-over)} below the value of work done.`);
   }
-  if (c.labour || c.guard || c.rental) {
+  if (c.labour || c.guard || c.rental || c.material) {
     const extra = [
       c.labour ? `${money.format(c.labour)} on daily workers` : '',
       c.guard ? `${money.format(c.guard)} on guards` : '',
       c.rental ? `${money.format(c.rental)} on equipment rentals` : '',
+      c.material ? `${money.format(c.material)} on materials${materialBudget ? ` (of ${money.format(materialBudget)} planned)` : ''}` : '',
     ].filter(Boolean).join(', ');
     lines.push(`On top of contracts: ${extra} so far.`);
   }
@@ -1600,6 +1622,7 @@ function renderCosts() {
 
   renderLabour();
   renderRentals();
+  renderMaterials();
 
   // ---- BOQ table ----
   if (!state.tasks.length) {
@@ -1609,6 +1632,8 @@ function renderCosts() {
       const budget = Number(t.budget || 0);
       const paid = paidOn(t.id);
       const left = budget - paid;
+      const matBudget = Number(t.material_budget || 0);
+      const bought = materialsOn(t.id);
       const qty = t.quantity != null
         ? `${qtyFormat.format(t.quantity)} ${esc(t.unit || '')}${t.rate != null ? ` × ${money2.format(t.rate)}` : ''}`
         : '<span class="text-slate-500">-</span>';
@@ -1622,6 +1647,7 @@ function renderCosts() {
           <td class="num">${!budget ? '-' : left < 0
             ? `<span class="variance-over">${money.format(-left)} over</span>`
             : money.format(left)}</td>
+          <td class="num">${materialsCell(bought, matBudget)}</td>
           <td class="whitespace-nowrap">${taskStateChip(t, taskState(t, today))}</td>
           <td class="text-right whitespace-nowrap">
             <button type="button" class="table-action" data-task-payments="${esc(t.id)}">Payments</button>
@@ -1634,17 +1660,18 @@ function renderCosts() {
       <table class="data-table">
         <thead>
           <tr>
-            <th>Work item</th><th>Contractor</th><th class="num">Qty × rate</th><th class="num">Budget</th>
-            <th class="num">Paid</th><th class="num">Left to pay</th><th>Status</th><th></th>
+            <th>Work item</th><th>Contractor</th><th class="num">Qty × rate</th><th class="num">Contract</th>
+            <th class="num">Paid</th><th class="num">Left to pay</th><th class="num">Materials</th><th>Status</th><th></th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
         <tfoot>
           <tr>
             <td colspan="3">Total</td>
-            <td class="num">${money.format(c.budget)}</td>
+            <td class="num">${money.format(contractTotal)}</td>
             <td class="num">${money.format(sumOf(state.payments, 'amount'))}</td>
-            <td class="num">${money.format(c.budget - sumOf(state.payments, 'amount'))}</td>
+            <td class="num">${money.format(contractTotal - sumOf(state.payments, 'amount'))}</td>
+            <td class="num">${materialsCell(sumOf(state.materials.filter((m) => m.task_id), 'amount'), materialBudget)}</td>
             <td colspan="2"></td>
           </tr>
         </tfoot>
@@ -1657,7 +1684,7 @@ function renderCosts() {
   const site = siteCostsByMonth(state.siteCosts, today);
   const months = [...new Set([...planned.keys(), ...actual.keys(), ...site.keys()])].sort();
   if (!months.length) {
-    $('#cashflow-months').innerHTML = '<div class="empty-state">Add budgets, payments, daily workers or rentals to see the monthly cash flow.</div>';
+    $('#cashflow-months').innerHTML = '<div class="empty-state">Add budgets, payments, daily workers, rentals or materials to see the monthly cash flow.</div>';
     return;
   }
 
@@ -1665,12 +1692,12 @@ function renderCosts() {
   const cell = (v) => (v ? money.format(v) : '<span class="text-slate-500">-</span>');
   let cumPlanned = 0;
   let cumSpent = 0;
-  const totals = { p: 0, a: 0, labour: 0, guard: 0, rental: 0 };
+  const totals = { p: 0, a: 0, labour: 0, guard: 0, rental: 0, material: 0 };
   const monthRows = months.map((ym) => {
     const p = planned.get(ym) ?? 0;
     const a = actual.get(ym) ?? 0;
-    const { labour = 0, guard = 0, rental = 0 } = site.get(ym) ?? {};
-    const spent = a + labour + guard + rental;
+    const { labour = 0, guard = 0, rental = 0, material = 0 } = site.get(ym) ?? {};
+    const spent = a + labour + guard + rental + material;
     cumPlanned += p;
     cumSpent += spent;
     totals.p += p;
@@ -1678,6 +1705,7 @@ function renderCosts() {
     totals.labour += labour;
     totals.guard += guard;
     totals.rental += rental;
+    totals.material += material;
     return `
       <tr class="${ym === thisMonth ? 'is-current' : ''}">
         <td>${esc(monthLabel(ym))}${ym === thisMonth ? ' <span class="text-xs text-brand-400">· this month</span>' : ''}</td>
@@ -1686,6 +1714,7 @@ function renderCosts() {
         <td class="num">${cell(labour)}</td>
         <td class="num">${cell(guard)}</td>
         <td class="num">${cell(rental)}</td>
+        <td class="num">${cell(material)}</td>
         <td class="num font-semibold text-white">${cell(spent)}</td>
         <td class="num">${money.format(cumPlanned)}</td>
         <td class="num">${ym <= thisMonth ? money.format(cumSpent) : '-'}</td>
@@ -1697,7 +1726,7 @@ function renderCosts() {
       <thead>
         <tr>
           <th>Month</th><th class="num">Planned</th><th class="num">Contracts paid</th><th class="num">Daily workers</th>
-          <th class="num">Guards</th><th class="num">Rentals</th><th class="num">Total spent</th>
+          <th class="num">Guards</th><th class="num">Rentals</th><th class="num">Materials</th><th class="num">Total spent</th>
           <th class="num">Cumulative planned</th><th class="num">Cumulative spent</th>
         </tr>
       </thead>
@@ -1710,7 +1739,8 @@ function renderCosts() {
           <td class="num">${money.format(totals.labour)}</td>
           <td class="num">${money.format(totals.guard)}</td>
           <td class="num">${money.format(totals.rental)}</td>
-          <td class="num">${money.format(totals.a + totals.labour + totals.guard + totals.rental)}</td>
+          <td class="num">${money.format(totals.material)}</td>
+          <td class="num">${money.format(totals.a + totals.labour + totals.guard + totals.rental + totals.material)}</td>
           <td colspan="2"></td>
         </tr>
       </tfoot>
@@ -1914,6 +1944,158 @@ async function onRentalsTableClick(e) {
   loadSchedule(state.projectId);
 }
 
+// ---------- Materials the client buys ----------
+// What was bought for a job against what was planned for it.
+function materialsCell(bought, planned) {
+  if (!bought && !planned) return '<span class="text-slate-500">-</span>';
+  const of = planned ? `<span class="block text-xs text-slate-500">of ${money.format(planned)}</span>` : '';
+  return bought > planned && planned
+    ? `<span class="variance-over">${money.format(bought)}</span>${of}`
+    : `${bought ? money.format(bought) : '-'}${of}`;
+}
+
+function renderMaterials() {
+  const el = $('#materials-table');
+  if (!state.materials.length) {
+    el.innerHTML = '<div class="empty-state">No materials yet - click Add Material.</div>';
+    return;
+  }
+  const rows = state.materials.map((m) => {
+    const task = state.tasks.find((t) => t.id === m.task_id);
+    const job = task
+      ? `${esc(task.name)}${task.contractor_id ? `<span class="block text-xs text-slate-500">${esc(contractorName(task.contractor_id))}</span>` : ''}`
+      : '<span class="text-slate-500">General</span>';
+    const qty = m.quantity != null
+      ? `${qtyFormat.format(m.quantity)} ${esc(m.unit || '')}${m.unit_price != null ? ` × ${money2.format(m.unit_price)}` : ''}`
+      : '<span class="text-slate-500">-</span>';
+    return `
+      <tr>
+        <td class="whitespace-nowrap">${esc(formatDate(m.bought_on))}</td>
+        <td>
+          <p class="text-white font-medium">${esc(m.item)}${m.item_ka && m.item_ka !== m.item ? ` <span class="text-slate-400 font-normal">· ${esc(m.item_ka)}</span>` : ''}</p>
+          <p class="text-xs text-slate-500">${esc([m.supplier, m.note].filter(Boolean).join(' · ') || '-')}</p>
+        </td>
+        <td>${job}</td>
+        <td class="num">${qty}</td>
+        <td class="num">${money.format(m.amount)}</td>
+        <td class="text-right whitespace-nowrap">
+          <button type="button" class="table-action" data-material-edit="${esc(m.id)}">Edit</button>
+          <button type="button" class="table-action is-danger" data-material-delete="${esc(m.id)}">Delete</button>
+        </td>
+      </tr>`;
+  }).join('');
+  el.innerHTML = `
+    <table class="data-table">
+      <thead><tr><th>Bought</th><th>Material</th><th>For job</th><th class="num">Qty × price</th><th class="num">Amount</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr><td colspan="4">Total</td><td class="num">${money.format(sumOf(state.materials, 'amount'))}</td><td></td></tr>
+      </tfoot>
+    </table>`;
+}
+
+function openMaterialModal(material = null) {
+  if (!requireProject()) return;
+  const form = $('#form-material');
+  const f = form.elements;
+  form.reset();
+  $('#material-title').textContent = material ? `Edit Material - ${material.item}` : 'Add Material';
+  const taskId = material?.task_id ?? '';
+  $('#material-task').innerHTML = '<option value="">General - not for one job</option>'
+    + state.tasks.map((t) => `
+      <option value="${esc(t.id)}"${t.id === taskId ? ' selected' : ''}>
+        ${esc(t.name)}${t.contractor_id ? ` · ${esc(contractorName(t.contractor_id))}` : ''}
+      </option>`).join('');
+  f.id.value = material?.id ?? '';
+  f.item_ka.value = material?.item_ka ?? '';
+  f.item.value = material?.item_ka && material.item === material.item_ka ? '' : (material?.item ?? '');
+  f.bought_on.value = material?.bought_on ?? todayISO();
+  f.quantity.value = material?.quantity ?? '';
+  f.unit.value = material?.unit ?? '';
+  f.unit_price.value = material?.unit_price ?? '';
+  f.amount.value = material?.amount ?? '';
+  f.supplier_ka.value = material?.supplier_ka ?? '';
+  f.supplier.value = material?.supplier_ka && material.supplier === material.supplier_ka ? '' : (material?.supplier ?? '');
+  f.note.value = material?.note ?? '';
+  showFormError(form, '');
+  openModal('modal-material');
+  f.item_ka.focus();
+}
+
+// Quantity × unit price → amount.
+function onMaterialInput(e) {
+  if (!['quantity', 'unit_price'].includes(e.target.name)) return;
+  const f = e.currentTarget.elements;
+  const qty = parseFloat(f.quantity.value);
+  const price = parseFloat(f.unit_price.value);
+  if (qty >= 0 && price >= 0) f.amount.value = (Math.round(qty * price * 100) / 100).toFixed(2);
+}
+
+async function saveMaterial(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn = $('[type=submit]', form);
+  const fd = new FormData(form);
+  const itemKa = fd.get('item_ka').trim();
+  const itemEn = fd.get('item').trim();
+  if (!itemKa && !itemEn) {
+    showFormError(form, 'Enter the material in Georgian or English.');
+    return;
+  }
+  const amount = Number(fd.get('amount'));
+  if (fd.get('amount') === '' || !Number.isFinite(amount) || amount < 0) {
+    showFormError(form, 'Enter the amount paid.');
+    return;
+  }
+  const id = fd.get('id');
+  const row = {
+    task_id: fd.get('task_id') || null,
+    bought_on: fd.get('bought_on'),
+    item: itemEn || itemKa,
+    item_ka: itemKa || null,
+    quantity: numOrNull(fd.get('quantity')),
+    unit: fd.get('unit') || null,
+    unit_price: numOrNull(fd.get('unit_price')),
+    amount,
+    supplier: fd.get('supplier').trim() || fd.get('supplier_ka').trim() || null,
+    supplier_ka: fd.get('supplier_ka').trim() || null,
+    note: fd.get('note').trim() || null,
+  };
+
+  showFormError(form, '');
+  setBusy(btn, true);
+  const { error } = id
+    ? await db.from('materials').update(row).eq('id', id)
+    : await db.from('materials').insert({ ...row, project_id: state.projectId });
+  setBusy(btn, false);
+  if (error) {
+    showFormError(form, error.message);
+    return;
+  }
+  closeModal('modal-material');
+  toast(id ? 'Material updated.' : 'Material added.', 'success');
+  loadSchedule(state.projectId);
+}
+
+async function onMaterialsTableClick(e) {
+  const edit = e.target.closest('[data-material-edit]');
+  if (edit) {
+    openMaterialModal(state.materials.find((m) => m.id === edit.dataset.materialEdit));
+    return;
+  }
+  const del = e.target.closest('[data-material-delete]');
+  if (!del) return;
+  const material = state.materials.find((m) => m.id === del.dataset.materialDelete);
+  if (!material || !confirm(`Delete ${material.item} (${money.format(material.amount)})?`)) return;
+  const { error } = await db.from('materials').delete().eq('id', material.id);
+  if (error) {
+    toast(`Could not delete: ${error.message}`, 'error');
+    return;
+  }
+  toast('Material deleted.', 'success');
+  loadSchedule(state.projectId);
+}
+
 // ---------- Payments ----------
 let paymentTaskId = null;
 
@@ -2075,7 +2257,7 @@ function contractorRating(s) {
 }
 
 function renderContractors() {
-  const perf = contractorPerformance(state.tasks, state.contractorDelays, state.payments, todayISO());
+  const perf = contractorPerformance(state.tasks, state.contractorDelays, state.payments, todayISO(), state.materials);
   const el = $('#contractors-table');
   const list = [...state.contractors].sort((a, b) =>
     (perf.get(b.id)?.items ?? 0) - (perf.get(a.id)?.items ?? 0) || a.name.localeCompare(b.name));
@@ -2104,7 +2286,8 @@ function renderContractors() {
           ? `<span class="text-sky-300">${s.excusedDays} d</span> <span class="text-slate-500">(${s.excusedItems})</span>`
           : '-'}</td>
         <td class="num">${s?.budget ? money.format(s.budget) : '-'}</td>
-        <td class="num">${s?.paid ? money.format(s.paid) : '-'}</td>
+        <td class="num">${s?.paid ? money.format(s.paid) : '-'}${s?.materials
+          ? `<span class="block text-xs text-slate-500">+ ${money.format(s.materials)} materials</span>` : ''}</td>
         <td class="whitespace-nowrap">${contractorRating(s)}</td>
         <td class="text-right whitespace-nowrap">
           <button type="button" class="table-action" data-contractor-jobs="${esc(c.id)}">Jobs</button>
@@ -2190,7 +2373,7 @@ function openContractorJobs(contractorId) {
   const jobs = state.tasks
     .filter((t) => t.contractor_id === c.id)
     .sort((a, b) => a.planned_start.localeCompare(b.planned_start));
-  const s = contractorPerformance(state.tasks, state.contractorDelays, state.payments, today).get(c.id);
+  const s = contractorPerformance(state.tasks, state.contractorDelays, state.payments, today, state.materials).get(c.id);
 
   $('#contractor-jobs-title').textContent = `Jobs - ${c.name}`;
   $('#contractor-jobs-sub').textContent = [c.name_ka, c.trade].filter(Boolean).join(' · ');
@@ -2202,12 +2385,15 @@ function openContractorJobs(contractorId) {
     statTile('Budget', money.format(s?.budget ?? 0), 'Their items'),
     statTile('Paid', money.format(s?.paid ?? 0),
       s?.budget ? `${Math.round(((s.paid ?? 0) / s.budget) * 100)}% of budget` : ''),
+    statTile('Materials supplied', money.format(s?.materials ?? 0),
+      s?.materialBudget ? `of ${money.format(s.materialBudget)} planned` : 'Bought by the client for their jobs',
+      s?.materialBudget && s.materials > s.materialBudget ? 'negative' : ''),
   ].join('');
 
   $('#contractor-jobs-list').innerHTML = jobs.length ? `
     <table class="data-table">
       <thead>
-        <tr><th>Work item</th><th>Dates</th><th class="num">Done</th><th class="num">Budget</th><th class="num">Paid</th><th>Status</th></tr>
+        <tr><th>Work item</th><th>Dates</th><th class="num">Done</th><th class="num">Budget</th><th class="num">Paid</th><th class="num">Materials</th><th>Status</th></tr>
       </thead>
       <tbody>
         ${jobs.map((t) => {
@@ -2222,6 +2408,7 @@ function openContractorJobs(contractorId) {
               </td>
               <td class="num">${Number(t.budget) ? money.format(t.budget) : '-'}</td>
               <td class="num">${paidOn(t.id) ? money.format(paidOn(t.id)) : '-'}</td>
+              <td class="num">${materialsOn(t.id) ? money.format(materialsOn(t.id)) : '-'}</td>
               <td class="whitespace-nowrap">${taskStateChip(t, taskState(t, today))}</td>
             </tr>`;
         }).join('')}
@@ -2544,6 +2731,7 @@ function initModals() {
 
   $('#task-unit').innerHTML = '<option value="">-</option>'
     + BOQ_UNITS.map((u) => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
+  $('#material-unit').innerHTML = $('#task-unit').innerHTML;
   $('#contractor-trades').innerHTML = CONTRACTOR_TRADES.map((t) => `<option value="${esc(t)}"></option>`).join('');
 
   const currencyOptions = Object.entries(CURRENCIES)
@@ -3536,6 +3724,7 @@ function projectReportArgs(project) {
     siteLogs: state.siteLogs,
     siteCosts: state.siteCosts,
     rentals: state.rentals,
+    materials: state.materials,
     progress: state.progress ?? scheduleProgress([], todayISO()),
     money,
   };
@@ -3620,6 +3809,10 @@ $('#btn-add-rental').addEventListener('click', () => openRentalModal());
 $('#form-rental').addEventListener('submit', saveRental);
 $('#form-rental').addEventListener('input', onRentalInput);
 $('#rentals-table').addEventListener('click', onRentalsTableClick);
+$('#btn-add-material').addEventListener('click', () => openMaterialModal());
+$('#form-material').addEventListener('submit', saveMaterial);
+$('#form-material').addEventListener('input', onMaterialInput);
+$('#materials-table').addEventListener('click', onMaterialsTableClick);
 $('#equipment-options').innerHTML = EQUIPMENT_SUGGESTIONS.map((x) => `<option value="${esc(x)}"></option>`).join('');
 $('#equipment-options-ka').innerHTML = EQUIPMENT_SUGGESTIONS.map((x) => `<option value="${esc(ka(x))}"></option>`).join('');
 $('#units-table').addEventListener('click', onUnitsTableClick);
