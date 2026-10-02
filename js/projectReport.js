@@ -42,6 +42,8 @@ const H = (ka, en, note = '') => `
     <h2>${esc(ka)} <em>${esc(en)}</em></h2>
     ${note ? `<span class="rpt-h-note">${note}</span>` : ''}
   </div>`;
+// A line only the interactive (.html) report shows, saying what can be clicked.
+const clickHint = (ka, en) => `<p class="rpt-html-only rpt-click-note">👆 ${L(ka, en)}</p>`;
 const none = `<p class="rpt-none">${L('მონაცემები არ არის', 'No data yet')}</p>`;
 // Free text kept in both languages: Georgian first, English muted below.
 const biText = (ka, en) => (ka && en
@@ -529,6 +531,7 @@ export async function buildProjectReport({
   const timeline = `
     <section class="rpt-section">
       ${H('სამუშაო გრაფიკი', 'Timeline', `${progress.count} ${L('სამუშაო', 'items')}`)}
+      ${tasks.length ? clickHint('დააჭირეთ სამუშაოს - ნახავთ ვადებს, გადახდებს, მასალებს და შეფერხებებს', 'Click an activity to see its dates, payments, materials and delays') : ''}
       ${gantt}
     </section>`;
 
@@ -912,7 +915,7 @@ export async function buildProjectReport({
         ${retentionHeld ? tile('დაკავებული გარანტია', 'Retention held', m(retentionHeld),
     project.retention_pct ? `${Number(project.retention_pct)}% ${L('ყოველი გადახდიდან', 'of each payment')}` : '', 'muted') : ''}
       </div>
-      ${monthKeys.length ? sCurve + monthTable : none}
+      ${monthKeys.length ? sCurve + clickHint('დააჭირეთ თვეს - ნახავთ, რაზე დაიხარჯა', 'Click a month to see what the money was spent on') + monthTable : none}
       ${variationsBlock}
       ${itemCosts}
       ${siteCostsBlock}
@@ -932,6 +935,7 @@ export async function buildProjectReport({
   const contractorsSection = `
     <section class="rpt-section">
       ${H('კონტრაქტორები', 'Contractors', `${contractors.length}`)}
+      ${contractors.length ? clickHint('დააჭირეთ კონტრაქტორს - ნახავთ მის სამუშაოებს, გადახდებს და შეფერხებებს', 'Click a contractor to see their jobs, payments and delays') : ''}
       ${contractors.length ? `
         <div class="rpt-cards">
           ${contractors.map((c) => {
@@ -1041,7 +1045,7 @@ export async function buildProjectReport({
             ${[...byType].sort((a, b) => b[1].n - a[1].n).map(([type, e]) => `
               <span class="rpt-type">${esc(bi(type))} <b>× ${e.n}</b>${e.area ? ` · ${num.format(e.area)} m²` : ''}</span>`).join('')}
           </div>
-          <p class="rpt-html-only rpt-click-note">${L('ოთახზე დაჭერით ნახავთ მის მონაცემებს და შესრულებულ სამუშაოებს', 'Click a room to see its details and the work done in it')}${roomsWithWork.size
+          <p class="rpt-html-only rpt-click-note">👆 ${L('ოთახზე დაჭერით ნახავთ მის მონაცემებს და შესრულებულ სამუშაოებს', 'Click a room to see its details and the work done in it')}${roomsWithWork.size
             ? `<span class="rpt-click-key"><span class="rpt-room rpt-room-has-work rpt-room-key"></span> ${L('სამუშაო ჩაწერილია', 'work recorded')}</span>` : ''}</p>
           ${roomGrid}` : none}
       </section>`;
@@ -1219,6 +1223,7 @@ export async function buildProjectReport({
   const logsSection = `
     <section class="rpt-section">
       ${H('ობიექტზე აქტივობა', 'Site Activity', series.length ? `${series.length} ${L('ჩანაწერი', 'logs')}` : '')}
+      ${series.length > 1 ? clickHint('დააჭირეთ დღის სვეტს - ნახავთ ვინ იყო ობიექტზე და რა გაკეთდა', 'Click a day’s bar to see who was on site and what was done') : ''}
       ${activityBlock}
       ${logs.length ? logs.slice(0, 5).map((l) => {
         const crew = Object.entries(l.manpower || {}).filter(([, n]) => n > 0);
@@ -1666,7 +1671,7 @@ async function saveInteractive(page, project, fileName) {
   @media (max-width: 820px) { body { padding: 0; } .pdf-page.rpt { padding: 20px 16px 28px; border-radius: 0; } }
   .rpt .rpt-html-only { display: block; }
   .rpt .rpt-print-only { display: none; }
-  .rpt [data-pop] { cursor: pointer; }
+  .rpt [data-pop] { cursor: pointer; transition: background-color 0.12s, outline-color 0.12s; }
   .rpt .rpt-room[data-pop]:hover, .rpt .rpt-card[data-pop]:hover { outline: 2px solid #2563eb; outline-offset: 1px; }
   .rpt .rpt-g-row[data-pop]:hover, .rpt tr[data-pop]:hover td { background: #eff6ff; }
   .rpt .rpt-col[data-pop]:hover .rpt-col-bar { background: #2563eb; }
@@ -1728,12 +1733,17 @@ function reportViewer(POPUPS) {
   const pop = document.getElementById('room-pop');
   document.addEventListener('click', (e) => {
     const target = e.target.closest('[data-pop]');
+    if (!target) return;
     if (target && POPUPS[target.dataset.pop]) {
       const body = pop.querySelector('.rpt-pop-body');
       body.innerHTML = POPUPS[target.dataset.pop];
       pop.showModal();
       body.scrollTop = 0;
     }
+  });
+  // Every click-able part gets a tooltip saying so.
+  document.querySelectorAll('[data-pop]').forEach((el) => {
+    if (!el.title) el.title = 'დააჭირეთ დეტალებისთვის · Click for details';
   });
   // Contents: one link per section heading, Georgian with the English beside it.
   const nav = document.getElementById('rpt-nav');
