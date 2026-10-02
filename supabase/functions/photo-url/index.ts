@@ -10,13 +10,16 @@
 //     R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=...
 //   supabase functions deploy photo-url
 // =============================================================
-import { json, serveJson } from "../_shared/gemini.ts";
+import { json, serveJson, userClient } from "../_shared/gemini.ts";
 import { AwsClient } from "npm:aws4fetch@1.0.20";
 
 const EXPIRES = 3600;   // seconds a signed link stays valid
 const MAX_PATHS = 48;   // an entry's photos is 24, each with a thumbnail; the app sends more in batches
 
-serveJson(async (payload: { paths?: string[]; method?: string }) => {
+// Only the administrator may upload or delete photos; anyone signed in may look.
+const ADMIN_EMAIL = "st@cpmgroup.ge";
+
+serveJson(async (payload: { paths?: string[]; method?: string }, req: Request) => {
   const account = Deno.env.get("R2_ACCOUNT_ID");
   const bucket = Deno.env.get("R2_BUCKET");
   const accessKeyId = Deno.env.get("R2_ACCESS_KEY_ID");
@@ -44,6 +47,10 @@ serveJson(async (payload: { paths?: string[]; method?: string }) => {
   }
 
   const method = payload.method === "PUT" || payload.method === "DELETE" ? payload.method : "GET";
+  if (method !== "GET") {
+    const { data: { user } } = await userClient(req).auth.getUser();
+    if (user?.email?.toLowerCase() !== ADMIN_EMAIL) return json({ error: "This account can only view" }, 403);
+  }
   // A path is built by the app from ids it already holds; anything that tries
   // to climb out of the project's own folder is refused outright.
   const paths = (payload.paths ?? [])

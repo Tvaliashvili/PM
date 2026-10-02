@@ -166,6 +166,23 @@ export async function deletePhotosFor(db, owner) {
   await removeFiles(db, photos);
 }
 
+/**
+ * Clears every photo file of a project before the project itself goes - its
+ * rows cascade with it, but the files would stay in storage with nothing
+ * pointing at them. Throws if they could not be removed, so the project is
+ * kept and the delete can be tried again.
+ */
+export async function deleteProjectPhotos(db, projectId) {
+  const { data, error } = await db.from('photos').select('path, thumb_path').eq('project_id', projectId);
+  if (error) throw new Error(error.message);
+  if (!data.length) return;
+  const paths = data.flatMap((p) => [p.path, p.thumb_path]);
+  const urls = await signedUrls(db, paths, 'DELETE');
+  const results = await Promise.all(urls.map((url) => fetch(url, { method: 'DELETE' })));
+  // R2 answers 204 for a file removed, and also for one that was already gone.
+  if (results.some((r) => !r.ok)) throw new Error('Some photos could not be removed from storage');
+}
+
 /** Removes one photo: both files, then the row. */
 export async function deletePhoto(db, photo) {
   await removeFiles(db, [photo]);

@@ -451,6 +451,21 @@ export function contractorPerformance(tasks, delays, payments, todayIso, materia
   return stats;
 }
 
+/**
+ * Where the project stands, in one word, from scheduleProgress(): 'behind'
+ * when it is more than 5% behind plan, when anything is overdue, or when the
+ * pace kept so far finishes after the planned completion; 'ahead' only when it
+ * is more than 5% ahead with nothing overdue; otherwise 'on_track'.
+ */
+export function planVerdict(progress, { tasks, startDate, endDate, todayIso }) {
+  const gap = progress.actualPct - progress.plannedPct;
+  const forecast = forecastFinish({ tasks, startDate, todayIso, actualPct: progress.actualPct });
+  const late = Boolean(forecast && endDate && forecast.date > endDate);
+  if (gap < -5 || progress.overdue.length || late) return { key: 'behind', gap, late };
+  if (gap > 5) return { key: 'ahead', gap, late };
+  return { key: 'on_track', gap, late };
+}
+
 /** Whole-project figures for the dashboard and reports. Percentages are 0…100 integers. */
 export function scheduleProgress(tasks, todayIso) {
   let total = 0;

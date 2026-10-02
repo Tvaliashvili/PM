@@ -857,3 +857,36 @@ end;
 $$;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 27. One administrator; everyone else can only look
+-- st@cpmgroup.ge may change anything. Every other signed-in account can read
+-- every project but change nothing: the database refuses, whatever the page
+-- does. Run last - it turns each table's earlier "authenticated_full_access"
+-- policy into read-for-all plus write-for-the-administrator.
+-- -------------------------------------------------------------
+create or replace function public.is_admin() returns boolean
+  language sql stable
+as $$
+  select coalesce(auth.jwt() ->> 'email', '') = 'st@cpmgroup.ge'
+$$;
+
+do $$
+declare
+  t text;
+begin
+  for t in
+    select distinct tablename from pg_policies
+     where schemaname = 'public' and policyname in ('authenticated_full_access', 'read_all', 'admin_write')
+  loop
+    execute format('drop policy if exists "authenticated_full_access" on public.%I', t);
+    execute format('drop policy if exists "read_all" on public.%I', t);
+    execute format('drop policy if exists "admin_write" on public.%I', t);
+    execute format('create policy "read_all" on public.%I for select to authenticated using (true)', t);
+    execute format('create policy "admin_write" on public.%I for all to authenticated
+                      using (public.is_admin()) with check (public.is_admin())', t);
+  end loop;
+end;
+$$;
+
+notify pgrst, 'reload schema';

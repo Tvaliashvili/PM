@@ -15,7 +15,7 @@ const MAX_QUESTION_CHARS = 1_000;
 // roughly 1.5M characters of JSON. Only past that are the oldest logs dropped.
 const MAX_CONTEXT_CHARS = 1_500_000;
 
-const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget; due is the planned finish pushed out by extension_days, the days delays held the item up - judge an item late or overdue against due, never planned_finish), contractors, delays (counted in whole days lost, described in Georgian and English; a delay with ongoing=true has not been settled yet - its days_lost is the count so far and keeps growing; contractor_at_fault caused it and held_up lists the work it stopped, with the contractor who was waiting - each of those items lost this delay's whole days_lost, so when judging whether someone is running late, take those days off the waiting contractor and count them against the one at fault, and say so), payments to contractors, daily workers (manpower.day_workers, each paid the log's day_rate for that day), equipment rentals (daily_rate × days) and materials the client bought for a work item and supplied to its contractor (the item's budget is the contractor's price; material_budget is what the client planned to spend on materials for it), and the work done in each room (work_done: date, room, what was done, contractor, and quantity - a quantity is what was measured that day and measurements add up to the total done; no quantity means the work went on that day but was not measured).
+const SYSTEM_PROMPT = `You are the assistant of a construction project manager in Georgia. You answer questions about one construction project (flats, offices, a stadium, infrastructure…) using only the project data provided: daily site logs (Georgian notes with English translations), the timetable (work items with planned dates, % complete, contractor and budget; due is the planned finish pushed out by extension_days, the days delays held the item up - judge an item late or overdue against due, never planned_finish), contractors, delays (counted in whole days lost, described in Georgian and English; a delay with ongoing=true has not been settled yet - its days_lost is the count so far and keeps growing; contractor_at_fault caused it and held_up lists the work it stopped, with the contractor who was waiting - each of those items lost this delay's whole days_lost, so when judging whether someone is running late, take those days off the waiting contractor and count them against the one at fault, and say so), payments to contractors, daily workers (manpower.day_workers, each paid the log's day_rate for that day), equipment rentals (daily_rate × days) and materials the client bought for a work item and supplied to its contractor (the item's budget is the contractor's price; material_budget is what the client planned to spend on materials for it), what has been paid for them - site_payments for daily workers and guards by month and for each rental, and on materials paid_on (null = still owed on credit, due on due_on) - so what is still owed can be worked out, and the work done in each room (work_done: date, room, what was done, contractor, and quantity - a quantity is what was measured that day and measurements add up to the total done; no quantity means the work went on that day but was not measured).
 
 Rules:
 - Answer twice, whatever language the question is in: "ka" in natural, professional Georgian as used in Georgian construction reporting, and "en" in English. The two must state the same facts and figures - neither leaves out something the other says. Write each as it would be written in that language, not word for word from the other.
@@ -43,7 +43,7 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
   if (!projectId) return json({ error: "No project selected" }, 400);
 
   const sb = userClient(req);
-  const [project, tasks, contractors, logs, delays, payments, rentals, materials, work] = await Promise.all([
+  const [project, tasks, contractors, logs, delays, payments, rentals, materials, work, sitePayments] = await Promise.all([
     sb.from("projects").select("name, name_ka, location, location_ka, client_name, client_name_ka, start_date, end_date, currency, has_rooms").eq("id", projectId).single(),
     sb.from("schedule_tasks")
       .select("id, name, name_ka, planned_start, planned_finish, progress_pct, done_at, contractor_id, budget, material_budget")
@@ -57,14 +57,15 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
       .select("created_at, delay_cause, duration_days, resolved_on, description, description_en, cause_contractor_id, flats(block, flat_number), impacts:delay_impacts(task_id)")
       .eq("project_id", projectId).order("created_at", { ascending: false }).limit(1000),
     sb.from("task_payments").select("task_id, paid_on, amount, note").eq("project_id", projectId).order("paid_on"),
-    sb.from("equipment_rentals").select("equipment, equipment_ka, supplier, supplier_ka, start_date, days, daily_rate, note").eq("project_id", projectId).order("start_date"),
-    sb.from("materials").select("task_id, bought_on, item, item_ka, quantity, unit, unit_price, amount, supplier, note").eq("project_id", projectId).order("bought_on"),
+    sb.from("equipment_rentals").select("id, equipment, equipment_ka, supplier, supplier_ka, start_date, days, daily_rate, note").eq("project_id", projectId).order("start_date"),
+    sb.from("materials").select("task_id, bought_on, item, item_ka, quantity, unit, unit_price, amount, supplier, note, paid_on, due_on").eq("project_id", projectId).order("bought_on"),
     sb.from("work_done")
       .select("work_date, work, work_en, quantity, unit, contractor_id, flats(block, floor, flat_number)")
       .eq("project_id", projectId).order("work_date").limit(5000),
+    sb.from("site_payments").select("kind, month, rental_id, amount, paid_on, note").eq("project_id", projectId).order("paid_on"),
   ]);
 
-  const failed = [project, tasks, contractors, logs, delays, payments, rentals, materials, work].find((r) => r.error);
+  const failed = [project, tasks, contractors, logs, delays, payments, rentals, materials, work, sitePayments].find((r) => r.error);
   if (failed) {
     console.error(failed.error);
     return json({ error: "Could not read the project data" }, 500);
@@ -156,8 +157,22 @@ serveJson(async (payload: { project_id?: string; question?: string; today?: stri
     materials: (materials.data ?? []).map((m) => ({
       bought_on: m.bought_on, material: m.item, material_ka: m.item_ka, quantity: m.quantity, unit: m.unit,
       unit_price: m.unit_price, amount: m.amount, supplier: m.supplier, note: m.note,
+      // Paid on the day it was bought, paid later after being taken on credit
+      // (ნისია), or - paid_on null - still owed to the supplier, due on due_on.
+      paid_on: m.paid_on, on_credit: m.paid_on !== m.bought_on, still_owed: m.paid_on === null, due_on: m.due_on,
       item: taskName.get(m.task_id) ?? null,
       contractor: contractorName.get(taskContractor.get(m.task_id)) ?? null,
+    })),
+    // What was paid for daily workers and guards (kind labour / guard, against
+    // a month) and for rentals (against the equipment). What is owed is the cost
+    // so far - workers × rate per log, daily_rate × days on hire - less these.
+    site_payments: (sitePayments.data ?? []).map((p: any) => ({
+      kind: p.kind,
+      month: p.month ? String(p.month).slice(0, 7) : null,
+      equipment: p.rental_id ? (rentals.data ?? []).find((r: any) => r.id === p.rental_id)?.equipment ?? null : null,
+      amount: p.amount,
+      paid_on: p.paid_on,
+      note: p.note,
     })),
     daily_logs: logs.data ?? [], // newest first; manpower.day_workers are paid day_rate each per day
     // Work recorded room by room: the day, the room, what was done (Georgian

@@ -5,6 +5,10 @@ import { SIGNATURE_PNG } from './signatureImage.js';
 
 // Supabase Dashboard > Project Settings > API.
 // Use the anon (public) key only - never the service_role key.
+// The one account that may change anything; everyone else signed in can only
+// look (the database enforces it - see schema.sql section 27).
+export const ADMIN_EMAIL = 'st@cpmgroup.ge';
+
 export const SUPABASE_URL = 'https://wlysnnevbazfjqtuysei.supabase.co';
 export const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndseXNubmV2YmF6ZmpxdHV5c2VpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0MzY1MzQsImV4cCI6MjEwNjAxMjUzNH0._XZ5BMrIHlxQe8jnDRYzZpWwMp9xzz1J0_stDQgT0TA';
 

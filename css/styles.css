@@ -1276,3 +1276,20 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
   border-color: var(--brand-500);
   color: var(--brand-400);
 }
+
+/* View-only accounts: every control that writes is hidden, and the timetable's
+   inline fields can be read but not changed. */
+body.read-only :is(
+  #btn-new-project, #btn-edit-project, .project-card-delete,
+  #btn-new-log-page, #btn-new-delay, #btn-new-event, #btn-new-variation,
+  #btn-add-unit, #btn-rooms-import, #btn-add-task, #btn-import-mpp, #btn-baseline,
+  #btn-add-contractor, #btn-add-rental, #btn-add-material,
+  [data-task-edit], [data-task-delete], [data-unit-edit], [data-unit-delete],
+  [data-contractor-edit], [data-contractor-delete], [data-rental-edit], [data-rental-delete],
+  [data-material-edit], [data-material-delete], [data-material-paid],
+  [data-log-edit], [data-log-delete], [data-delay-edit], [data-delay-delete],
+  [data-event-edit], [data-event-delete], [data-variation-edit], [data-variation-delete],
+  [data-site-pay], [data-site-pay-delete], [data-payment-delete],
+  [data-room-work-edit], [data-room-work-delete], #form-room-work, #form-payment
+) { display: none !important; }
+body.read-only :is([data-task-pct], [data-task-contractor]) { pointer-events: none; opacity: 0.75; }

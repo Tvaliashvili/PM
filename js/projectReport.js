@@ -6,7 +6,7 @@
 import {
   taskState, completionOf, costPosition, contractorPerformance, plannedSpendByMonth, actualSpendByMonth,
   siteCostsByMonth, rentalTotal, rentalEnd, delayIsOngoing, delayDaysLost, causeOf, dueDate,
-  stalledTasks, forecastFinish, durationDays, contractorManDays,
+  stalledTasks, forecastFinish, durationDays, contractorManDays, planVerdict,
 } from './schedule.js';
 import { bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
 import { MANPOWER_TRADES, REPORT_AUTHOR } from './config.js';
@@ -88,10 +88,11 @@ const CURRENCY_KA = { GEL: 'ლარშია', USD: 'დოლარშია'
 const currencyKa = (code) => `ყველა თანხა ${CURRENCY_KA[code] ?? `${code}-შია`}`;
 
 // Where the project stands against its plan, in words (never colour alone).
-function verdict(gap, count) {
+// Behind also when anything is overdue or the pace so far finishes late (planVerdict).
+function verdict(v, count) {
   if (!count) return { ka: 'გრაფიკი არ არის', en: 'No timetable', tone: 'muted' };
-  if (gap < -5) return { ka: 'გეგმას ჩამორჩება', en: 'Behind plan', tone: 'bad' };
-  if (gap > 5) return { ka: 'გეგმას უსწრებს', en: 'Ahead of plan', tone: 'ok' };
+  if (v.key === 'behind') return { ka: 'გეგმას ჩამორჩება', en: 'Behind plan', tone: 'bad' };
+  if (v.key === 'ahead') return { ka: 'გეგმას უსწრებს', en: 'Ahead of plan', tone: 'ok' };
   return { ka: 'გეგმის მიხედვით', en: 'On track', tone: 'ok' };
 }
 
@@ -190,7 +191,9 @@ export async function buildProjectReport({
   const mc = (n) => `${symbol}${compact.format(n)}`;
 
   const gap = progress.actualPct - progress.plannedPct;
-  const status = verdict(gap, progress.count);
+  const status = verdict(planVerdict(progress, {
+    tasks, startDate: project.start_date, endDate: project.end_date, todayIso: today,
+  }), progress.count);
   const spentSub = [
     cost.budget ? `${pctOf(cost.spent, cost.budget)}% ${L('ბიუჯეტის', 'of budget')}` : '',
     cost.labour || cost.guard || cost.rental

@@ -2,7 +2,7 @@
 // CPMG PM - main app logic
 // =============================================================
 import {
-  SUPABASE_URL, SUPABASE_KEY, CURRENCIES, DEFAULT_CURRENCY,
+  SUPABASE_URL, SUPABASE_KEY, ADMIN_EMAIL, CURRENCIES, DEFAULT_CURRENCY,
   UNIT_TYPES, UNIT_STATUSES,
   MANPOWER_TRADES, WEATHER_OPTIONS, DELAY_CAUSES, DAY_WORKER_KEY, GUARD_KEY, EQUIPMENT_SUGGESTIONS,
   SITE_EVENT_KINDS, INCIDENT_SEVERITIES, VARIATION_STATUSES,
@@ -14,11 +14,11 @@ import {
   scheduleProgress, taskState, durationDays, completionOf, expectedPct,
   plannedSpendByMonth, actualSpendByMonth, costPosition, contractorPerformance,
   labourCosts, guardCosts, rentalCosts, rentalTotal, rentalEnd, siteCostsByMonth, materialCosts, budgetOf,
-  delayIsOngoing, delayDaysLost, delayStart, delayEnd, delayCovers, causeOf, withExtensions, dueDate,
+  delayIsOngoing, delayDaysLost, delayStart, delayEnd, delayCovers, causeOf, withExtensions, dueDate, planVerdict,
 } from './schedule.js';
 import { ka, roomLabel } from './bilingual.js';
 import {
-  MAX_PHOTOS, uploadPhotos, fetchPhotos, signPhotos, photosBy, deletePhoto, deletePhotosFor,
+  MAX_PHOTOS, uploadPhotos, fetchPhotos, signPhotos, photosBy, deletePhoto, deletePhotosFor, deleteProjectPhotos,
 } from './photos.js';
 
 // ---------- Supabase ----------
@@ -195,7 +195,13 @@ function handleSession(session) {
   if (user && user.id === state.user?.id) return; // token refresh, same user
 
   state.user = user;
-  $$('[data-user-email]').forEach((el) => { el.textContent = user?.email ?? 'Not signed in'; });
+  // Only the administrator changes anything; everyone else gets the same pages
+  // without the controls that write (the database refuses them anyway).
+  const viewOnly = Boolean(user) && user.email?.toLowerCase() !== ADMIN_EMAIL;
+  document.body.classList.toggle('read-only', viewOnly);
+  $$('[data-user-email]').forEach((el) => {
+    el.textContent = user ? `${user.email}${viewOnly ? ' · view only' : ''}` : 'Not signed in';
+  });
   $$('[data-sign-out]').forEach((el) => el.classList.toggle('hidden', !user));
 
   if (user) {
@@ -440,7 +446,7 @@ async function confirmDeleteProject(e) {
     return;
   }
 
-  setBusy(btn, true, 'Deleting…');
+  btn.textContent = 'Deleting…'; // still busy; setBusy keeps the original label to restore
   const deleted = await deleteProject(projectId);
   setBusy(btn, false);
   if (deleted) closeModal('modal-delete-project');
@@ -451,6 +457,13 @@ async function deleteProject(projectId) {
   const project = state.projects.find((p) => p.id === projectId);
   if (!project) return false;
 
+  // The photo files first: the rows go with the project, the files would not.
+  try {
+    await deleteProjectPhotos(db, projectId);
+  } catch (err) {
+    toast(`Could not delete project: ${err.message}. Nothing was deleted - try again.`, 'error');
+    return false;
+  }
   const { error } = await db.from('projects').delete().eq('id', projectId);
   if (error) {
     toast(`Could not delete project: ${error.message}`, 'error');
@@ -1054,11 +1067,14 @@ function taskStateChip(task, s) {
   return '<span class="status-chip status-pending">Upcoming</span>';
 }
 
-// Work done vs planned by today, in words (within 5% counts as on track).
-function planStatus(gap) {
-  if (gap < -5) return 'Behind plan';
-  if (gap > 5) return 'Ahead of plan';
-  return 'On track';
+// Where the project stands, in words - behind also when anything is overdue
+// or the pace so far finishes late (see planVerdict).
+const PLAN_WORDS = { behind: 'Behind plan', ahead: 'Ahead of plan', on_track: 'On track' };
+function projectVerdict(p) {
+  const project = currentProject();
+  return planVerdict(p, {
+    tasks: state.tasks, startDate: project?.start_date, endDate: project?.end_date, todayIso: todayISO(),
+  });
 }
 
 /** Why an item's finish moved: the causes of the delays that held it up. */
@@ -1086,11 +1102,12 @@ function renderSchedule() {
   state.progress = p;
   updateProgressKpi();
 
-  const gap = p.actualPct - p.plannedPct;
+  const verdict = projectVerdict(p);
   $('#schedule-summary').innerHTML = [
     statTile('Progress', `${p.actualPct}%`, `${p.doneCount} of ${p.count} items done`),
     statTile('Planned by today', `${p.plannedPct}%`,
-      !p.count ? '-' : planStatus(gap), gap < -5 ? 'negative' : ''),
+      !p.count ? '-' : `${PLAN_WORDS[verdict.key]}${verdict.late ? ' · finishing late at this pace' : ''}`,
+      p.count && verdict.key === 'behind' ? 'negative' : ''),
     statTile('Overdue', String(p.overdue.length),
       p.overdue.length ? `Longest: ${p.overdue[0].daysLate} days late` : 'Nothing overdue', p.overdue.length ? 'negative' : ''),
     statTile('Remaining', `${100 - p.actualPct}%`, `${p.count - p.doneCount} items left`),
@@ -1379,6 +1396,7 @@ async function deleteTask(taskId) {
 }
 
 function onScheduleChange(e) {
+  if (document.body.classList.contains('read-only')) return; // keyboard can still reach the fields
   const pct = e.target.closest('[data-task-pct]');
   if (pct) return setTaskPercent(pct.dataset.taskPct, pct.value);
 
@@ -1742,8 +1760,10 @@ function renderTimeline() {
   let when = '';
 
   if (start && end) {
-    const total = Math.max(1, daysBetween(start, end));
-    const elapsed = Math.min(total, Math.max(0, daysBetween(start, today)));
+    // Counted with both ends in, as the daily report's project day is: the
+    // first day is day 1, and Aug 1 → Jul 31 is 365 days.
+    const total = Math.max(1, daysBetween(start, end) + 1);
+    const elapsed = Math.min(total, Math.max(0, daysBetween(start, today) + 1));
     dates = `
       <p class="text-slate-300">
         ${esc(formatDate(project.start_date))} → ${esc(formatDate(project.end_date))}
@@ -1759,10 +1779,10 @@ function renderTimeline() {
   if (p.count) {
     bars.push(timelineBar('Planned by today', p.plannedPct, 'bg-sky-500'));
     bars.push(timelineBar('Work complete', p.actualPct, 'bg-emerald-500'));
-    const gap = p.actualPct - p.plannedPct;
-    chips.push(gap >= -5
-      ? { cls: 'status-done', text: `✓ ${planStatus(gap)}` }
-      : { cls: gap >= -15 ? 'status-in_progress' : 'status-blocked', text: `! ${planStatus(gap)}` });
+    const verdict = projectVerdict(p);
+    chips.push(verdict.key !== 'behind'
+      ? { cls: 'status-done', text: `✓ ${PLAN_WORDS[verdict.key]}` }
+      : { cls: verdict.gap >= -15 && !verdict.late ? 'status-in_progress' : 'status-blocked', text: `! ${PLAN_WORDS.behind}` });
     if (p.overdue.length) chips.push({ cls: 'status-blocked', text: `! ${p.overdue.length} overdue` });
   }
 
@@ -1950,7 +1970,9 @@ function renderCosts() {
     const rows = state.tasks.map((t) => {
       const budget = Number(t.budget || 0);
       const paid = paidOn(t.id);
-      const left = budget - paid;
+      // Retention is earned but held back: it is not work left to pay for.
+      const held = sumOf(state.payments.filter((p) => p.task_id === t.id), 'retention');
+      const left = budget - paid - held;
       const matBudget = Number(t.material_budget || 0);
       const bought = materialsOn(t.id);
       const qty = t.quantity != null
@@ -1962,7 +1984,8 @@ function renderCosts() {
           <td>${t.contractor_id ? esc(contractorName(t.contractor_id)) : '<span class="text-slate-500">-</span>'}</td>
           <td class="num">${qty}</td>
           <td class="num">${budget ? money.format(budget) : '-'}</td>
-          <td class="num">${paid ? money.format(paid) : '-'}</td>
+          <td class="num">${paid ? money.format(paid) : '-'}${held
+            ? `<span class="block text-xs text-slate-500">+ ${money.format(held)} retention held</span>` : ''}</td>
           <td class="num">${!budget ? '-' : left < 0
             ? `<span class="variance-over">${money.format(-left)} over</span>`
             : money.format(left)}</td>
@@ -1989,7 +2012,7 @@ function renderCosts() {
             <td colspan="3">Total</td>
             <td class="num">${money.format(contractTotal)}</td>
             <td class="num">${money.format(sumOf(state.payments, 'amount'))}</td>
-            <td class="num">${money.format(contractTotal - sumOf(state.payments, 'amount'))}</td>
+            <td class="num">${money.format(contractTotal - sumOf(state.payments, 'amount') - sumOf(state.payments, 'retention'))}</td>
             <td class="num">${materialsCell(sumOf(state.materials.filter((m) => m.task_id), 'amount'), materialBudget)}</td>
             <td colspan="2"></td>
           </tr>
@@ -2634,8 +2657,9 @@ function renderPaymentsList() {
 
   $('#payments-title').textContent = `Payments - ${task.name}`;
   const held = sumOf(payments, 'retention');
+  const certified = paid + held;
   $('#payments-summary').textContent = (budget
-    ? `Budget ${money.format(budget)} · paid ${money.format(paid)} · ${paid > budget ? `${money.format(paid - budget)} over budget` : `${money.format(budget - paid)} left`}`
+    ? `Budget ${money.format(budget)} · paid ${money.format(paid)} · ${certified > budget ? `${money.format(certified - budget)} over budget` : `${money.format(budget - certified)} left`}`
     : `Paid ${money.format(paid)} · no budget set for this item`)
     + (held ? ` · ${money.format(held)} retention held` : '');
 
@@ -2666,7 +2690,7 @@ function openPaymentsModal(taskId) {
   updatePaymentNet();
   renderPaymentsList();
   openModal('modal-payments');
-  form.elements.amount.focus();
+  form.elements.gross.focus();
 }
 
 async function reloadPayments() {
@@ -3610,6 +3634,21 @@ async function saveDailyLog(e) {
 
   showFormError(form, '');
   setBusy(btn, true);
+  // Notes written by hand in one language: Gemini writes the other before
+  // saving, as it does for delays. If it can't, the log is saved as written.
+  if (!row.notes !== !row.notes_en) {
+    btn.textContent = 'Translating…';
+    const { data, error: tError } = await db.functions.invoke('translate-delay', {
+      body: { ka: row.notes ?? '', en: row.notes_en ?? '', cause: 'Daily site log' },
+    });
+    if (tError) {
+      toast(`Saved without translation - ${await functionErrorMessage(tError)}`, 'error');
+    } else {
+      row.notes = data.ka || row.notes;
+      row.notes_en = data.en || row.notes_en;
+    }
+    btn.textContent = 'Saving…';
+  }
   const { data: saved, error } = logId
     ? await db.from('daily_logs').update(row).eq('id', logId).select('id').single()
     : await db.from('daily_logs').insert(row).select('id').single();
@@ -4540,6 +4579,7 @@ async function saveRoomsImport(e) {
   setBusy(btn, false);
   const failed = results.find((r) => r.error);
   await syncFlatCount(projectId);
+  state.unitFloor = 'all'; // the rooms just imported, on every floor
   if (projectId === state.projectId) loadUnits(projectId);
   if (failed) {
     showFormError(form, failed.error.message);
