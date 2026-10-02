@@ -537,9 +537,9 @@
       <div class="pdf-facts pdf-avoid-break">
         <div><span>ამინდი<em>Weather</em></span><strong data-field="weather"></strong></div>
         <div><span>სამუშაო ძალა ობიექტზე<em>Manpower on site</em></span><strong data-field="manpower-total"></strong></div>
+        <div><span>კონტრაქტორები ობიექტზე<em>Contractors on site</em></span><strong data-field="contractors-on-site"></strong></div>
         <div><span>შეფერხებები<em>Delays today</em></span><strong data-field="delay-count"></strong></div>
         <div><span>დაკარგული დღეები<em>Days lost</em></span><strong data-field="delay-days"></strong></div>
-        <div data-rooms-only><span>დასრულებული ოთახები<em>Rooms finished</em></span><strong data-field="total-flats"></strong></div>
         <div><span>პროექტის დღე<em>Project day</em></span><strong data-field="project-day"></strong></div>
       </div>
 
@@ -1061,16 +1061,6 @@
             Leave it as <span class="text-slate-300">Hired by the client</span> for men the client engaged themselves.
           </p>
         </fieldset>
-        <fieldset>
-          <legend class="form-label">Work done</legend>
-          <div id="work-rows" class="space-y-2"></div>
-          <button type="button" id="btn-add-work" class="btn btn-secondary btn-sm mt-2">+ Add work</button>
-          <p class="text-xs text-slate-500 mt-2">
-            What was done, where and by whom - Process with Gemini fills these in from the log; check them. Room and
-            quantity are optional. Write the work in Georgian or English (or "კედელი / Wall"); the other language is
-            translated on save. Each room keeps its own history of this work.
-          </p>
-        </fieldset>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
           <label class="block">
             <span class="form-label">Daily worker rate (per person, per day) - the client&#39;s own only</span>
@@ -1122,9 +1112,45 @@
       </div>
       <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
     </div>
-    <div class="modal-body space-y-3">
+    <div class="modal-body space-y-4">
+      <form id="form-room-work" class="panel space-y-3">
+        <input type="hidden" name="id">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="form-label">Work - ქართული</span>
+            <input name="work" maxlength="300" class="input-dark w-full" placeholder="მაგ. თაბაშირ-მუყაოს მონტაჟი">
+          </label>
+          <label class="block">
+            <span class="form-label">Work - English</span>
+            <input name="work_en" maxlength="300" class="input-dark w-full" placeholder="e.g. Gypsum board installation">
+          </label>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <label class="block col-span-2 sm:col-span-1">
+            <span class="form-label">Date</span>
+            <input name="work_date" type="date" required class="input-dark w-full">
+          </label>
+          <label class="block col-span-2 sm:col-span-1">
+            <span class="form-label">Contractor</span>
+            <select id="room-work-contractor" name="contractor_id" class="select-dark w-full"></select>
+          </label>
+          <label class="block">
+            <span class="form-label">Quantity (optional)</span>
+            <input name="quantity" type="number" min="0" step="any" class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Unit</span>
+            <select id="room-work-unit" name="unit" class="select-dark w-full"></select>
+          </label>
+        </div>
+        <p class="text-xs text-slate-500">Write it in one language and the other is filled in for you - check it before saving.</p>
+        <p class="form-error hidden" data-error></p>
+        <div class="flex justify-end gap-2">
+          <button type="button" id="btn-room-work-cancel" class="btn btn-secondary hidden">Cancel edit</button>
+          <button type="submit" class="btn btn-primary">Add work</button>
+        </div>
+      </form>
       <div id="room-work-list" class="overflow-x-auto"></div>
-      <p class="text-xs text-slate-500">Recorded in the Work done section of each daily log.</p>
     </div>
   </dialog>
 

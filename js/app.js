@@ -43,6 +43,7 @@ const state = {
   variations: [],       // change orders, newest first
   rentals: [],          // equipment_rentals
   materials: [],        // materials the client bought, newest first
+  work: [],             // work_done: what was done in each room, oldest first
   delays: [],           // every delay on the project, newest first
   siteCosts: [],        // labour, guard, rental and material cost entries
   progress: null,       // scheduleProgress() result
@@ -266,6 +267,7 @@ async function selectProject(projectId) {
   state.siteLogs = [];
   state.rentals = [];
   state.materials = [];
+  state.work = [];
   state.siteCosts = [];
   state.delays = [];
   state.events = [];
@@ -283,7 +285,7 @@ async function selectProject(projectId) {
   storage.set('cpm.projectId', project.id);
   resetLogFilter(); // a new project starts with a clean, unfiltered log list
   await Promise.all([
-    loadUnits(project.id), loadSchedule(project.id), refreshDashboard(project.id), loadLogs(project.id),
+    loadUnits(project.id), loadWork(project.id), loadSchedule(project.id), refreshDashboard(project.id), loadLogs(project.id),
     loadEvents(project.id), loadVariations(project.id),
   ]);
 }
@@ -593,7 +595,8 @@ function renderUnits() {
       <td><span class="status-chip ${UNIT_STATUS_CHIP[u.status] ?? 'status-pending'}">${esc(UNIT_STATUSES[u.status] ?? u.status)}</span></td>
       <td class="max-w-[16rem] truncate text-slate-400" title="${esc(u.notes ?? '')}">${esc(u.notes ?? '')}</td>
       <td class="text-right whitespace-nowrap">
-        <button type="button" class="table-action" data-unit-work="${esc(u.id)}">Work</button>
+        <button type="button" class="table-action" data-unit-work="${esc(u.id)}">Work${
+          workCount(u.id) ? ` (${workCount(u.id)})` : ''}</button>
         <button type="button" class="table-action" data-unit-edit="${esc(u.id)}">Edit</button>
         <button type="button" class="table-action is-danger" data-unit-delete="${esc(u.id)}">Delete</button>
       </td>
@@ -675,42 +678,176 @@ async function saveUnit(e) {
   if (projectId === state.projectId) loadUnits(projectId);
 }
 
-/** Everything the daily logs say was done in one room, oldest first. */
-async function openRoomWork(flatId) {
+// ---------- Work done in each room ----------
+// Entered by hand from the room's Work popup: the day, what was done (Georgian
+// and English), who did it and, when measured, how much.
+let roomWorkFlatId = null;
+
+async function loadWork(projectId) {
+  const { data, error } = await db.from('work_done')
+    .select('id, flat_id, contractor_id, work_date, work, work_en, quantity, unit, created_at')
+    .eq('project_id', projectId)
+    .order('work_date')
+    .order('created_at');
+  if (projectId !== state.projectId) return;
+  if (error) {
+    toast(`Could not load the work done: ${error.message}`, 'error');
+    return;
+  }
+  state.work = data;
+  renderUnits();
+  // Each log card shows what was done on its day.
+  $$('[data-log-work]').forEach((el) => { el.innerHTML = workList(workOn(el.dataset.logWork)); });
+  if ($('#modal-room-work').open) renderRoomWork();
+}
+
+function openRoomWork(flatId) {
   const flat = state.flats.find((f) => f.id === flatId);
   if (!flat) return;
+  roomWorkFlatId = flatId;
   $('#room-work-title').textContent = `Work done - ${roomLabel(flat)}`;
   $('#room-work-sub').textContent = [`Floor ${flat.floor}`, flat.unit_type, UNIT_STATUSES[flat.status]].filter(Boolean).join(' · ');
-  const list = $('#room-work-list');
-  list.innerHTML = '<div class="empty-state">Loading…</div>';
+  resetRoomWorkForm();
+  renderRoomWork();
   openModal('modal-room-work');
+  $('#form-room-work').elements.work.focus();
+}
 
-  const { data, error } = await db.from('work_done')
-    .select('work, work_en, quantity, unit, contractor_id, created_at, log:daily_logs!inner(log_date, project_id)')
-    .eq('flat_id', flatId)
-    .eq('log.project_id', state.projectId);
-  if (error) {
-    list.innerHTML = `<div class="empty-state">Could not load the work: ${esc(error.message)}</div>`;
+function resetRoomWorkForm(entry = null) {
+  const form = $('#form-room-work');
+  const f = form.elements;
+  form.reset();
+  f.id.value = entry?.id ?? '';
+  f.work_date.value = entry?.work_date ?? todayISO();
+  f.work_date.max = todayISO();
+  f.work.value = entry?.work ?? '';
+  f.work_en.value = entry?.work_en ?? '';
+  $('#room-work-contractor').innerHTML = contractorOptions(entry?.contractor_id ?? '');
+  f.quantity.value = entry?.quantity ?? '';
+  f.unit.value = entry?.unit ?? '';
+  $('[type=submit]', form).textContent = entry ? 'Save changes' : 'Add work';
+  $('#btn-room-work-cancel').classList.toggle('hidden', !entry);
+  showFormError(form, '');
+}
+
+function renderRoomWork() {
+  const list = $('#room-work-list');
+  const work = state.work.filter((w) => w.flat_id === roomWorkFlatId)
+    .sort((a, b) => b.work_date.localeCompare(a.work_date) || String(b.created_at).localeCompare(String(a.created_at)));
+  if (!work.length) {
+    list.innerHTML = '<div class="empty-state">No work recorded in this room yet.</div>';
     return;
   }
-  if (!data.length) {
-    list.innerHTML = '<div class="empty-state">No work recorded in this room yet - add it in the Work done section of a daily log.</div>';
-    return;
-  }
-  const rows = data
-    .sort((a, b) => a.log.log_date.localeCompare(b.log.log_date) || String(a.created_at).localeCompare(String(b.created_at)))
-    .map((w) => `
-      <tr>
-        <td class="whitespace-nowrap">${esc(formatDate(w.log.log_date))}</td>
-        <td>${esc(w.work || w.work_en)}${w.work_en && w.work_en !== w.work ? `<span class="block text-xs text-slate-500">${esc(w.work_en)}</span>` : ''}</td>
-        <td>${w.contractor_id ? esc(contractorName(w.contractor_id)) : '<span class="text-slate-500">-</span>'}</td>
-        <td class="num whitespace-nowrap">${esc(quantityText(w)) || '<span class="text-slate-500">-</span>'}</td>
-      </tr>`).join('');
   list.innerHTML = `
     <table class="data-table">
-      <thead><tr><th>Date</th><th>Work</th><th>Contractor</th><th class="num">Quantity</th></tr></thead>
-      <tbody>${rows}</tbody>
+      <thead><tr><th>Date</th><th>Work</th><th>Contractor</th><th class="num">Quantity</th><th></th></tr></thead>
+      <tbody>
+        ${work.map((w) => `
+          <tr>
+            <td class="whitespace-nowrap">${esc(formatDate(w.work_date))}</td>
+            <td>${esc(w.work || w.work_en)}${w.work_en && w.work_en !== w.work ? `<span class="block text-xs text-slate-500">${esc(w.work_en)}</span>` : ''}</td>
+            <td>${w.contractor_id ? esc(contractorName(w.contractor_id)) : '<span class="text-slate-500">-</span>'}</td>
+            <td class="num whitespace-nowrap">${esc(quantityText(w)) || '<span class="text-slate-500">-</span>'}</td>
+            <td class="text-right whitespace-nowrap">
+              <button type="button" class="table-action" data-room-work-edit="${esc(w.id)}">Edit</button>
+              <button type="button" class="table-action is-danger" data-room-work-delete="${esc(w.id)}">Delete</button>
+            </td>
+          </tr>`).join('')}
+      </tbody>
     </table>`;
+}
+
+// Leaving one language with the other empty fills the other in, to check
+// before saving - the same as an activity's names.
+async function onRoomWorkNameChange(e) {
+  const f = e.currentTarget.elements;
+  if (e.target !== f.work && e.target !== f.work_en) return;
+  const other = e.target === f.work ? f.work_en : f.work;
+  const text = e.target.value.trim();
+  const both = splitBilingual(text);
+  if (both && (!other.value.trim() || other.value.trim() === text)) {
+    f.work.value = both.ka;
+    f.work_en.value = both.en;
+    return;
+  }
+  if (!text || other.value.trim()) return;
+  const row = e.target === f.work ? { name: text, name_ka: text } : { name: text, name_ka: null };
+  const placeholder = other.placeholder;
+  other.placeholder = 'Translating…';
+  const err = await translateNames([row]);
+  other.placeholder = placeholder;
+  if (err || other.value.trim() || e.target.value.trim() !== text) return;
+  other.value = e.target === f.work ? row.name : row.name_ka;
+}
+
+async function saveRoomWork(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn = $('[type=submit]', form);
+  const fd = new FormData(form);
+  let ka = fd.get('work').trim();
+  let en = fd.get('work_en').trim();
+  for (const cell of [ka, en]) {
+    const both = splitBilingual(cell);
+    if (!both) continue;
+    if (!ka || ka === cell) ka = both.ka;
+    if (!en || en === cell) en = both.en;
+  }
+  if (!ka && !en) {
+    showFormError(form, 'Write what was done, in Georgian or English.');
+    return;
+  }
+  const quantity = numOrNull(fd.get('quantity'));
+  const id = fd.get('id');
+  const row = {
+    flat_id: roomWorkFlatId,
+    work_date: fd.get('work_date'),
+    contractor_id: fd.get('contractor_id') || null,
+    quantity: quantity > 0 ? quantity : null,
+    unit: quantity > 0 ? fd.get('unit') || null : null,
+  };
+
+  showFormError(form, '');
+  setBusy(btn, true, ka && en ? 'Saving…' : 'Translating…');
+  // The missing language, if Gemini can be reached; if not, it is saved in
+  // the one it was written in.
+  const names = { name: en || ka, name_ka: ka || null };
+  const untranslated = ka && en ? '' : await translateNames([names]);
+  row.work = names.name_ka || names.name;
+  row.work_en = names.name !== names.name_ka ? names.name : null;
+  btn.textContent = 'Saving…';
+  const { error } = id
+    ? await db.from('work_done').update(row).eq('id', id)
+    : await db.from('work_done').insert({ ...row, project_id: state.projectId });
+  setBusy(btn, false);
+  if (error) {
+    showFormError(form, error.message);
+    return;
+  }
+  toast(untranslated ? `Saved in one language - Gemini couldn't translate it: ${untranslated}` : 'Work saved.',
+    untranslated ? 'error' : 'success');
+  resetRoomWorkForm();
+  loadWork(state.projectId);
+}
+
+async function onRoomWorkListClick(e) {
+  const edit = e.target.closest('[data-room-work-edit]');
+  if (edit) {
+    resetRoomWorkForm(state.work.find((w) => w.id === edit.dataset.roomWorkEdit));
+    $('#form-room-work').elements.work.focus();
+    return;
+  }
+  const del = e.target.closest('[data-room-work-delete]');
+  if (!del) return;
+  const w = state.work.find((x) => x.id === del.dataset.roomWorkDelete);
+  if (!w || !confirm(`Delete "${w.work || w.work_en}" of ${formatDate(w.work_date)}?`)) return;
+  const { error } = await db.from('work_done').delete().eq('id', w.id);
+  if (error) {
+    toast(`Could not delete: ${error.message}`, 'error');
+    return;
+  }
+  toast('Work deleted.', 'success');
+  loadWork(state.projectId);
 }
 
 async function onUnitsTableClick(e) {
@@ -2582,7 +2719,10 @@ const flatName = (id) => {
 };
 const quantityText = (w) => (w.quantity != null ? `${qtyFormat.format(w.quantity)}${w.unit ? ` ${w.unit}` : ''}` : '');
 
-/** A log's work lines on its card: "Block A · Room 301 - Gypsum board 200 m² (Giorgi)". */
+const workOn = (date) => state.work.filter((w) => w.work_date === date);
+const workCount = (flatId) => state.work.filter((w) => w.flat_id === flatId).length;
+
+/** The day's work on its log card: "Block A · Room 301 - Gypsum board 200 m² (Giorgi)". */
 function workList(work) {
   if (!work?.length) return '';
   const items = [...work]
@@ -2621,7 +2761,7 @@ const logCard = (l) => {
         </span>
       </div>
       ${crew.length ? `<p class="log-card-crew">${crew.map((line) => esc(line)).join(' &middot; ')}</p>` : ''}
-      ${workList(l.work)}
+      <div data-log-work="${esc(l.log_date)}">${workList(workOn(l.log_date))}</div>
       ${delayLineFor(l.log_date)}
       <div class="log-notes">
         <p><span class="log-lang">ქართული</span>${esc(l.notes || '-')}</p>
@@ -2642,8 +2782,7 @@ async function loadLogs(projectId, { more = false } = {}) {
   let q = db
     .from('daily_logs')
     .select('id, log_date, weather, manpower, notes, notes_en, raw_text, day_rate, guard_rate, '
-      + 'crew:daily_manpower(contractor_id, trade, workers), '
-      + 'work:work_done(id, flat_id, contractor_id, work, work_en, quantity, unit, created_at)', { count: 'exact' })
+      + 'crew:daily_manpower(contractor_id, trade, workers)', { count: 'exact' })
     .eq('project_id', projectId);
   if (logFilter.from) q = q.gte('log_date', logFilter.from);
   if (logFilter.to) q = q.lte('log_date', logFilter.to);
@@ -2867,6 +3006,7 @@ function initModals() {
   $('#task-unit').innerHTML = '<option value="">-</option>'
     + BOQ_UNITS.map((u) => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
   $('#material-unit').innerHTML = $('#task-unit').innerHTML;
+  $('#room-work-unit').innerHTML = $('#task-unit').innerHTML;
   $('#contractor-trades').innerHTML = CONTRACTOR_TRADES.map((t) => `<option value="${esc(t)}"></option>`).join('');
 
   const currencyOptions = Object.entries(CURRENCIES)
@@ -2935,103 +3075,6 @@ function crewByTrade(entries) {
   const totals = {};
   for (const e of entries) totals[e.trade] = (totals[e.trade] || 0) + e.workers;
   return totals;
-}
-
-// ---------- Work done: one line per job, optionally in a room ----------
-const roomsOn = () => hasRooms(currentProject()) && state.flats.length > 0;
-
-function workRoomOptions(selected) {
-  const chosen = selected ?? '';
-  return `<option value=""${chosen === '' ? ' selected' : ''}>Not in a room</option>`
-    + state.flats.map((f) => (
-      `<option value="${esc(f.id)}"${f.id === chosen ? ' selected' : ''}>${esc(roomLabel(f))}</option>`
-    )).join('');
-}
-
-function workContractorOptions(selected) {
-  const chosen = selected ?? '';
-  return `<option value=""${chosen === '' ? ' selected' : ''}>- Contractor -</option>`
-    + state.contractors.map((c) => (
-      `<option value="${esc(c.id)}"${c.id === chosen ? ' selected' : ''}>${esc(c.name)}</option>`
-    )).join('');
-}
-
-/**
- * One work line. The text box shows the Georgian (or the English when there is
- * no Georgian); both are kept on the row, and editing the text drops the other
- * language so it is translated afresh on save.
- */
-function addWorkRow(entry = {}) {
-  const row = document.createElement('div');
-  row.className = roomsOn() ? 'work-row' : 'work-row work-row-no-rooms';
-  const shown = entry.work || entry.work_en || '';
-  row.dataset.ka = entry.work ?? '';
-  row.dataset.en = entry.work_en ?? '';
-  row.dataset.shown = shown;
-  row.innerHTML = `
-    ${roomsOn() ? `<select class="select-dark" data-work="room">${workRoomOptions(entry.flat_id)}</select>` : ''}
-    <input class="input-dark" data-work="text" maxlength="300" value="${esc(shown)}"
-           placeholder="მაგ. თაბაშირ-მუყაოს მონტაჟი / Gypsum board">
-    <select class="select-dark" data-work="contractor">${workContractorOptions(entry.contractor_id)}</select>
-    <input type="number" min="0" step="any" class="input-dark" data-work="quantity" placeholder="Qty"
-           value="${entry.quantity != null ? esc(String(entry.quantity)) : ''}">
-    <select class="select-dark" data-work="unit">
-      <option value="">-</option>
-      ${BOQ_UNITS.map((u) => `<option value="${esc(u)}"${u === entry.unit ? ' selected' : ''}>${esc(u)}</option>`).join('')}
-    </select>
-    <button type="button" class="table-action" data-work-remove aria-label="Remove this line">&times;</button>`;
-  $('#work-rows').appendChild(row);
-}
-
-function renderWorkRows(entries) {
-  $('#work-rows').replaceChildren();
-  [...(entries ?? [])]
-    .sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')))
-    .forEach(addWorkRow);
-}
-
-/**
- * The work lines in the form, both languages filled in: a line typed in one is
- * translated, "კედელი / Wall" is split. Returns { lines, untranslated }, where
- * untranslated is Gemini's error if it couldn't help - the lines then keep the
- * language they were written in.
- */
-async function readWorkRows() {
-  const lines = $$('#work-rows .work-row').map((row) => {
-    const text = $('[data-work="text"]', row).value.trim();
-    const quantity = numOrNull($('[data-work="quantity"]', row).value);
-    const line = {
-      flat_id: $('[data-work="room"]', row)?.value || null,
-      contractor_id: $('[data-work="contractor"]', row).value || null,
-      quantity: quantity > 0 ? quantity : null,
-      unit: quantity > 0 ? $('[data-work="unit"]', row).value || null : null,
-    };
-    if (!text) return null;
-    if (text === row.dataset.shown && (row.dataset.ka || row.dataset.en)) {
-      return { ...line, work: row.dataset.ka || null, work_en: row.dataset.en || null };
-    }
-    const both = splitBilingual(text);
-    if (both) return { ...line, work: both.ka, work_en: both.en };
-    return isGeorgian(text) ? { ...line, work: text, work_en: null } : { ...line, work: null, work_en: text };
-  }).filter(Boolean);
-
-  // Missing languages, translated in one go (translateNames reads { name, name_ka }).
-  const gaps = lines.filter((l) => !l.work || !l.work_en)
-    .map((l) => ({ line: l, name: l.work_en || l.work, name_ka: l.work }));
-  const untranslated = gaps.length ? await translateNames(gaps) : '';
-  for (const g of gaps) {
-    g.line.work = g.name_ka || g.line.work || g.line.work_en;
-    g.line.work_en = g.name !== g.name_ka ? g.name : g.line.work_en;
-  }
-  return { lines, untranslated };
-}
-
-/** Replaces a log's work lines with what the form holds. */
-async function saveWork(logId, lines) {
-  const { error } = await db.from('work_done').delete().eq('daily_log_id', logId);
-  if (error) return error;
-  if (!lines.length) return null;
-  return (await db.from('work_done').insert(lines.map((l) => ({ daily_log_id: logId, ...l })))).error;
 }
 
 /** Replaces a log's crew lines with what the form holds. */
@@ -3193,7 +3236,6 @@ function openDailyLogModal(log = null) {
     f.log_date.value = log.log_date;
     f.weather.value = log.weather || '';
     renderCrewRows(log.crew);
-    renderWorkRows(log.work);
     f.notes.value = log.notes || '';
     f.notes_en.value = log.notes_en || '';
     f.raw_text.value = log.raw_text || '';
@@ -3204,7 +3246,6 @@ function openDailyLogModal(log = null) {
     f.day_rate.value = currentProject()?.day_rate ?? '';
     f.guard_rate.value = currentProject()?.guard_rate ?? '';
     renderCrewRows([]);
-    renderWorkRows([]);
   }
   updateManpowerTotal();
   resetPicker('log', log ? { dailyLogId: log.id } : null);
@@ -3236,17 +3277,12 @@ async function processLogText() {
   const btn = $('#btn-parse-log');
   showFormError(form, '');
   setBusy(btn, true, 'Processing…');
-  // Rooms and contractors go by short keys, mapped back to their ids below.
-  const rooms = roomsOn() ? state.flats : [];
   const { data, error } = await db.functions.invoke('parse-log', {
     body: {
       text: raw,
       today: todayISO(),
       trades: MANPOWER_TRADES.map((t) => ({ key: t.key, label: t.label, ka: ka(t.label) })),
       weather: WEATHER_OPTIONS.map((w) => ({ key: w, label: w, ka: ka(w) })),
-      rooms: rooms.map((r, i) => ({ key: `r${i + 1}`, label: `${roomLabel(r)}, floor ${r.floor}` })),
-      contractors: state.contractors.map((c, i) => ({ key: `c${i + 1}`, label: c.name, ka: c.name_ka || undefined })),
-      units: BOQ_UNITS,
     },
   });
   setBusy(btn, false);
@@ -3265,15 +3301,6 @@ async function processLogText() {
     .filter((e) => e.workers > 0));
   f.notes.value = data.notes_ka || '';
   f.notes_en.value = data.notes_en || '';
-  const byKey = (list, prefix, key) => (key ? list[Number(key.slice(prefix.length)) - 1]?.id ?? null : null);
-  renderWorkRows((data.work ?? []).map((w) => ({
-    flat_id: byKey(rooms, 'r', w.room),
-    contractor_id: byKey(state.contractors, 'c', w.contractor),
-    work: w.work_ka || null,
-    work_en: w.work_en || null,
-    quantity: w.quantity,
-    unit: w.unit,
-  })));
   updateManpowerTotal();
   toast('Log processed - check the details, then save.', 'success');
 }
@@ -3306,8 +3333,7 @@ async function saveDailyLog(e) {
   const logId = form.dataset.logId;
 
   showFormError(form, '');
-  setBusy(btn, true, 'Saving…');
-  const { lines: work, untranslated } = await readWorkRows();
+  setBusy(btn, true);
   const { data: saved, error } = logId
     ? await db.from('daily_logs').update(row).eq('id', logId).select('id').single()
     : await db.from('daily_logs').insert(row).select('id').single();
@@ -3328,13 +3354,6 @@ async function saveDailyLog(e) {
     showFormError(form, `The log was saved, but the crew lines were not: ${crewError.message}`);
     return;
   }
-  const workError = await saveWork(saved.id, work);
-  if (workError) {
-    setBusy(btn, false);
-    showFormError(form, `The log was saved, but the work lines were not: ${workError.message}`);
-    return;
-  }
-  if (untranslated) toast(`Work lines saved in one language - Gemini couldn't translate them: ${untranslated}`, 'error');
 
   const photoError = await commitPhotos('log', { dailyLogId: saved.id });
   setBusy(btn, false);
@@ -4467,10 +4486,10 @@ $('#events-table').addEventListener('click', onEventsClick);
 $('#form-task').addEventListener('submit', saveTask);
 $('#form-task').addEventListener('input', onTaskInput);
 $('#form-task').addEventListener('change', onTaskNameChange);
-$('#btn-add-work').addEventListener('click', () => addWorkRow());
-$('#work-rows').addEventListener('click', (e) => {
-  if (e.target.closest('[data-work-remove]')) e.target.closest('.work-row').remove();
-});
+$('#form-room-work').addEventListener('submit', saveRoomWork);
+$('#form-room-work').addEventListener('change', onRoomWorkNameChange);
+$('#room-work-list').addEventListener('click', onRoomWorkListClick);
+$('#btn-room-work-cancel').addEventListener('click', () => resetRoomWorkForm());
 $('#schedule-table').addEventListener('change', onScheduleChange);
 $('#schedule-table').addEventListener('click', onTaskTableClick);
 $('#boq-table').addEventListener('click', onTaskTableClick);

@@ -73,12 +73,11 @@ function crewByContractor(logs) {
 }
 
 // ---------- 1. Query today's data ----------
-async function fetchTodayData(db, projectId, day, { withRooms = false } = {}) {
-  const [logs, delays, rentals, rooms, events, variations] = await Promise.all([
+async function fetchTodayData(db, projectId, day) {
+  const [logs, delays, rentals, work, events, variations] = await Promise.all([
     db.from('daily_logs')
       .select('id, log_date, weather, manpower, notes, notes_en, day_rate, '
-        + 'crew:daily_manpower(trade, workers, contractors(name, name_ka)), '
-        + 'work:work_done(work, work_en, quantity, unit, created_at, contractors(name, name_ka), flats(block, floor, flat_number))')
+        + 'crew:daily_manpower(trade, workers, contractor_id, contractors(name, name_ka))')
       .eq('project_id', projectId)
       .eq('log_date', day.date),
     // Logged that day, plus anything from an earlier day still running on it -
@@ -94,9 +93,12 @@ async function fetchTodayData(db, projectId, day, { withRooms = false } = {}) {
       .eq('project_id', projectId)
       .lte('start_date', day.date)
       .order('start_date'),
-    withRooms
-      ? db.from('flats').select('status').eq('project_id', projectId)
-      : Promise.resolve({ data: [] }),
+    // Work recorded in the rooms on this day.
+    db.from('work_done')
+      .select('work, work_en, quantity, unit, created_at, contractors(name, name_ka), flats(block, floor, flat_number)')
+      .eq('project_id', projectId)
+      .eq('work_date', day.date)
+      .order('created_at'),
     // An incident is the thing nobody should hear about a week late, so it goes
     // in the day's own report. Like a delay, one that is still open comes back
     // every day until it is closed out - the contractor reads it each morning.
@@ -117,24 +119,19 @@ async function fetchTodayData(db, projectId, day, { withRooms = false } = {}) {
       .order('instructed_on'),
   ]);
 
-  const failed = [logs, delays, rentals, rooms, events, variations].find((r) => r.error);
+  const failed = [logs, delays, rentals, work, events, variations].find((r) => r.error);
   if (failed) throw new Error(`Could not load today's data: ${failed.error.message}`);
   // Equipment on hire today: started on or before today and not yet returned.
   const onHire = rentals.data.filter((r) => rentalEnd(r) >= day.date);
   // Today's figures count today's delays; the ones carried over are listed apart.
   const today = delays.data.filter((d) => d.created_at >= day.startISO);
   const carried = delays.data.filter((d) => d.created_at < day.startISO && delayCovers(d, day.date));
-  // A room counts as done once it is finished or handed over.
-  const roomProgress = {
-    total: rooms.data.length,
-    done: rooms.data.filter((r) => r.status === 'finished' || r.status === 'handed_over').length,
-  };
   return {
     logs: logs.data,
     delays: today,
     carriedDelays: carried,
     rentals: onHire,
-    roomProgress,
+    work: work.data,
     events: events.data,
     variations: variations.data,
   };
@@ -192,16 +189,12 @@ const quantityOf = (w) => (w.quantity != null
   ? `${Number(w.quantity).toLocaleString('en-GB', { maximumFractionDigits: 3 }).replace(/,/g, ' ')}${w.unit ? ` ${w.unit}` : ''}`
   : '');
 
-function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, roomProgress, photoUrls = [], manpower, events = [], variations = [] }) {
+function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, work = [], photoUrls = [], manpower, events = [], variations = [] }) {
   const page = document.getElementById('daily-report-template').content.firstElementChild.cloneNode(true);
   const set = (field, value) => { page.querySelector(`[data-field="${field}"]`).textContent = value; };
   const rooms = Boolean(project.has_rooms);
-  // Six facts, two rows of three - or five without the rooms, the last one
-  // then spanning two.
-  if (!rooms) {
-    page.querySelectorAll('[data-rooms-only]').forEach((el) => el.remove());
-    page.querySelector('.pdf-facts').classList.add('pdf-facts-5');
-  }
+  // Columns that only mean something where the site has rooms.
+  if (!rooms) page.querySelectorAll('[data-rooms-only]').forEach((el) => el.remove());
 
   // Site details
   const workers = manpower.reduce((sum, [, n]) => sum + n, 0);
@@ -219,12 +212,12 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
   set('date-en', dateEn(day.date));
   set('weather', weather || bi('Not recorded'));
   set('manpower-total', workers);
+  // Companies with anyone on site; the client's own men are not one.
+  set('contractors-on-site', new Set(logs.flatMap((l) => l.crew ?? [])
+    .filter((c) => c.contractor_id && Number(c.workers) > 0).map((c) => c.contractor_id)).size);
   set('project-day', projectDay(project, day.date));
   set('delay-count', allDelays.length);
   set('delay-days', daysLost.toLocaleString('en-GB').replace(/,/g, '\u00A0'));
-  if (rooms) set('total-flats', roomProgress.total
-    ? `${roomProgress.done} / ${roomProgress.total} (${Math.round((roomProgress.done / roomProgress.total) * 100)}%)`
-    : '-');
 
   // Manpower. Heads only: what the day's labour and hire cost belongs in the
   // project report, as one figure for the whole job. A price standing next to a
@@ -253,8 +246,6 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
   }
 
   // Work done that day, where and by whom (section hidden when none was recorded)
-  const work = logs.flatMap((l) => l.work ?? [])
-    .sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')));
   if (work.length) {
     if (!rooms) page.querySelectorAll('[data-work-room]').forEach((el) => el.remove());
     const workRows = page.querySelector('[data-rows="work"]');
@@ -371,13 +362,13 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
  */
 export async function generateDailyReport({ db, project, date, printable = false, word = false }) {
   const day = dayRange(date);
-  const { logs, delays, carriedDelays, rentals, roomProgress, events, variations } =
-    await fetchTodayData(db, project.id, day, { withRooms: Boolean(project.has_rooms) });
+  const { logs, delays, carriedDelays, rentals, work, events, variations } =
+    await fetchTodayData(db, project.id, day);
   const manpower = mergeManpower(logs);
 
   const photoUrls = await fetchPhotoUrls(db, { logs, delays, carriedDelays });
   const page = buildReport({
-    project, day, logs, delays, carriedDelays, rentals, roomProgress, photoUrls,
+    project, day, logs, delays, carriedDelays, rentals, work, photoUrls,
     manpower, events, variations,
   });
   const root = document.getElementById('pdf-export-root');

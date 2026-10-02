@@ -790,3 +790,27 @@ create policy "authenticated_full_access" on public.work_done
   for all to authenticated using (true) with check (true);
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 25. Work done is entered per room, not through a daily log
+-- A line now belongs to the project and a day of its own; the daily log it
+-- was first written in, if any, is kept but no longer needed.
+-- -------------------------------------------------------------
+alter table public.work_done
+  add column if not exists project_id uuid references public.projects(id) on delete cascade,
+  add column if not exists work_date date;
+
+update public.work_done w
+   set project_id = l.project_id, work_date = l.log_date
+  from public.daily_logs l
+ where l.id = w.daily_log_id and (w.project_id is null or w.work_date is null);
+
+alter table public.work_done
+  alter column project_id set not null,
+  alter column work_date set not null,
+  alter column work_date set default current_date,
+  alter column daily_log_id drop not null;
+
+create index if not exists work_done_project_date_idx on public.work_done (project_id, work_date);
+
+notify pgrst, 'reload schema';
