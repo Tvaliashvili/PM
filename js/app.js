@@ -763,7 +763,7 @@ function renderRoomWork() {
   }
   list.innerHTML = `
     <table class="data-table">
-      <thead><tr><th>Date</th><th>Work</th><th>Contractor</th><th class="num">Quantity</th><th></th></tr></thead>
+      <thead><tr><th>Date measured</th><th>Work</th><th>Contractor</th><th class="num">Quantity</th><th></th></tr></thead>
       <tbody>
         ${work.map((w) => `
           <tr>

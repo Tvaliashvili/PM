@@ -837,6 +837,8 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
   white-space: nowrap;
 }
 .rpt th { white-space: normal; }
+/* A heading row inside a table: the room the lines under it belong to. */
+.rpt tr.rpt-group-row td { background: #f1f5f9; font-weight: 700; color: #0f172a; }
 .rpt-ok   { background: #d1fae5; color: #047857; }
 .rpt-bad   { background: #ffe4e6; color: #be123c; }
 .rpt-warn  { background: #fef3c7; color: #b45309; }

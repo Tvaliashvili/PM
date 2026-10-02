@@ -1041,18 +1041,17 @@ export async function buildProjectReport({
       </section>`;
   }
 
-  // ---------- Work done: each kind of work added up over every day and room ----------
+  // ---------- Work done: room by room, each kind of work added up ----------
   // 200 m² of gypsum one day and 300 m² the next reads as 500 m². Work is the
   // same work when it is written the same way and measured in the same unit;
-  // the room form suggests names already used, so it usually is.
-  const workKey = (w) => `${String(w.work || w.work_en || '').trim().toLowerCase().replace(/\s+/g, ' ')}|${w.unit ?? ''}`;
+  // the room form suggests names already used, so it usually is. The date is
+  // the last time it was measured.
+  const workKey = (w) => `${w.flat_id ?? ''}|${String(w.work || w.work_en || '').trim().toLowerCase().replace(/\s+/g, ' ')}|${w.unit ?? ''}`;
   const workGroups = new Map();
   for (const w of [...work].sort((a, b) => a.work_date.localeCompare(b.work_date))) {
     const key = workKey(w);
     if (!workGroups.has(key)) {
-      workGroups.set(key, {
-        unit: w.unit ?? '', qty: 0, entries: 0, rooms: new Set(), byContractor: new Map(), first: w.work_date,
-      });
+      workGroups.set(key, { flatId: w.flat_id ?? null, unit: w.unit ?? '', qty: 0, entries: 0, byContractor: new Map() });
     }
     const g = workGroups.get(key);
     // The latest spelling stands for the group.
@@ -1062,12 +1061,23 @@ export async function buildProjectReport({
     g.last = w.work_date;
     const q = Number(w.quantity) || 0;
     g.qty += q;
-    if (w.flat_id) g.rooms.add(w.flat_id);
     const who = w.contractor_id ?? '';
     g.byContractor.set(who, (g.byContractor.get(who) ?? 0) + q);
   }
-  const groups = [...workGroups.values()].sort((a, b) => b.last.localeCompare(a.last) || b.entries - a.entries);
-  const period = (g) => (g.first === g.last ? d(g.first) : `${d(g.first)} – ${d(g.last)}`);
+  // Rooms in the order of the room list (block, floor, number); work outside one last.
+  const roomOrder = new Map(units.map((u, i) => [u.id, i]));
+  const workRooms = new Map();
+  for (const g of workGroups.values()) {
+    if (!workRooms.has(g.flatId)) workRooms.set(g.flatId, []);
+    workRooms.get(g.flatId).push(g);
+  }
+  const roomsInOrder = [...workRooms].sort((a, b) => (roomOrder.get(a[0]) ?? 1e9) - (roomOrder.get(b[0]) ?? 1e9));
+  const roomName = (id) => {
+    const u = units.find((x) => x.id === id);
+    if (!u) return L('ოთახის გარეშე', 'Not in a room');
+    return [u.block ? L(`ბლოკი ${u.block}`, `Block ${u.block}`) : '', L(`ოთახი ${u.flat_number}`, `Room ${u.flat_number}`),
+      `<span class="rpt-muted">${L(`${u.floor} სართ.`, `floor ${u.floor}`)}</span>`].filter(Boolean).join(' · ');
+  };
   const qtyOf = (q, unit) => (q ? `${num.format(q)}${unit ? ` ${esc(unit)}` : ''}` : '');
   // Who did it - with each one's share when more than one contractor did the same work.
   const whoDid = (g) => {
@@ -1078,29 +1088,29 @@ export async function buildProjectReport({
       .map(([id, q]) => `${esc(nameOf(id))}${q ? ` <span class="rpt-muted">${qtyOf(q, g.unit)}</span>` : ''}`)
       .join('<br>');
   };
-  const workSection = !groups.length ? '' : `
-    <section class="rpt-section rpt-avoid">
-      ${H('შესრულებული სამუშაოები', 'Work Done', `${work.length} ${L('ჩანაწერი', 'entries')}`)}
+  const workSection = !workRooms.size ? '' : `
+    <section class="rpt-section">
+      ${H('შესრულებული სამუშაოები', 'Work Done', `${workRooms.size} ${L('ოთახი', 'rooms')}`)}
       <table class="rpt-compact">
         <thead>
           <tr>
             <th>${L('სამუშაო', 'Work')}</th>
             <th class="num">${L('სულ', 'Total')}</th>
-            <th class="num">${L('ოთახი', 'Rooms')}</th>
             <th>${L('კონტრაქტორი', 'Contractor')}</th>
-            <th>${L('პერიოდი', 'Period')}</th>
+            <th>${L('გაზომვის თარიღი', 'Date measured')}</th>
           </tr>
         </thead>
-        <tbody>
-          ${groups.map((g) => `
-            <tr>
-              <td class="rpt-prose">${biText(g.ka, g.en !== g.ka ? g.en : '')}</td>
-              <td class="num"><b>${qtyOf(g.qty, g.unit) || '-'}</b></td>
-              <td class="num">${g.rooms.size || '-'}</td>
-              <td>${whoDid(g)}</td>
-              <td>${period(g)}</td>
-            </tr>`).join('')}
-        </tbody>
+        ${roomsInOrder.map(([flatId, list]) => `
+          <tbody class="rpt-avoid">
+            <tr class="rpt-group-row"><td colspan="4">${roomName(flatId)}</td></tr>
+            ${list.sort((a, b) => b.last.localeCompare(a.last)).map((g) => `
+              <tr>
+                <td class="rpt-prose">${biText(g.ka, g.en !== g.ka ? g.en : '')}</td>
+                <td class="num"><b>${qtyOf(g.qty, g.unit) || '-'}</b></td>
+                <td>${whoDid(g)}</td>
+                <td>${d(g.last)}</td>
+              </tr>`).join('')}
+          </tbody>`).join('')}
       </table>
     </section>`;
 
