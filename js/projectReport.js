@@ -1151,11 +1151,12 @@ export async function buildProjectReport({
             </tr>`).join('')}
         </tbody>
       </table>`;
+  // Only the PDF and Word: in the interactive report the same lines are in
+  // each room's pop-up, so the table would only repeat them.
   const workSection = !totals.size ? '' : `
-    <section class="rpt-section rpt-avoid">
+    <section class="rpt-section rpt-avoid${rooms ? ' rpt-print-only' : ''}">
       ${H('შესრულებული სამუშაოები', 'Work Done', `${roomsWithWork.size} ${L('ოთახში', 'rooms')}`)}
       ${workTable(totals.values(), { roomsColumn: rooms })}
-      ${rooms ? `<p class="rpt-foot-note rpt-html-only">${L('ოთახის მიხედვით - დააჭირეთ ოთახს ზემოთ, ოთახების სქემაზე.', 'Room by room - click a room on the room map above.')}</p>` : ''}
     </section>`;
 
   // Each room's pop-up in the interactive report: its details and its work.
@@ -1474,8 +1475,12 @@ async function saveInteractive(page, project, fileName) {
 <style>${css}</style>
 <style>
   body { margin: 0; padding: 24px 12px; background: #eef2f6; font-family: Inter, 'Noto Sans Georgian', system-ui, sans-serif; }
-  .pdf-page.rpt { margin: 0 auto; box-shadow: 0 2px 12px rgba(15, 23, 42, 0.12); }
+  /* The sheet with its own margins: the PDF adds them when it prints, a browser does not. */
+  .pdf-page.rpt { box-sizing: content-box; margin: 0 auto; padding: 36px 40px 44px; border-radius: 6px;
+    box-shadow: 0 2px 12px rgba(15, 23, 42, 0.12); }
+  @media (max-width: 820px) { body { padding: 0; } .pdf-page.rpt { padding: 20px 16px 28px; border-radius: 0; } }
   .rpt .rpt-html-only { display: block; }
+  .rpt .rpt-print-only { display: none; }
   .rpt [data-room] { cursor: pointer; }
   .rpt [data-room]:hover { outline: 2px solid #2563eb; outline-offset: 1px; }
   dialog.rpt-pop { width: min(46rem, calc(100vw - 2rem)); padding: 0; border: 1px solid #e2e8f0; border-radius: 8px;
@@ -1504,6 +1509,16 @@ ${page.outerHTML}
   });
   pop.querySelector('.rpt-pop-close').addEventListener('click', () => pop.close());
   pop.addEventListener('click', (e) => { if (e.target === pop) pop.close(); });
+  // A phone is narrower than the sheet: shrink it to fit rather than scroll sideways.
+  const sheet = document.querySelector('body > .pdf-page.rpt');
+  const fit = () => {
+    sheet.style.zoom = '';
+    const room = document.documentElement.clientWidth;
+    const width = sheet.offsetWidth;
+    if (width > room) sheet.style.zoom = String(room / width);
+  };
+  addEventListener('resize', fit);
+  fit();
 </script>
 </body>
 </html>`;
