@@ -1174,7 +1174,7 @@ export async function buildProjectReport({
       </p>
       ${u.notes ? `<p class="rpt-pop-notes">${esc(u.notes)}</p>` : ''}
       ${list.length ? workTable(list, { roomsColumn: false })
-        : `<p class="rpt-none">${L('ამ ოთახში სამუშაო ჯერ არ ჩაწერილა', 'No work recorded in this room yet')}</p>`}`;
+        : `<p class="rpt-none">${L('ამ ოთახში სამუშაოები ჯერ არ არის აღწერილი', 'No work recorded in this room yet')}</p>`}`;
   }
 
   // ---------- Site activity: manpower chart + latest logs ----------
