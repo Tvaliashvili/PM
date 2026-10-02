@@ -1038,7 +1038,9 @@ async function saveTask(e) {
   }
 
   showFormError(form, '');
-  setBusy(btn, true);
+  setBusy(btn, true, unchanged ? 'Saving…' : 'Translating…');
+  const untranslated = unchanged ? '' : await translateNames([row]);
+  btn.textContent = 'Saving…';
   const { error } = id
     ? await db.from('schedule_tasks').update(row).eq('id', id)
     : await db.from('schedule_tasks').insert({ ...row, project_id: state.projectId });
@@ -1050,8 +1052,37 @@ async function saveTask(e) {
   }
 
   closeModal('modal-task');
-  toast(id ? 'Item updated.' : 'Item added.', 'success');
+  if (untranslated) {
+    toast(`${id ? 'Item updated' : 'Item added'} in one language - Gemini couldn't translate it: ${untranslated}`, 'error');
+  } else {
+    toast(id ? 'Item updated.' : 'Item added.', 'success');
+  }
   loadSchedule(state.projectId);
+}
+
+/**
+ * Fills in the missing language of names written in one: rows of
+ * { name, name_ka }, changed in place. Georgian-only rows have name ===
+ * name_ka, English-only ones no name_ka; the text that was written is kept
+ * exactly, and only the other language is added. Returns an error message, or
+ * '' - a row Gemini didn't reach keeps the one language it has, so it can
+ * still be saved.
+ */
+async function translateNames(rows) {
+  const todo = rows.filter((r) => r.name && (!r.name_ka || r.name === r.name_ka));
+  for (let i = 0; i < todo.length; i += 100) {
+    const chunk = todo.slice(i, i + 100);
+    const { data, error } = await db.functions.invoke('translate-names', {
+      body: { names: chunk.map((r) => r.name_ka || r.name) },
+    });
+    if (error) return functionErrorMessage(error);
+    chunk.forEach((r, j) => {
+      const { ka, en } = data.items[j];
+      if (r.name_ka) r.name = en;
+      else r.name_ka = ka;
+    });
+  }
+  return '';
 }
 
 async function deleteTask(taskId) {
@@ -3715,7 +3746,9 @@ async function saveImport(e) {
   }));
 
   showFormError(form, '');
-  setBusy(btn, true, 'Importing…');
+  setBusy(btn, true, inserts.length ? 'Translating…' : 'Importing…');
+  const untranslated = await translateNames(inserts);
+  btn.textContent = 'Importing…';
   const results = await Promise.all([
     inserts.length ? db.from('schedule_tasks').insert(inserts) : {},
     updates.length ? db.from('schedule_tasks').upsert(updates, { onConflict: 'id' }) : {},
@@ -3731,7 +3764,9 @@ async function saveImport(e) {
   toast([
     inserts.length ? `${inserts.length} activit${inserts.length === 1 ? 'y' : 'ies'} added` : '',
     updates.length ? `${updates.length} rescheduled` : '',
-  ].filter(Boolean).join(', ') + '.', 'success');
+  ].filter(Boolean).join(', ') + (untranslated
+    ? ` - in one language only, Gemini couldn't translate them: ${untranslated}`
+    : '.'), untranslated ? 'error' : 'success');
   loadSchedule(state.projectId);
 }
 
