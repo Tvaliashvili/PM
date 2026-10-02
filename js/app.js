@@ -4885,7 +4885,7 @@ async function exportProjectReport(e) {
   e.preventDefault();
   if (exporting || !requireProject()) return;
   const form = e.currentTarget;
-  const btn = e.submitter ?? $('[value=pdf]', form);
+  const btn = e.submitter ?? $('[value=html]', form); // Enter: the interactive report
   // Word: its pages are Word's to lay out, and can be moved by hand.
   const word = btn.value === 'word';
   const html = btn.value === 'html'; // one web page, with a pop-up for each room
