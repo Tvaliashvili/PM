@@ -124,7 +124,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-daily-print', '#btn-report-project', '#btn-report-project-print', '#btn-add-unit', '#btn-add-task', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental', '#btn-add-material',
+  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-daily-print', '#btn-report-project', '#btn-report-project-print', '#btn-add-unit', '#btn-add-task', '#btn-import-mpp', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental', '#btn-add-material',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -3468,6 +3468,154 @@ async function onEventsClick(e) {
  * this is measured against it, so re-setting it throws away the drift recorded
  * so far - which is why it asks twice the second time.
  */
+// =============================================================
+// Import from MS Project
+// .mpp is a closed binary format nothing in the browser reads reliably, so the
+// file comes in as MS Project's own XML (File → Save As → XML), which carries
+// the same tasks and dates.
+// =============================================================
+let importRows = [];
+
+const isGeorgian = (text) => /[Ⴀ-ჿ]/.test(text);
+const nameKey = (text) => String(text ?? '').trim().toLowerCase();
+
+/** Tasks in an MS Project XML file: { name, start, finish, summary, milestone, level }. */
+function parseMsProject(xml) {
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const root = doc.documentElement;
+  if (doc.querySelector('parsererror') || root.localName !== 'Project') {
+    throw new Error('This is not an MS Project XML file.');
+  }
+  const kids = (el, name) => [...el.children].filter((c) => c.localName === name);
+  const text = (el, name) => kids(el, name)[0]?.textContent.trim() ?? '';
+  const tasksEl = kids(root, 'Tasks')[0];
+  return (tasksEl ? kids(tasksEl, 'Task') : [])
+    .filter((t) => text(t, 'UID') !== '0' && text(t, 'IsNull') !== '1' && text(t, 'Active') !== '0')
+    .map((t) => {
+      const start = text(t, 'Start').slice(0, 10);
+      const finish = text(t, 'Finish').slice(0, 10);
+      return {
+        name: text(t, 'Name'),
+        start,
+        finish: finish < start ? start : finish,
+        summary: text(t, 'Summary') === '1',
+        milestone: text(t, 'Milestone') === '1',
+        level: Math.max(1, Number(text(t, 'OutlineLevel')) || 1),
+      };
+    })
+    .filter((t) => t.name && /^\d{4}-\d{2}-\d{2}$/.test(t.start) && /^\d{4}-\d{2}-\d{2}$/.test(t.finish));
+}
+
+async function onImportFile(e) {
+  const file = e.target.files[0];
+  e.target.value = ''; // picking the same file again still fires
+  if (!file) return;
+  if (/\.mpp$/i.test(file.name)) {
+    toast('An .mpp file can\'t be read directly. In MS Project use File → Save As → XML, then import that file.', 'error');
+    return;
+  }
+  let tasks;
+  try {
+    tasks = parseMsProject(await file.text());
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
+  }
+  if (!tasks.length) {
+    toast('No tasks with dates found in this file.', 'error');
+    return;
+  }
+
+  const existing = new Map();
+  for (const t of state.tasks) {
+    existing.set(nameKey(t.name), t);
+    if (t.name_ka) existing.set(nameKey(t.name_ka), t);
+  }
+  importRows = tasks.map((t) => {
+    const match = existing.get(nameKey(t.name));
+    const same = match && match.planned_start === t.start && match.planned_finish === t.finish;
+    return { ...t, match, same, checked: !t.summary && !t.milestone && !same };
+  });
+
+  const form = $('#form-import');
+  $('#import-title').textContent = `Import from MS Project - ${file.name}`;
+  $('#import-list').innerHTML = `
+    <table class="data-table">
+      <thead><tr><th></th><th>Activity</th><th>Start</th><th>Finish</th><th>On the timetable</th></tr></thead>
+      <tbody>
+        ${importRows.map((r, i) => `
+          <tr>
+            <td><input type="checkbox" data-import-row="${i}"${r.checked ? ' checked' : ''}${r.same ? ' disabled' : ''}></td>
+            <td style="padding-left:${0.75 + (r.level - 1) * 1}rem" class="${r.summary ? 'font-semibold text-white' : ''}">
+              ${esc(r.name)}${r.summary ? ' <span class="text-xs text-slate-500">summary</span>' : ''}${r.milestone ? ' <span class="text-xs text-slate-500">milestone</span>' : ''}
+            </td>
+            <td class="whitespace-nowrap">${esc(formatDate(r.start))}</td>
+            <td class="whitespace-nowrap">${esc(formatDate(r.finish))}</td>
+            <td class="whitespace-nowrap text-xs">${!r.match ? '<span class="text-emerald-400">New</span>'
+              : r.same ? '<span class="text-slate-500">Already there, same dates</span>'
+              : `<span class="text-amber-400">Dates change</span> <span class="text-slate-500">from ${esc(formatDate(r.match.planned_start))} → ${esc(formatDate(r.match.planned_finish))}</span>`}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+  showFormError(form, '');
+  updateImportCount();
+  openModal('modal-import');
+}
+
+function updateImportCount() {
+  for (const box of $$('[data-import-row]')) importRows[box.dataset.importRow].checked = box.checked;
+  const picked = importRows.filter((r) => r.checked);
+  const added = picked.filter((r) => !r.match).length;
+  const moved = picked.length - added;
+  $('#import-summary').textContent = `${importRows.length} tasks in the file. Ticked: ${added} new`
+    + `${moved ? `, ${moved} with new dates` : ''}.`;
+  $('[type=submit]', $('#form-import')).disabled = !picked.length;
+}
+
+async function saveImport(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn = $('[type=submit]', form);
+  const picked = importRows.filter((r) => r.checked);
+  if (!picked.length) return;
+
+  const inserts = picked.filter((r) => !r.match).map((r) => ({
+    project_id: state.projectId,
+    name: r.name,
+    name_ka: isGeorgian(r.name) ? r.name : null,
+    planned_start: r.start,
+    planned_finish: r.finish,
+  }));
+  // Every not-null column travels with an upsert, unchanged (see setBaseline).
+  const updates = picked.filter((r) => r.match).map((r) => ({
+    id: r.match.id,
+    project_id: state.projectId,
+    name: r.match.name,
+    planned_start: r.start,
+    planned_finish: r.finish,
+  }));
+
+  showFormError(form, '');
+  setBusy(btn, true, 'Importing…');
+  const results = await Promise.all([
+    inserts.length ? db.from('schedule_tasks').insert(inserts) : {},
+    updates.length ? db.from('schedule_tasks').upsert(updates, { onConflict: 'id' }) : {},
+  ]);
+  setBusy(btn, false);
+  const failed = results.find((r) => r.error);
+  if (failed) {
+    showFormError(form, failed.error.message);
+    loadSchedule(state.projectId);
+    return;
+  }
+  closeModal('modal-import');
+  toast([
+    inserts.length ? `${inserts.length} activit${inserts.length === 1 ? 'y' : 'ies'} added` : '',
+    updates.length ? `${updates.length} rescheduled` : '',
+  ].filter(Boolean).join(', ') + '.', 'success');
+  loadSchedule(state.projectId);
+}
+
 async function setBaseline() {
   if (!requireProject()) return;
   const project = currentProject();
@@ -3820,6 +3968,10 @@ $('#btn-add-unit').addEventListener('click', () => openUnitModal(null));
 $('#form-unit').addEventListener('submit', saveUnit);
 $('#btn-add-task').addEventListener('click', () => openTaskModal(null));
 $('#btn-baseline').addEventListener('click', setBaseline);
+$('#btn-import-mpp').addEventListener('click', () => requireProject() && $('#input-import-mpp').click());
+$('#input-import-mpp').addEventListener('change', onImportFile);
+$('#form-import').addEventListener('submit', saveImport);
+$('#form-import').addEventListener('change', updateImportCount);
 $('#btn-new-variation').addEventListener('click', () => openVariationModal(null));
 $('#form-variation').addEventListener('submit', saveVariation);
 $('#variation-status').addEventListener('change', syncVariationStatus);

@@ -230,6 +230,10 @@
               </p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
+              <button id="btn-import-mpp" class="btn btn-secondary" title="Add activities from an MS Project file saved as XML">
+                Import MS Project
+              </button>
+              <input id="input-import-mpp" type="file" accept=".xml,.mpp" class="hidden">
               <button id="btn-baseline" class="btn btn-secondary" title="Freeze today's planned dates as the approved programme">
                 Set Baseline
               </button>
@@ -1110,6 +1114,29 @@
   </dialog>
 
   <!-- Equipment rental (add / edit) -->
+  <!-- Activities from an MS Project file -->
+  <dialog id="modal-import" class="modal" aria-labelledby="import-title">
+    <form id="form-import">
+      <div class="modal-header">
+        <h2 id="import-title">Import from MS Project</h2>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body space-y-3">
+        <p id="import-summary" class="text-sm text-slate-400"></p>
+        <div id="import-list" class="overflow-x-auto max-h-[55vh] overflow-y-auto"></div>
+        <p class="text-xs text-slate-500">
+          Activities already on the timetable are matched by name and only their dates change. Summary rows and
+          milestones are left unticked. Contractors and budgets are set on the timetable afterwards.
+        </p>
+        <p class="form-error hidden" data-error></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Import</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Material bought by the client (add / edit) -->
   <dialog id="modal-material" class="modal modal-sm" aria-labelledby="material-title">
     <form id="form-material">
