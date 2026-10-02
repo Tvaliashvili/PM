@@ -466,6 +466,7 @@ html, body { background: var(--ink-950); }
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
 }
 .modal-sm { width: min(24rem, calc(100vw - 2rem)); }
+.modal-wide { width: min(72rem, calc(100vw - 2rem)); }
 .modal::backdrop { background: rgba(0, 0, 0, 0.65); backdrop-filter: blur(2px); }
 /* Sign-in: solid backdrop so nothing behind it shows */
 #modal-login::backdrop { background: #0b0f14; backdrop-filter: none; } /* literal: older browsers don't pass CSS variables into ::backdrop */
