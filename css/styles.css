@@ -1122,10 +1122,10 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
    along the top of the digits, where it reads as an overline. */
 /* A box of its own, so the line spans the date and not the whole label - and
    specific enough to beat .rpt-g-label span, which makes every span a block. */
-.rpt span.rpt-was { position: relative; display: inline-block; font-size: inherit; color: #94a3b8; }
+.rpt span.rpt-was { position: relative; display: inline-block; font-size: inherit; color: #0f172a; }
 .rpt span.rpt-was::after {
   content: ''; position: absolute; left: 0; right: 0; top: 52%;
-  border-top: 1px solid #94a3b8;
+  border-top: 1px solid #0f172a;
 }
 .rpt-g-pct { flex: 0 0 108px; padding: 5px 8px 5px 4px; text-align: right; }
 .rpt-g-pct strong { display: block; font-size: 11px; }
