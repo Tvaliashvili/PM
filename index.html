@@ -257,10 +257,19 @@
               <h1 class="text-xl font-semibold text-white">Rooms</h1>
               <p class="text-sm text-slate-500">Each room with its number, type, area and status.</p>
             </div>
-            <button id="btn-add-unit" class="btn btn-primary">
-              <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
-              Add Room
-            </button>
+            <div class="grid grid-cols-2 gap-2 shrink-0 sm:flex sm:items-center">
+              <button id="btn-rooms-template" class="btn btn-secondary" title="Excel sheet with the rooms in it - fill it in, then Import">
+                Excel Template
+              </button>
+              <button id="btn-rooms-import" class="btn btn-secondary" title="Add or update rooms from the Excel template">
+                Import
+              </button>
+              <input id="input-rooms-import" type="file" accept=".xlsx,.xls,.csv" class="hidden">
+              <button id="btn-add-unit" class="btn btn-primary col-span-2">
+                <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
+                Add Room
+              </button>
+            </div>
           </div>
           <div class="space-y-4">
             <div id="units-summary" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
@@ -1206,6 +1215,29 @@
       <div class="modal-footer">
         <button type="submit" value="word" class="btn btn-secondary"><span>Word</span></button>
         <button type="submit" value="pdf" class="btn btn-primary"><span>PDF</span></button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Rooms from the Excel template -->
+  <dialog id="modal-rooms-import" class="modal modal-wide" aria-labelledby="rooms-import-title">
+    <form id="form-rooms-import">
+      <div class="modal-header">
+        <h2 id="rooms-import-title">Import rooms</h2>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body space-y-3">
+        <p id="rooms-import-summary" class="text-sm text-slate-400"></p>
+        <div id="rooms-import-list" class="overflow-x-auto"></div>
+        <p class="text-xs text-slate-500">
+          A room already in the list (same block and number) is updated; an empty cell leaves that detail as it is.
+          Rooms are never deleted by an import.
+        </p>
+        <p class="form-error hidden" data-error></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Import</button>
       </div>
     </form>
   </dialog>

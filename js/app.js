@@ -125,7 +125,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-project', '#btn-add-unit', '#btn-add-task', '#btn-import-mpp', '#btn-import-template', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental', '#btn-add-material',
+  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-project', '#btn-add-unit', '#btn-rooms-template', '#btn-rooms-import', '#btn-add-task', '#btn-import-mpp', '#btn-import-template', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental', '#btn-add-material',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -4137,6 +4137,218 @@ async function saveImport(e) {
   loadSchedule(state.projectId);
 }
 
+// =============================================================
+// Rooms from an Excel sheet: the template comes filled with the rooms as they
+// stand, and a room already there (same block and number) is updated.
+// =============================================================
+const ROOM_HEADERS = ['Block', 'Floor', 'Room no.', 'Type', 'Area m²', 'Status', 'Notes'];
+let roomImportRows = [];
+
+async function downloadRoomsTemplate() {
+  if (!requireProject()) return;
+  let XLSX;
+  try {
+    XLSX = await loadSheetJs();
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
+  }
+  const rows = state.flats.map((u) => [
+    u.block || '', u.floor, u.flat_number, u.unit_type || '',
+    u.area_m2 != null ? Number(u.area_m2) : '', UNIT_STATUSES[u.status] ?? '', u.notes || '',
+  ]);
+  const sheet = XLSX.utils.aoa_to_sheet([ROOM_HEADERS, ...rows]);
+  sheet['!cols'] = [{ wch: 8 }, { wch: 7 }, { wch: 10 }, { wch: 14 }, { wch: 10 }, { wch: 13 }, { wch: 40 }];
+  const help = XLSX.utils.aoa_to_sheet([
+    ['How to fill in the Rooms sheet'],
+    ['One room per row. Floor and Room no. are needed; everything else can stay empty.'],
+    ['Block: only if the building has more than one (A, B…). Floor: a whole number - 0 is the ground floor, -1 a basement.'],
+    [`Type, one of: ${UNIT_TYPES.join(', ')}`],
+    [`Status, one of: ${Object.values(UNIT_STATUSES).join(', ')} - empty means Not started.`],
+    ['A room already in the app (same block and number) is updated; an empty cell leaves that detail as it is.'],
+    ['Save, then use Import on the Rooms page.'],
+  ]);
+  help['!cols'] = [{ wch: 110 }];
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, 'Rooms');
+  XLSX.utils.book_append_sheet(book, help, 'How to');
+  const project = currentProject();
+  XLSX.writeFile(book, `${(project?.name || 'Project').replace(/[\\/:*?"<>|]+/g, ' ').trim()} - rooms.xlsx`);
+}
+
+/** A type or status as written in the sheet - English or Georgian, any case - to the app's own. */
+function pickFrom(text, options) {
+  const t = String(text ?? '').trim().toLowerCase();
+  if (!t) return null;
+  return options.find((o) => [o.value, o.label, ka(o.label)].some((x) => String(x).toLowerCase() === t))?.value;
+}
+
+async function parseRoomsWorkbook(buffer) {
+  const XLSX = await loadSheetJs();
+  const book = XLSX.read(buffer, { type: 'array' });
+  const grid = XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], { header: 1, raw: true, defval: '' });
+  const heads = (grid[0] ?? []).map((h) => String(h).toLowerCase());
+  const col = (re) => heads.findIndex((h) => re.test(h));
+  const at = {
+    block: col(/block|ბლოკ/), floor: col(/floor|სართ/), number: col(/room|no\b|number|ოთახ|ნომ/),
+    type: col(/type|ტიპ/), area: col(/area|m²|m2|ფართ/), status: col(/status|სტატ/), notes: col(/note|შენიშ/),
+  };
+  const hasHeader = at.floor >= 0 && at.number >= 0;
+  if (!hasHeader) Object.assign(at, { block: 0, floor: 1, number: 2, type: 3, area: 4, status: 5, notes: 6 });
+  const cell = (row, i) => (i >= 0 ? String(row[i] ?? '').trim() : '');
+  const types = UNIT_TYPES.map((t) => ({ value: t, label: t }));
+  const statuses = Object.entries(UNIT_STATUSES).map(([value, label]) => ({ value, label }));
+
+  return grid.slice(hasHeader ? 1 : 0).map((row) => {
+    const number = cell(row, at.number);
+    const floorText = cell(row, at.floor);
+    if (!number && !floorText) return null;
+    const problems = [];
+    const floor = Number(floorText);
+    if (!number) problems.push('no room number');
+    if (!floorText || !Number.isInteger(floor) || floor < -5 || floor > 80) problems.push('floor must be a whole number');
+    const typeText = cell(row, at.type);
+    const unitType = pickFrom(typeText, types);
+    const statusText = cell(row, at.status);
+    const status = pickFrom(statusText, statuses);
+    const areaText = cell(row, at.area).replace(',', '.');
+    const area = areaText === '' ? null : Number(areaText);
+    if (areaText !== '' && !(area >= 0)) problems.push('area is not a number');
+    return {
+      block: cell(row, at.block),
+      floor,
+      flat_number: number,
+      // An empty cell is null: on a room already there, it leaves that detail alone.
+      unit_type: typeText ? unitType ?? undefined : null,
+      area_m2: areaText === '' ? null : area,
+      status: statusText ? status ?? undefined : null,
+      notes: cell(row, at.notes) || null,
+      notes_ignored: [typeText && !unitType ? `type "${typeText}"` : '', statusText && !status ? `status "${statusText}"` : '']
+        .filter(Boolean),
+      problems,
+    };
+  }).filter(Boolean);
+}
+
+const roomKey = (block, number) => `${String(block ?? '').trim().toLowerCase()}|${String(number ?? '').trim().toLowerCase()}`;
+
+async function onRoomsImportFile(e) {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  let rows;
+  try {
+    rows = await parseRoomsWorkbook(await file.arrayBuffer());
+  } catch (err) {
+    toast(err.message || 'Could not read this file.', 'error');
+    return;
+  }
+  if (!rows.length) {
+    toast('No rooms found in this file.', 'error');
+    return;
+  }
+
+  const existing = new Map(state.flats.map((u) => [roomKey(u.block, u.flat_number), u]));
+  const seen = new Set();
+  roomImportRows = rows.map((r) => {
+    const key = roomKey(r.block, r.flat_number);
+    if (seen.has(key)) r.problems.push('listed twice in the file');
+    seen.add(key);
+    const match = existing.get(key);
+    // What would change on a room already there - only what the sheet fills in.
+    const changes = {};
+    if (match) {
+      if (r.floor !== match.floor && Number.isInteger(r.floor)) changes.floor = r.floor;
+      for (const field of ['unit_type', 'area_m2', 'status', 'notes']) {
+        const v = r[field];
+        if (v != null && String(v) !== String(match[field] ?? '')) changes[field] = v;
+      }
+    }
+    const bad = r.problems.length > 0;
+    const same = match && !Object.keys(changes).length;
+    return { ...r, match, changes, bad, same, checked: !bad && !same };
+  });
+
+  const label = { floor: 'floor', unit_type: 'type', area_m2: 'area', status: 'status', notes: 'notes' };
+  $('#rooms-import-title').textContent = `Import rooms - ${file.name}`;
+  $('#rooms-import-list').innerHTML = `
+    <table class="data-table">
+      <thead><tr><th></th><th>Room</th><th>Floor</th><th>Type</th><th class="num">Area m²</th><th>Status</th><th>In the app</th></tr></thead>
+      <tbody>
+        ${roomImportRows.map((r, i) => `
+          <tr>
+            <td><input type="checkbox" data-room-import="${i}"${r.checked ? ' checked' : ''}${r.bad || r.same ? ' disabled' : ''}></td>
+            <td class="text-white whitespace-nowrap">${esc(roomLabel(r))}</td>
+            <td>${Number.isInteger(r.floor) ? esc(floorLabel(r.floor)) : '<span class="variance-over">?</span>'}</td>
+            <td>${esc(r.unit_type ?? '') || '<span class="text-slate-500">-</span>'}</td>
+            <td class="num">${r.area_m2 != null ? esc(String(r.area_m2)) : '-'}</td>
+            <td>${r.status ? esc(UNIT_STATUSES[r.status]) : '<span class="text-slate-500">-</span>'}</td>
+            <td class="text-xs">${r.bad ? `<span class="variance-over">${esc(r.problems.join(', '))} - skipped</span>`
+              : !r.match ? '<span class="text-emerald-400">New</span>'
+              : r.same ? '<span class="text-slate-500">Already there, nothing to change</span>'
+              : `<span class="text-amber-400">Updates ${esc(Object.keys(r.changes).map((k) => label[k]).join(', '))}</span>`}
+              ${r.notes_ignored.length ? `<span class="block text-slate-500">${esc(r.notes_ignored.join(', '))} not recognised - left as is</span>` : ''}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+  showFormError($('#form-rooms-import'), '');
+  updateRoomsImportCount();
+  openModal('modal-rooms-import');
+}
+
+function updateRoomsImportCount() {
+  for (const box of $$('[data-room-import]')) roomImportRows[box.dataset.roomImport].checked = box.checked;
+  const picked = roomImportRows.filter((r) => r.checked);
+  const added = picked.filter((r) => !r.match).length;
+  const bad = roomImportRows.filter((r) => r.bad).length;
+  $('#rooms-import-summary').textContent = `${roomImportRows.length} rooms in the file. Ticked: ${added} new`
+    + `${picked.length - added ? `, ${picked.length - added} to update` : ''}.`
+    + `${bad ? ` ${bad} skipped - see the red notes.` : ''}`;
+  $('[type=submit]', $('#form-rooms-import')).disabled = !picked.length;
+}
+
+async function saveRoomsImport(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn = $('[type=submit]', form);
+  const picked = roomImportRows.filter((r) => r.checked);
+  if (!picked.length) return;
+  const projectId = state.projectId;
+
+  const inserts = picked.filter((r) => !r.match).map((r) => ({
+    project_id: projectId,
+    block: r.block,
+    floor: r.floor,
+    flat_number: r.flat_number,
+    unit_type: r.unit_type ?? null,
+    area_m2: r.area_m2,
+    status: r.status ?? 'not_started',
+    notes: r.notes,
+    stage_status: {},
+  }));
+  const updates = picked.filter((r) => r.match);
+
+  showFormError(form, '');
+  setBusy(btn, true, 'Importing…');
+  const results = await Promise.all([
+    inserts.length ? db.from('flats').insert(inserts) : {},
+    ...updates.map((r) => db.from('flats').update(r.changes).eq('id', r.match.id)),
+  ]);
+  setBusy(btn, false);
+  const failed = results.find((r) => r.error);
+  await syncFlatCount(projectId);
+  if (projectId === state.projectId) loadUnits(projectId);
+  if (failed) {
+    showFormError(form, failed.error.message);
+    return;
+  }
+  closeModal('modal-rooms-import');
+  toast([
+    inserts.length ? `${inserts.length} room${inserts.length === 1 ? '' : 's'} added` : '',
+    updates.length ? `${updates.length} updated` : '',
+  ].filter(Boolean).join(', ') + '.', 'success');
+}
+
 // ---------- Baseline ----------
 /**
  * Freezes today's planned dates as the approved programme. Everything after
@@ -4521,6 +4733,11 @@ $('#equipment-options').innerHTML = EQUIPMENT_SUGGESTIONS.map((x) => `<option va
 $('#equipment-options-ka').innerHTML = EQUIPMENT_SUGGESTIONS.map((x) => `<option value="${esc(ka(x))}"></option>`).join('');
 $('#units-table').addEventListener('click', onUnitsTableClick);
 $('#btn-add-unit').addEventListener('click', () => openUnitModal(null));
+$('#btn-rooms-template').addEventListener('click', downloadRoomsTemplate);
+$('#btn-rooms-import').addEventListener('click', () => requireProject() && $('#input-rooms-import').click());
+$('#input-rooms-import').addEventListener('change', onRoomsImportFile);
+$('#form-rooms-import').addEventListener('submit', saveRoomsImport);
+$('#form-rooms-import').addEventListener('change', updateRoomsImportCount);
 $('#form-unit').addEventListener('submit', saveUnit);
 $('#btn-add-task').addEventListener('click', () => openTaskModal(null));
 $('#btn-baseline').addEventListener('click', setBaseline);
