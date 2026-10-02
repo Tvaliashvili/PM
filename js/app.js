@@ -259,7 +259,11 @@ async function loadProjects() {
 
 async function selectProject(projectId) {
   state.projectId = projectId || null;
+  // Nothing of the last project carries over - a new one starts from scratch.
   state.flats = [];
+  state.unitFloor = null;
+  state.delayImpacts = [];
+  state.progress = null;
   state.tasks = [];
   state.payments = [];
   state.contractorDelays = [];
