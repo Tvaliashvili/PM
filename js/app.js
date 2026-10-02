@@ -3607,15 +3607,16 @@ async function parseWorkbook(buffer) {
   return grid.slice(hasHeader ? 1 : 0).map((row) => {
     const nameKa = ka >= 0 ? String(row[ka] ?? '').trim() : '';
     const nameEn = en >= 0 ? String(row[en] ?? '').trim() : '';
-    const s = cellDate(row[start]);
-    const f = cellDate(row[finish]);
     // A single name column in Georgian is the Georgian name.
     const georgianOnly = !nameKa && isGeorgian(nameEn) && ka < 0;
+    // A blank date is null - left as it is on the timetable - and one that
+    // can't be read is ''.
+    const date = (v) => (String(v ?? '').trim() ? cellDate(v) : null);
     return {
       name: nameEn || nameKa,
       nameKa: georgianOnly ? nameEn : nameKa || null,
-      start: s,
-      finish: f && s && f < s ? s : f,
+      start: date(row[start]),
+      finish: date(row[finish]),
       level: 1,
     };
   }).filter((r) => r.name);
@@ -3677,9 +3678,19 @@ async function onImportFile(e) {
   }
   importRows = tasks.map((t) => {
     const match = existing.get(nameKey(t.name)) ?? (t.nameKa ? existing.get(nameKey(t.nameKa)) : undefined);
-    const bad = !ISO_DATE.test(t.start) || !ISO_DATE.test(t.finish);
-    const same = match && match.planned_start === t.start && match.planned_finish === t.finish;
-    return { ...t, match, same, bad, checked: !bad && !same && !t.summary && !t.milestone };
+    // A date left blank keeps the one the activity already has; a new
+    // activity needs both.
+    const start = t.start ?? match?.planned_start ?? '';
+    const finish = t.finish ?? match?.planned_finish ?? '';
+    const problem = t.start === '' || t.finish === '' ? 'Dates not readable - skipped'
+      : !start || !finish ? 'New activity needs both dates - skipped'
+      : finish < start ? 'Finish is before start - skipped'
+      : '';
+    const same = match && match.planned_start === start && match.planned_finish === finish;
+    return {
+      ...t, start, finish, match, same, problem, bad: Boolean(problem),
+      checked: !problem && !same && !t.summary && !t.milestone,
+    };
   });
 
   const form = $('#form-import');
@@ -3698,7 +3709,7 @@ async function onImportFile(e) {
             </td>
             <td class="whitespace-nowrap">${dateCell(r.start)}</td>
             <td class="whitespace-nowrap">${dateCell(r.finish)}</td>
-            <td class="whitespace-nowrap text-xs">${r.bad ? '<span class="variance-over">Dates not readable - skipped</span>'
+            <td class="whitespace-nowrap text-xs">${r.bad ? `<span class="variance-over">${r.problem}</span>`
               : !r.match ? '<span class="text-emerald-400">New</span>'
               : r.same ? '<span class="text-slate-500">Already there, same dates</span>'
               : `<span class="text-amber-400">Dates change</span> <span class="text-slate-500">from ${esc(formatDate(r.match.planned_start))} → ${esc(formatDate(r.match.planned_finish))}</span>`}</td>
@@ -3718,7 +3729,7 @@ function updateImportCount() {
   const bad = importRows.filter((r) => r.bad).length;
   $('#import-summary').textContent = `${importRows.length} activities in the file. Ticked: ${added} new`
     + `${moved ? `, ${moved} with new dates` : ''}.`
-    + `${bad ? ` ${bad} skipped - their dates couldn't be read (write them like 05.01.2026).` : ''}`;
+    + `${bad ? ` ${bad} skipped - see the red notes (write dates like 05.01.2026).` : ''}`;
   $('[type=submit]', $('#form-import')).disabled = !picked.length;
 }
 
