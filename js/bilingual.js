@@ -163,7 +163,7 @@ export const roomLabel = (flat) => (flat
 
 /** The same, spelled in both languages. */
 export const roomLabelBi = (flat) => (flat
-  ? [flat.block ? `${ka('Block')}/Block ${flat.block}` : '', `${ka('Room')}/Room ${flat.flat_number}`]
+  ? [flat.block ? `${ka('Block')} / Block ${flat.block}` : '', `${ka('Room')} / Room ${flat.flat_number}`]
     .filter(Boolean).join(' · ')
   : bi('Site-wide'));
 
