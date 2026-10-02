@@ -890,3 +890,14 @@ end;
 $$;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 28. A room's work entries go with the room
+-- Deleting a room deletes what was recorded in it. The same kind of work in
+-- other rooms is untouched.
+-- -------------------------------------------------------------
+alter table public.work_done drop constraint if exists work_done_flat_id_fkey;
+alter table public.work_done
+  add constraint work_done_flat_id_fkey foreign key (flat_id) references public.flats(id) on delete cascade;
+
+notify pgrst, 'reload schema';

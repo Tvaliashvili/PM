@@ -938,17 +938,33 @@ async function onUnitsTableClick(e) {
   const del = e.target.closest('[data-unit-delete]');
   if (!del) return;
   const unit = state.flats.find((u) => u.id === del.dataset.unitDelete);
-  if (!unit || !confirm(`Delete ${roomLabel(unit)}?\n\nDelays linked to it are kept as site-wide.`)) return;
+  if (!unit) return;
+  // Its work entries go with it (deleted first, and the database cascades them
+  // too - schema.sql section 28); the same work
+  // in other rooms is not touched.
+  const entries = workCount(unit.id);
+  const workNote = entries
+    ? `\n\nIts ${entries} work entr${entries === 1 ? 'y is' : 'ies are'} deleted too - the same work in other rooms is not touched.`
+    : '';
+  if (!confirm(`Delete ${roomLabel(unit)}?${workNote}\n\nDelays linked to it are kept as site-wide.`)) return;
 
   const projectId = state.projectId;
+  const { error: workError } = entries ? await db.from('work_done').delete().eq('flat_id', unit.id) : {};
+  if (workError) {
+    toast(`Could not delete room: ${workError.message}`, 'error');
+    return;
+  }
   const { error } = await db.from('flats').delete().eq('id', unit.id);
   if (error) {
-    toast(`Could not delete unit: ${error.message}`, 'error');
+    toast(`Could not delete room: ${error.message}`, 'error');
     return;
   }
   toast(`Deleted room ${unit.flat_number}.`, 'success');
   await syncFlatCount(projectId);
-  if (projectId === state.projectId) loadUnits(projectId);
+  if (projectId === state.projectId) {
+    loadUnits(projectId);
+    loadWork(projectId);
+  }
 }
 
 // Keeps projects.total_flats in step with the flats table (used by reports).
