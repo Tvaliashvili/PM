@@ -371,7 +371,7 @@
                   <div>
                     <h2 class="panel-title mb-1">Daily Workers</h2>
                     <p class="text-xs text-slate-500">
-                      From each daily log: daily workers × that day's rate. Enter them in the log's Manpower section.
+                      From each daily log: daily workers × that day's rate. Paid by the month - Pay records what was paid.
                     </p>
                   </div>
                 </div>
@@ -380,8 +380,20 @@
               <div class="panel">
                 <div class="flex items-start justify-between gap-3 mb-3">
                   <div>
+                    <h2 class="panel-title mb-1">Guards</h2>
+                    <p class="text-xs text-slate-500">
+                      From each daily log: guards × that day's guard rate. Paid by the month - Pay records what was paid.
+                    </p>
+                  </div>
+                </div>
+                <div id="guards-table" class="overflow-x-auto"></div>
+              </div>
+            </div>
+            <div class="panel">
+                <div class="flex items-start justify-between gap-3 mb-3">
+                  <div>
                     <h2 class="panel-title mb-1">Equipment Rentals</h2>
-                    <p class="text-xs text-slate-500">Daily price × days. The cost counts day by day from the start date.</p>
+                    <p class="text-xs text-slate-500">Daily price × days. The cost counts day by day from the start date; Pay records what was paid to the supplier.</p>
                   </div>
                   <button id="btn-add-rental" class="btn btn-primary btn-sm shrink-0">
                     <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
@@ -389,7 +401,6 @@
                   </button>
                 </div>
                 <div id="rentals-table" class="overflow-x-auto"></div>
-              </div>
             </div>
             <div class="panel">
               <div class="flex items-start justify-between gap-3 mb-3">
@@ -1172,6 +1183,41 @@
     </div>
   </dialog>
 
+  <!-- What was paid: daily workers or guards for a month, or a rental -->
+  <dialog id="modal-site-pay" class="modal" aria-labelledby="site-pay-title">
+    <form id="form-site-pay">
+      <div class="modal-header">
+        <div class="min-w-0">
+          <h2 id="site-pay-title">Pay</h2>
+          <p id="site-pay-sub" class="text-xs text-slate-500"></p>
+        </div>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body space-y-4">
+        <div id="site-pay-list" class="overflow-x-auto"></div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <label class="block">
+            <span class="form-label">Amount paid</span>
+            <input name="amount" type="number" min="0.01" step="0.01" required class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Paid on</span>
+            <input name="paid_on" type="date" required class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Note (optional)</span>
+            <input name="note" maxlength="200" class="input-dark w-full" placeholder="e.g. cash, bank transfer">
+          </label>
+        </div>
+        <p class="form-error hidden" data-error></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close>Close</button>
+        <button type="submit" class="btn btn-primary">Add Payment</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Daily report for a chosen day -->
   <dialog id="modal-daily-report" class="modal modal-sm" aria-labelledby="daily-report-title">
     <form id="form-daily-report">
@@ -1306,10 +1352,29 @@
             <input name="unit_price" type="number" min="0" step="0.01" class="input-dark w-full">
           </label>
         </div>
-        <label class="block sm:w-1/2">
-          <span class="form-label">Amount</span>
-          <input name="amount" type="number" min="0" step="0.01" required class="input-dark w-full">
-        </label>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="form-label">Amount</span>
+            <input name="amount" type="number" min="0" step="0.01" required class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Payment</span>
+            <select name="payment" class="select-dark w-full">
+              <option value="paid">Paid on purchase</option>
+              <option value="credit">On credit (ნისია)</option>
+            </select>
+          </label>
+        </div>
+        <div id="material-credit" class="grid grid-cols-1 sm:grid-cols-2 gap-3 hidden">
+          <label class="block">
+            <span class="form-label">Due (optional)</span>
+            <input name="due_on" type="date" class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Paid on - empty while still owed</span>
+            <input name="paid_on" type="date" class="input-dark w-full">
+          </label>
+        </div>
         <p class="text-xs text-slate-500 -mt-2">Amount fills in from quantity × unit price; or just type the invoice total.</p>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block">

@@ -43,6 +43,7 @@ const state = {
   variations: [],       // change orders, newest first
   rentals: [],          // equipment_rentals
   materials: [],        // materials the client bought, newest first
+  sitePayments: [],     // what was paid for daily workers, guards (by month) and rentals
   work: [],             // work_done: what was done in each room, oldest first
   delays: [],           // every delay on the project, newest first
   siteCosts: [],        // labour, guard, rental and material cost entries
@@ -271,6 +272,7 @@ async function selectProject(projectId) {
   state.siteLogs = [];
   state.rentals = [];
   state.materials = [];
+  state.sitePayments = [];
   state.work = [];
   state.siteCosts = [];
   state.delays = [];
@@ -964,7 +966,7 @@ const materialsOn = (taskId) => sumOf(state.materials.filter((m) => m.task_id ==
 
 // Items, payments and contractor-linked delays for one project, then every view built on them.
 async function loadSchedule(projectId) {
-  const [tasks, payments, delays, impacts, contractors, siteLogs, rentals, materials] = await Promise.all([
+  const [tasks, payments, delays, impacts, contractors, siteLogs, rentals, materials, sitePayments] = await Promise.all([
     db.from('schedule_tasks')
       .select('id, name, name_ka, planned_start, planned_finish, baseline_start, baseline_finish, done, done_at, progress_pct, contractor_id, quantity, unit, rate, budget, material_budget')
       .eq('project_id', projectId)
@@ -995,14 +997,18 @@ async function loadSchedule(projectId) {
       .eq('project_id', projectId)
       .order('start_date', { ascending: false }),
     db.from('materials')
-      .select('id, task_id, bought_on, item, item_ka, quantity, unit, unit_price, amount, supplier, supplier_ka, note')
+      .select('id, task_id, bought_on, item, item_ka, quantity, unit, unit_price, amount, supplier, supplier_ka, note, paid_on, due_on')
       .eq('project_id', projectId)
       .order('bought_on', { ascending: false })
       .order('created_at', { ascending: false }),
+    db.from('site_payments')
+      .select('id, kind, month, rental_id, amount, paid_on, note')
+      .eq('project_id', projectId)
+      .order('paid_on'),
   ]);
 
   if (projectId !== state.projectId) return;
-  const failed = [tasks, payments, delays, impacts, contractors, siteLogs, rentals, materials].find((r) => r.error);
+  const failed = [tasks, payments, delays, impacts, contractors, siteLogs, rentals, materials, sitePayments].find((r) => r.error);
   if (failed) {
     $('#schedule-table').innerHTML = `<div class="empty-state">Could not load timetable: ${esc(failed.error.message)}</div>`;
     return;
@@ -1016,6 +1022,7 @@ async function loadSchedule(projectId) {
   state.siteLogs = siteLogs.data;
   state.rentals = rentals.data;
   state.materials = materials.data;
+  state.sitePayments = sitePayments.data;
   state.siteCosts = [
     ...labourCosts(state.siteLogs, DAY_WORKER_KEY),
     ...guardCosts(state.siteLogs, GUARD_KEY),
@@ -1918,9 +1925,21 @@ function renderCosts() {
     ].filter(Boolean).join(', ');
     lines.push(`On top of contracts: ${extra} so far.`);
   }
+  const owed = owedNow();
+  const owedParts = [
+    owed.labour > 0.5 ? `daily workers ${money.format(owed.labour)}` : '',
+    owed.guard > 0.5 ? `guards ${money.format(owed.guard)}` : '',
+    owed.rental > 0.5 ? `rentals ${money.format(owed.rental)}` : '',
+    owed.material > 0.5 ? `materials on credit ${money.format(owed.material)}` : '',
+  ].filter(Boolean);
+  if (owedParts.length) {
+    const all = owed.labour + owed.guard + owed.rental + owed.material;
+    lines.push(`Still owed: ${money.format(all)} - ${owedParts.join(', ')}.`);
+  }
   $('#cash-position').textContent = lines.join(' ');
 
   renderLabour();
+  renderGuards();
   renderRentals();
   renderMaterials();
 
@@ -2047,49 +2066,200 @@ function renderCosts() {
     </table>`;
 }
 
-// ---------- Daily workers (from daily logs) ----------
-function renderLabour() {
-  const entries = state.siteCosts.filter((e) => e.kind === 'labour');
-  const el = $('#labour-table');
-  if (!entries.length) {
-    el.innerHTML = '<div class="empty-state">No daily workers logged yet - add them in a daily log’s Manpower section.</div>';
-    return;
-  }
-  const byMonth = new Map();
+// ---------- Daily workers and guards (from daily logs), paid by the month ----------
+const sitePaid = (match) => sumOf(state.sitePayments.filter(match), 'amount');
+const monthPaid = (kind, ym) => sitePaid((p) => p.kind === kind && p.month?.slice(0, 7) === ym);
+const rentalPaid = (rentalId) => sitePaid((p) => p.rental_id === rentalId);
+
+/** What is still owed against what it cost: amber while owed, a note when overpaid. */
+function owedCell(cost, paid) {
+  const owed = cost - paid;
+  if (owed > 0.5) return `<span class="text-amber-400 font-semibold">${money.format(owed)}</span>`;
+  if (owed < -0.5) return `<span class="text-sky-300">${money.format(-owed)} ahead</span>`;
+  return cost ? '<span class="text-emerald-400">Paid</span>' : '-';
+}
+
+function renderDayPay(kind, el, emptyText) {
+  const entries = state.siteCosts.filter((e) => e.kind === kind);
+  const months = new Map();
   for (const e of entries) {
     const key = e.date.slice(0, 7);
-    const m = byMonth.get(key) ?? { days: 0, workerDays: 0, cost: 0 };
-    m.days += 1;
+    const m = months.get(key) ?? { workerDays: 0, cost: 0, unpriced: 0 };
     m.workerDays += e.workers;
     m.cost += e.amount;
-    byMonth.set(key, m);
+    if (!e.amount) m.unpriced += 1;
+    months.set(key, m);
   }
-  const missingRate = entries.filter((e) => !e.amount).length;
-  const rows = [...byMonth].sort((a, b) => b[0].localeCompare(a[0])).map(([ym, m]) => `
-    <tr>
-      <td>${esc(monthLabel(ym))}</td>
-      <td class="num">${m.days}</td>
-      <td class="num">${m.workerDays}</td>
-      <td class="num">${m.workerDays ? money2.format(m.cost / m.workerDays) : '-'}</td>
-      <td class="num">${money.format(m.cost)}</td>
-    </tr>`).join('');
-  const total = entries.reduce((s, e) => s + e.amount, 0);
-  const workerDays = entries.reduce((s, e) => s + e.workers, 0);
-  const warning = missingRate === 1
-    ? '1 log has daily workers but no rate, so it isn’t counted.'
-    : `${missingRate} logs have daily workers but no rate, so they aren’t counted.`;
+  // A payment for a month with nothing logged still shows.
+  for (const p of state.sitePayments) {
+    if (p.kind === kind && p.month && !months.has(p.month.slice(0, 7))) {
+      months.set(p.month.slice(0, 7), { workerDays: 0, cost: 0, unpriced: 0 });
+    }
+  }
+  if (!months.size) {
+    el.innerHTML = `<div class="empty-state">${esc(emptyText)}</div>`;
+    return;
+  }
+  const word = kind === 'guard' ? 'Guard-days' : 'Worker-days';
+  let totalCost = 0;
+  let totalPaid = 0;
+  const rows = [...months].sort((a, b) => b[0].localeCompare(a[0])).map(([ym, m]) => {
+    const paid = monthPaid(kind, ym);
+    totalCost += m.cost;
+    totalPaid += paid;
+    return `
+      <tr>
+        <td class="whitespace-nowrap">${esc(monthLabel(ym))}${m.unpriced
+          ? `<span class="block text-xs text-amber-400">${m.unpriced} day${m.unpriced === 1 ? '' : 's'} without a rate</span>` : ''}</td>
+        <td class="num">${m.workerDays}</td>
+        <td class="num">${money.format(m.cost)}</td>
+        <td class="num">${paid ? money.format(paid) : '-'}</td>
+        <td class="num">${owedCell(m.cost, paid)}</td>
+        <td class="text-right"><button type="button" class="table-action" data-site-pay="${kind}" data-month="${ym}">Pay</button></td>
+      </tr>`;
+  }).join('');
   el.innerHTML = `
     <table class="data-table">
-      <thead>
-        <tr><th>Month</th><th class="num">Days</th><th class="num">Worker-days</th><th class="num">Avg rate</th><th class="num">Cost</th></tr>
-      </thead>
+      <thead><tr><th>Month</th><th class="num">${word}</th><th class="num">Cost</th><th class="num">Paid</th><th class="num">Owed</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot>
-        <tr><td>Total</td><td class="num">${entries.length}</td><td class="num">${workerDays}</td><td></td>
-          <td class="num">${money.format(total)}</td></tr>
+        <tr><td>Total</td><td></td><td class="num">${money.format(totalCost)}</td><td class="num">${money.format(totalPaid)}</td>
+          <td class="num">${owedCell(totalCost, totalPaid)}</td><td></td></tr>
       </tfoot>
-    </table>
-    ${missingRate ? `<p class="text-xs text-amber-400 mt-2">${warning}</p>` : ''}`;
+    </table>`;
+}
+
+const renderLabour = () => renderDayPay('labour', $('#labour-table'),
+  'No daily workers logged yet - add them in a daily log’s crew lines.');
+const renderGuards = () => renderDayPay('guard', $('#guards-table'),
+  'No guards logged yet - add them in a daily log’s crew lines.');
+
+/** Everything still owed now: by kind, and in all. */
+function owedNow() {
+  const today = todayISO();
+  const upTo = (kind) => state.siteCosts.filter((e) => e.kind === kind && e.date <= today).reduce((s, e) => s + e.amount, 0);
+  const paidOf = (kind) => sitePaid((p) => p.kind === kind);
+  const owed = {
+    labour: upTo('labour') - paidOf('labour'),
+    guard: upTo('guard') - paidOf('guard'),
+    rental: upTo('rental') - paidOf('rental'),
+    material: sumOf(state.materials.filter((m) => !m.paid_on), 'amount'),
+  };
+  for (const k of Object.keys(owed)) owed[k] = Math.max(0, owed[k]);
+  return owed;
+}
+
+// ---------- Recording a payment ----------
+let sitePayTarget = null; // { kind, month } or { kind: 'rental', rentalId }
+
+function openSitePay(target) {
+  sitePayTarget = target;
+  const form = $('#form-site-pay');
+  form.reset();
+  form.elements.paid_on.value = todayISO();
+  form.elements.paid_on.max = todayISO();
+  showFormError(form, '');
+  renderSitePay();
+  const owed = sitePayOwed();
+  if (owed > 0.5) form.elements.amount.value = owed.toFixed(2);
+  openModal('modal-site-pay');
+  form.elements.amount.focus();
+}
+
+const sitePayMatch = (p) => (sitePayTarget.kind === 'rental'
+  ? p.rental_id === sitePayTarget.rentalId
+  : p.kind === sitePayTarget.kind && p.month?.slice(0, 7) === sitePayTarget.month);
+
+function sitePayCost() {
+  const t = sitePayTarget;
+  if (t.kind === 'rental') {
+    const today = todayISO();
+    return state.siteCosts.filter((e) => e.rentalId === t.rentalId && e.date <= today).reduce((s, e) => s + e.amount, 0);
+  }
+  return state.siteCosts.filter((e) => e.kind === t.kind && e.date.slice(0, 7) === t.month).reduce((s, e) => s + e.amount, 0);
+}
+const sitePayOwed = () => sitePayCost() - sitePaid(sitePayMatch);
+
+function renderSitePay() {
+  const t = sitePayTarget;
+  const rental = t.kind === 'rental' ? state.rentals.find((r) => r.id === t.rentalId) : null;
+  $('#site-pay-title').textContent = rental ? `Pay - ${rental.equipment}`
+    : `Pay - ${t.kind === 'guard' ? 'Guards' : 'Daily workers'}, ${monthLabel(t.month)}`;
+  const cost = sitePayCost();
+  const paid = sitePaid(sitePayMatch);
+  $('#site-pay-sub').textContent = `${rental ? 'Cost so far' : 'Cost'} ${money.format(cost)} · paid ${money.format(paid)} · `
+    + (cost - paid > 0.5 ? `owed ${money.format(cost - paid)}` : cost - paid < -0.5 ? `${money.format(paid - cost)} paid ahead` : 'nothing owed');
+  const payments = state.sitePayments.filter(sitePayMatch).sort((a, b) => b.paid_on.localeCompare(a.paid_on));
+  $('#site-pay-list').innerHTML = payments.length ? `
+    <table class="data-table">
+      <thead><tr><th>Paid on</th><th class="num">Amount</th><th>Note</th><th></th></tr></thead>
+      <tbody>
+        ${payments.map((p) => `
+          <tr>
+            <td class="whitespace-nowrap">${esc(formatDate(p.paid_on))}</td>
+            <td class="num">${money.format(p.amount)}</td>
+            <td class="text-slate-400">${esc(p.note || '-')}</td>
+            <td class="text-right"><button type="button" class="table-action is-danger" data-site-pay-delete="${esc(p.id)}">Delete</button></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>` : '<div class="empty-state">No payments yet.</div>';
+}
+
+async function saveSitePay(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn = $('[type=submit]', form);
+  const fd = new FormData(form);
+  const amount = Number(fd.get('amount'));
+  if (!(amount > 0)) {
+    showFormError(form, 'Enter the amount paid.');
+    return;
+  }
+  const t = sitePayTarget;
+  const row = {
+    project_id: state.projectId,
+    kind: t.kind,
+    month: t.kind === 'rental' ? null : `${t.month}-01`,
+    rental_id: t.kind === 'rental' ? t.rentalId : null,
+    amount,
+    paid_on: fd.get('paid_on'),
+    note: fd.get('note').trim() || null,
+  };
+  showFormError(form, '');
+  setBusy(btn, true);
+  const { data, error } = await db.from('site_payments').insert(row).select('id, kind, month, rental_id, amount, paid_on, note').single();
+  setBusy(btn, false);
+  if (error) {
+    showFormError(form, error.message);
+    return;
+  }
+  state.sitePayments.push(data);
+  toast('Payment recorded.', 'success');
+  closeModal('modal-site-pay');
+  renderCosts();
+}
+
+async function onSitePayListClick(e) {
+  const del = e.target.closest('[data-site-pay-delete]');
+  if (!del) return;
+  const p = state.sitePayments.find((x) => x.id === del.dataset.sitePayDelete);
+  if (!p || !confirm(`Delete the payment of ${money.format(p.amount)} on ${formatDate(p.paid_on)}?`)) return;
+  const { error } = await db.from('site_payments').delete().eq('id', p.id);
+  if (error) {
+    toast(`Could not delete: ${error.message}`, 'error');
+    return;
+  }
+  state.sitePayments = state.sitePayments.filter((x) => x.id !== p.id);
+  renderSitePay();
+  renderCosts();
+}
+
+function onSitePayClick(e) {
+  const btn = e.target.closest('[data-site-pay]');
+  if (!btn) return;
+  openSitePay(btn.dataset.sitePay === 'rental'
+    ? { kind: 'rental', rentalId: btn.dataset.rental }
+    : { kind: btn.dataset.sitePay, month: btn.dataset.month });
 }
 
 // ---------- Equipment rentals ----------
@@ -2118,7 +2288,10 @@ function renderRentals() {
         <td class="num">${r.days} × ${money2.format(r.daily_rate)}</td>
         <td class="num">${money.format(rentalTotal(r))}
           <span class="block text-xs text-slate-500">${money.format(accrued.get(r.id) ?? 0)} so far</span></td>
+        <td class="num">${rentalPaid(r.id) ? money.format(rentalPaid(r.id)) : '-'}</td>
+        <td class="num">${owedCell(accrued.get(r.id) ?? 0, rentalPaid(r.id))}</td>
         <td class="text-right whitespace-nowrap">
+          <button type="button" class="table-action" data-site-pay="rental" data-rental="${esc(r.id)}">Pay</button>
           <button type="button" class="table-action" data-rental-edit="${esc(r.id)}">Edit</button>
           <button type="button" class="table-action is-danger" data-rental-delete="${esc(r.id)}">Delete</button>
         </td>
@@ -2126,10 +2299,12 @@ function renderRentals() {
   }).join('');
   el.innerHTML = `
     <table class="data-table">
-      <thead><tr><th>Equipment</th><th>Dates</th><th class="num">Days × price</th><th class="num">Cost</th><th></th></tr></thead>
+      <thead><tr><th>Equipment</th><th>Dates</th><th class="num">Days × price</th><th class="num">Cost</th><th class="num">Paid</th><th class="num">Owed so far</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot>
-        <tr><td colspan="3">Total</td><td class="num">${money.format(state.rentals.reduce((s, r) => s + rentalTotal(r), 0))}</td><td></td></tr>
+        <tr><td colspan="3">Total</td><td class="num">${money.format(state.rentals.reduce((s, r) => s + rentalTotal(r), 0))}</td>
+          <td class="num">${money.format(sitePaid((p) => p.kind === 'rental'))}</td>
+          <td class="num">${owedCell([...accrued.values()].reduce((s, v) => s + v, 0), sitePaid((p) => p.kind === 'rental'))}</td><td></td></tr>
       </tfoot>
     </table>`;
 }
@@ -2254,6 +2429,18 @@ function materialsCell(bought, planned) {
     : `${bought ? money.format(bought) : '-'}${of}`;
 }
 
+/** Paid on purchase, paid later, or still owed on credit (ნისია) - red once past due. */
+function materialPayment(m) {
+  if (m.paid_on) {
+    return m.paid_on === m.bought_on
+      ? '<span class="text-slate-400">Paid</span>'
+      : `<span class="text-slate-400">Paid ${esc(formatDate(m.paid_on))}</span><span class="block text-xs text-slate-500">on credit</span>`;
+  }
+  const late = m.due_on && m.due_on < todayISO();
+  return `<span class="${late ? 'variance-over' : 'text-amber-400'}">On credit · owed</span>${m.due_on
+    ? `<span class="block text-xs ${late ? 'text-rose-300' : 'text-slate-500'}">due ${esc(formatDate(m.due_on))}</span>` : ''}`;
+}
+
 function renderMaterials() {
   const el = $('#materials-table');
   if (!state.materials.length) {
@@ -2278,7 +2465,9 @@ function renderMaterials() {
         <td>${job}</td>
         <td class="num">${qty}</td>
         <td class="num">${money.format(m.amount)}</td>
+        <td class="whitespace-nowrap">${materialPayment(m)}</td>
         <td class="text-right whitespace-nowrap">
+          ${m.paid_on ? '' : `<button type="button" class="table-action" data-material-paid="${esc(m.id)}">Mark paid</button>`}
           <button type="button" class="table-action" data-material-edit="${esc(m.id)}">Edit</button>
           <button type="button" class="table-action is-danger" data-material-delete="${esc(m.id)}">Delete</button>
         </td>
@@ -2286,10 +2475,12 @@ function renderMaterials() {
   }).join('');
   el.innerHTML = `
     <table class="data-table">
-      <thead><tr><th>Bought</th><th>Material</th><th>For job</th><th class="num">Qty × price</th><th class="num">Amount</th><th></th></tr></thead>
+      <thead><tr><th>Bought</th><th>Material</th><th>For job</th><th class="num">Qty × price</th><th class="num">Amount</th><th>Payment</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot>
-        <tr><td colspan="4">Total</td><td class="num">${money.format(sumOf(state.materials, 'amount'))}</td><td></td></tr>
+        <tr><td colspan="4">Total</td><td class="num">${money.format(sumOf(state.materials, 'amount'))}</td>
+          <td>${sumOf(state.materials.filter((m) => !m.paid_on), 'amount')
+            ? `<span class="text-amber-400">${money.format(sumOf(state.materials.filter((m) => !m.paid_on), 'amount'))} owed</span>` : ''}</td><td></td></tr>
       </tfoot>
     </table>`;
 }
@@ -2317,13 +2508,24 @@ function openMaterialModal(material = null) {
   f.supplier_ka.value = material?.supplier_ka ?? '';
   f.supplier.value = material?.supplier_ka && material.supplier === material.supplier_ka ? '' : (material?.supplier ?? '');
   f.note.value = material?.note ?? '';
+  // Paid on the day it was bought, or taken on credit and paid (or not) later.
+  const credit = material && material.paid_on !== material.bought_on;
+  f.payment.value = credit ? 'credit' : 'paid';
+  f.due_on.value = material?.due_on ?? '';
+  f.paid_on.value = credit ? material.paid_on ?? '' : '';
+  syncMaterialPayment();
   showFormError(form, '');
   openModal('modal-material');
   f.item_ka.focus();
 }
 
+function syncMaterialPayment() {
+  $('#material-credit').classList.toggle('hidden', $('#form-material').elements.payment.value !== 'credit');
+}
+
 // Quantity × unit price → amount.
 function onMaterialInput(e) {
+  if (e.target.name === 'payment') syncMaterialPayment();
   if (!['quantity', 'unit_price'].includes(e.target.name)) return;
   const f = e.currentTarget.elements;
   const qty = parseFloat(f.quantity.value);
@@ -2361,6 +2563,13 @@ async function saveMaterial(e) {
     supplier_ka: fd.get('supplier_ka').trim() || null,
     note: fd.get('note').trim() || null,
   };
+  if (fd.get('payment') === 'credit') {
+    row.due_on = fd.get('due_on') || null;
+    row.paid_on = fd.get('paid_on') || null;
+  } else {
+    row.due_on = null;
+    row.paid_on = row.bought_on;
+  }
 
   showFormError(form, '');
   setBusy(btn, true);
@@ -2378,6 +2587,20 @@ async function saveMaterial(e) {
 }
 
 async function onMaterialsTableClick(e) {
+  const paid = e.target.closest('[data-material-paid]');
+  if (paid) {
+    const m = state.materials.find((x) => x.id === paid.dataset.materialPaid);
+    if (!m || !confirm(`Mark ${m.item} (${money.format(m.amount)}) as paid today?`)) return;
+    const { error } = await db.from('materials').update({ paid_on: todayISO() }).eq('id', m.id);
+    if (error) {
+      toast(`Could not save: ${error.message}`, 'error');
+      return;
+    }
+    m.paid_on = todayISO();
+    toast('Marked paid. To give another date, use Edit.', 'success');
+    renderCosts();
+    return;
+  }
   const edit = e.target.closest('[data-material-edit]');
   if (edit) {
     openMaterialModal(state.materials.find((m) => m.id === edit.dataset.materialEdit));
@@ -4705,6 +4928,11 @@ $('#btn-add-rental').addEventListener('click', () => openRentalModal());
 $('#form-rental').addEventListener('submit', saveRental);
 $('#form-rental').addEventListener('input', onRentalInput);
 $('#rentals-table').addEventListener('click', onRentalsTableClick);
+$('#rentals-table').addEventListener('click', onSitePayClick);
+$('#labour-table').addEventListener('click', onSitePayClick);
+$('#guards-table').addEventListener('click', onSitePayClick);
+$('#form-site-pay').addEventListener('submit', saveSitePay);
+$('#site-pay-list').addEventListener('click', onSitePayListClick);
 $('#btn-add-material').addEventListener('click', () => openMaterialModal());
 $('#form-material').addEventListener('submit', saveMaterial);
 $('#form-material').addEventListener('input', onMaterialInput);

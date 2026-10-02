@@ -814,3 +814,46 @@ alter table public.work_done
 create index if not exists work_done_project_date_idx on public.work_done (project_id, work_date);
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 26. What has actually been paid for the site costs
+-- Daily workers and guards are paid by the month, rentals as their supplier
+-- asks: each payment is a row here, against a month (labour, guard) or a
+-- rental. Materials are paid on purchase or taken on credit (ნისია):
+-- paid_on null = still owed, due_on = when the supplier expects it.
+-- -------------------------------------------------------------
+create table if not exists public.site_payments (
+  id          uuid primary key default gen_random_uuid(),
+  project_id  uuid not null references public.projects(id) on delete cascade,
+  kind        text not null check (kind in ('labour', 'guard', 'rental')),
+  month       date,
+  rental_id   uuid references public.equipment_rentals(id) on delete cascade,
+  amount      numeric(14,2) not null check (amount > 0),
+  paid_on     date not null default current_date,
+  note        text,
+  created_at  timestamptz not null default now(),
+  check ((kind = 'rental') = (rental_id is not null)),
+  check (kind = 'rental' or month is not null)
+);
+
+create index if not exists site_payments_project_idx on public.site_payments (project_id, kind);
+
+alter table public.site_payments enable row level security;
+drop policy if exists "authenticated_full_access" on public.site_payments;
+create policy "authenticated_full_access" on public.site_payments
+  for all to authenticated using (true) with check (true);
+
+-- Materials bought before this were paid for: the column is filled in for them.
+alter table public.materials
+  add column if not exists due_on date;
+do $$
+begin
+  if not exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'materials' and column_name = 'paid_on') then
+    alter table public.materials add column paid_on date;
+    update public.materials set paid_on = bought_on;
+  end if;
+end;
+$$;
+
+notify pgrst, 'reload schema';
