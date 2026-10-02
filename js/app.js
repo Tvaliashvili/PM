@@ -973,8 +973,7 @@ function openTaskModal(task) {
 
   f.id.value = task?.id ?? '';
   if (task) {
-    f.name_ka.value = task.name_ka ?? '';
-    f.name.value = task.name_ka && task.name === task.name_ka ? '' : task.name;
+    f.name.value = task.name_ka || task.name;
     f.planned_start.value = task.planned_start;
     f.planned_finish.value = task.planned_finish;
     f.quantity.value = task.quantity ?? '';
@@ -991,7 +990,7 @@ function openTaskModal(task) {
   }
   updateTaskDuration();
   openModal('modal-task');
-  f.name_ka.focus();
+  f.name.focus();
 }
 
 // Dates → duration hint; quantity × rate → budget.
@@ -1011,16 +1010,19 @@ async function saveTask(e) {
   const fd   = new FormData(form);
 
   const id = fd.get('id');
-  // Either language will do; the English column falls back to the Georgian text.
-  const nameKa = fd.get('name_ka').trim();
-  const nameEn = fd.get('name').trim();
-  if (!nameKa && !nameEn) {
-    showFormError(form, 'Enter the work item in Georgian or English.');
+  // One name, in either language. Georgian text is the Georgian name too, which
+  // the bilingual reports read; an item that already has both keeps them while
+  // the name shown here is left as it was.
+  const name = fd.get('name').trim();
+  if (!name) {
+    showFormError(form, 'Enter the activity.');
     return;
   }
+  const old = id ? state.tasks.find((t) => t.id === id) : null;
+  const unchanged = old && name === (old.name_ka || old.name);
   const row = {
-    name:           nameEn || nameKa,
-    name_ka:        nameKa || null,
+    name:           unchanged ? old.name : name,
+    name_ka:        unchanged ? old.name_ka : (isGeorgian(name) ? name : null),
     contractor_id:  fd.get('contractor_id') || null,
     planned_start:  fd.get('planned_start'),
     planned_finish: fd.get('planned_finish'),
@@ -3490,7 +3492,7 @@ function loadSheetJs() {
   return sheetJs;
 }
 
-const TEMPLATE_HEADERS = ['Activity - ქართული', 'Activity - English', 'Start', 'Finish'];
+const TEMPLATE_HEADERS = ['Activity', 'Start', 'Finish'];
 
 /** The template, filled with the timetable as it stands, so dates can be changed there too. */
 async function downloadTemplate() {
@@ -3505,16 +3507,15 @@ async function downloadTemplate() {
   // Excel counts days from 30 Dec 1899; a serial with a date format shows as a date.
   const serial = (iso) => Date.UTC(...iso.split('-').map((n, i) => Number(n) - (i === 1 ? 1 : 0))) / 86_400_000 + 25_569;
   const rows = state.tasks.map((t) => [
-    t.name_ka ?? '',
-    t.name_ka && t.name === t.name_ka ? '' : t.name,
+    t.name_ka || t.name,
     { t: 'n', v: serial(t.planned_start), z: 'dd.mm.yyyy' },
     { t: 'n', v: serial(t.planned_finish), z: 'dd.mm.yyyy' },
   ]);
   const sheet = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, ...rows]);
-  sheet['!cols'] = [{ wch: 45 }, { wch: 45 }, { wch: 12 }, { wch: 12 }];
+  sheet['!cols'] = [{ wch: 60 }, { wch: 12 }, { wch: 12 }];
   const help = XLSX.utils.aoa_to_sheet([
     ['How to fill in the Timetable sheet'],
-    ['One activity per row. A name in either language will do; fill in both if you have them.'],
+    ['One activity per row, its name in Georgian or English.'],
     ['Start and Finish: dates, e.g. 05.01.2026 (day first). You can paste the Task Name, Start and Finish columns straight from MS Project.'],
     ['Activities already on the timetable are matched by name, and only their dates change.'],
     ['Save, then use Import on the Timetable page.'],
@@ -3569,7 +3570,7 @@ async function parseWorkbook(buffer) {
   let start = col(/start|დაწყ/);
   let finish = col(/finish|end|დასრ/);
   const hasHeader = start >= 0 && finish >= 0;
-  if (!hasHeader) [ka, en, name, start, finish] = [0, 1, -1, 2, 3];
+  if (!hasHeader) [ka, en, name, start, finish] = [-1, 0, 0, 1, 2];
   if (ka < 0 && en < 0) en = name;
 
   return grid.slice(hasHeader ? 1 : 0).map((row) => {
