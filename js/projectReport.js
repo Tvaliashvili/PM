@@ -980,6 +980,7 @@ export async function buildProjectReport({
     </section>`;
 
   // ---------- Rooms (only for sites that have them) ----------
+  const roomsWithWork = new Set(work.map((w) => w.flat_id).filter(Boolean));
   let unitsSection = '';
   if (rooms) {
     const byType = new Map();
@@ -1021,7 +1022,7 @@ export async function buildProjectReport({
                 <span class="rpt-room-list">
                   ${list
     .sort((a, b) => String(a.flat_number).localeCompare(String(b.flat_number), undefined, { numeric: true }))
-    .map((u) => `<i class="rpt-room rpt-room-${toneOf(u)}" title="${esc(bi(u.unit_type || ''))}">${esc(u.flat_number)}</i>`)
+    .map((u) => `<i class="rpt-room rpt-room-${toneOf(u)}${roomsWithWork.has(u.id) ? ' rpt-room-has-work' : ''}" data-room="${esc(u.id)}" title="${esc(bi(u.unit_type || ''))}">${esc(u.flat_number)}</i>`)
     .join('')}
                 </span>
               </div>`).join('')}
@@ -1040,6 +1041,8 @@ export async function buildProjectReport({
             ${[...byType].sort((a, b) => b[1].n - a[1].n).map(([type, e]) => `
               <span class="rpt-type">${esc(bi(type))} <b>× ${e.n}</b>${e.area ? ` · ${num.format(e.area)} m²` : ''}</span>`).join('')}
           </div>
+          <p class="rpt-html-only rpt-click-note">${L('ოთახზე დაჭერით ნახავთ მის მონაცემებს და შესრულებულ სამუშაოებს', 'Click a room to see its details and the work done in it')}${roomsWithWork.size
+            ? ` · <span class="rpt-room rpt-room-has-work rpt-room-key"></span> ${L('სამუშაო ჩაწერილია', 'work recorded')}` : ''}</p>
           ${roomGrid}` : none}
       </section>`;
   }
@@ -1073,14 +1076,12 @@ export async function buildProjectReport({
       g.measured = w.work_date;
     }
   }
-  // Rooms in the order of the room list (block, floor, number); work outside one last.
-  const roomOrder = new Map(units.map((u, i) => [u.id, i]));
+  // Each room's work, for its pop-up.
   const workRooms = new Map();
   for (const g of workGroups.values()) {
     if (!workRooms.has(g.flatId)) workRooms.set(g.flatId, []);
     workRooms.get(g.flatId).push(g);
   }
-  const roomsInOrder = [...workRooms].sort((a, b) => (roomOrder.get(a[0]) ?? 1e9) - (roomOrder.get(b[0]) ?? 1e9));
   const roomName = (id) => {
     const u = units.find((x) => x.id === id);
     if (!u) return L('ოთახის გარეშე', 'Not in a room');
@@ -1106,31 +1107,74 @@ export async function buildProjectReport({
     const after = g.last > g.measured ? `<br><span class="rpt-muted">+ ${inProgress}</span>` : '';
     return `<b>${qtyList(g.byUnit)}</b>${after}`;
   };
-  const workSection = !workRooms.size ? '' : `
-    <section class="rpt-section">
-      ${H('შესრულებული სამუშაოები', 'Work Done', `${workRooms.size} ${L('ოთახი', 'rooms')}`)}
+  // The project as a whole: each kind of work added up over every room, so the
+  // section stays a few lines long however many rooms there are. What was done
+  // in one room is in that room's pop-up (the interactive report).
+  const workTypeKey = (w) => String(w.work || w.work_en || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const totals = new Map();
+  for (const w of [...work].sort((a, b) => a.work_date.localeCompare(b.work_date))) {
+    const key = workTypeKey(w);
+    if (!totals.has(key)) totals.set(key, { byUnit: new Map(), byContractor: new Map(), rooms: new Set() });
+    const g = totals.get(key);
+    g.ka = w.work;
+    g.en = w.work_en;
+    g.last = w.work_date;
+    if (w.flat_id) g.rooms.add(w.flat_id);
+    const who = w.contractor_id ?? '';
+    if (!g.byContractor.has(who)) g.byContractor.set(who, new Map());
+    const q = Number(w.quantity) || 0;
+    if (q > 0) {
+      addTo(g.byUnit, w.unit ?? '', q);
+      addTo(g.byContractor.get(who), w.unit ?? '', q);
+      g.measured = w.work_date;
+    }
+  }
+  const workTable = (list, { roomsColumn }) => `
       <table class="rpt-compact">
         <thead>
           <tr>
             <th>${L('სამუშაო', 'Work')}</th>
             <th class="num">${L('სულ', 'Total')}</th>
+            ${roomsColumn ? `<th class="num">${L('ოთახი', 'Rooms')}</th>` : ''}
             <th>${L('კონტრაქტორი', 'Contractor')}</th>
             <th>${L('გაზომვის თარიღი', 'Date measured')}</th>
           </tr>
         </thead>
-        ${roomsInOrder.map(([flatId, list]) => `
-          <tbody class="rpt-avoid">
-            <tr class="rpt-group-row"><td colspan="4">${roomName(flatId)}</td></tr>
-            ${list.sort((a, b) => b.last.localeCompare(a.last)).map((g) => `
-              <tr>
-                <td class="rpt-prose">${biText(g.ka, g.en !== g.ka ? g.en : '')}</td>
-                <td class="num">${totalCell(g)}</td>
-                <td>${whoDid(g)}</td>
-                <td>${g.measured ? d(g.measured) : '-'}</td>
-              </tr>`).join('')}
-          </tbody>`).join('')}
-      </table>
+        <tbody>
+          ${[...list].sort((a, b) => b.last.localeCompare(a.last)).map((g) => `
+            <tr>
+              <td class="rpt-prose">${biText(g.ka, g.en !== g.ka ? g.en : '')}</td>
+              <td class="num">${totalCell(g)}</td>
+              ${roomsColumn ? `<td class="num">${g.rooms.size || '-'}</td>` : ''}
+              <td>${whoDid(g)}</td>
+              <td>${g.measured ? d(g.measured) : '-'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  const workSection = !totals.size ? '' : `
+    <section class="rpt-section rpt-avoid">
+      ${H('შესრულებული სამუშაოები', 'Work Done', `${roomsWithWork.size} ${L('ოთახში', 'rooms')}`)}
+      ${workTable(totals.values(), { roomsColumn: rooms })}
+      ${rooms ? `<p class="rpt-foot-note rpt-html-only">${L('ოთახის მიხედვით - დააჭირეთ ოთახს ზემოთ, ოთახების სქემაზე.', 'Room by room - click a room on the room map above.')}</p>` : ''}
     </section>`;
+
+  // Each room's pop-up in the interactive report: its details and its work.
+  const statusOf = (u) => UNIT_STATUS.find(([key]) => key === (u.status ?? 'not_started'));
+  const roomPopups = {};
+  for (const u of units) {
+    const [, ska, sen, tone] = statusOf(u) ?? [null, '', '', 'muted'];
+    const list = workRooms.get(u.id) ?? [];
+    roomPopups[u.id] = `
+      <h3>${roomName(u.id)}</h3>
+      <p class="rpt-pop-facts">
+        ${chip({ ka: ska, en: sen, tone })}
+        ${u.unit_type ? `<span>${esc(bi(u.unit_type))}</span>` : ''}
+        ${u.area_m2 != null ? `<span>${num.format(Number(u.area_m2))} m²</span>` : ''}
+      </p>
+      ${u.notes ? `<p class="rpt-pop-notes">${esc(u.notes)}</p>` : ''}
+      ${list.length ? workTable(list, { roomsColumn: false })
+        : `<p class="rpt-none">${L('ამ ოთახში სამუშაო ჯერ არ ჩაწერილა', 'No work recorded in this room yet')}</p>`}`;
+  }
 
   // ---------- Site activity: manpower chart + latest logs ----------
   const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key;
@@ -1373,6 +1417,7 @@ export async function buildProjectReport({
   page.className = 'pdf-page rpt';
   page.innerHTML = header + glance + attention + notMoving + driftSection + timeline + roadAhead
     + costSection + contractorsSection + unitsSection + workSection + logsSection + delaysSection + safetySection + footer;
+  page.roomPopups = roomPopups; // read by the interactive (.html) export only
   return page;
 }
 
@@ -1386,8 +1431,12 @@ const fileSafe = (name) => (name || 'Project')
  * Saves a page built by buildProjectReport() as Project_Report_<name>_<date>,
  * a .pdf - or, with `word`, a .docx to arrange by hand before printing.
  */
-export async function downloadProjectReport(page, project, { printable = false, word = false } = {}) {
+export async function downloadProjectReport(page, project, { printable = false, word = false, html = false } = {}) {
   const today = iso(new Date());
+  if (html) {
+    await saveInteractive(page, project, `Project_Report_${fileSafe(project.name)}_${today}.html`);
+    return;
+  }
   // Rendered from a copy, off-screen: the printable version has spacers put
   // into it, and the preview on screen should not gain those blank gaps.
   const root = document.getElementById('pdf-export-root');
@@ -1400,4 +1449,70 @@ export async function downloadProjectReport(page, project, { printable = false, 
   } finally {
     root.replaceChildren();
   }
+}
+
+/**
+ * The report as one web page that works on its own - no login, no internet
+ * past the fonts: the same page as the PDF, with the app's stylesheet inlined
+ * and a pop-up for each room on the room map. It is a file to email, like the
+ * PDF, and opens in any browser.
+ */
+async function saveInteractive(page, project, fileName) {
+  const css = await (await fetch(new URL('../css/styles.css', import.meta.url))).text();
+  // Only what the report needs to be read: the room map's pop-up data, as JSON
+  // a <script> can't be broken out of.
+  const data = JSON.stringify(page.roomPopups ?? {}).replace(/</g, '\\u003c');
+  const title = `Project Report - ${project.name}`;
+  const doc = `<!doctype html>
+<html lang="ka">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Georgian:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>${css}</style>
+<style>
+  body { margin: 0; padding: 24px 12px; background: #eef2f6; font-family: Inter, 'Noto Sans Georgian', system-ui, sans-serif; }
+  .pdf-page.rpt { margin: 0 auto; box-shadow: 0 2px 12px rgba(15, 23, 42, 0.12); }
+  .rpt .rpt-html-only { display: block; }
+  .rpt [data-room] { cursor: pointer; }
+  .rpt [data-room]:hover { outline: 2px solid #2563eb; outline-offset: 1px; }
+  dialog.rpt-pop { width: min(46rem, calc(100vw - 2rem)); padding: 0; border: 1px solid #e2e8f0; border-radius: 8px;
+    box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.35); }
+  dialog.rpt-pop::backdrop { background: rgba(15, 23, 42, 0.45); }
+  .rpt-pop-body.pdf-page { width: auto; min-height: 0; margin: 0; padding: 18px 20px 20px; box-shadow: none; }
+  .rpt-pop-body table { width: 100%; }
+  .rpt-pop-body h3 { margin: 0 32px 8px 0; font-size: 16px; }
+  .rpt-pop-close { position: absolute; top: 10px; right: 12px; width: 30px; height: 30px; border: 0; border-radius: 6px;
+    background: transparent; font-size: 22px; line-height: 1; color: #64748b; cursor: pointer; }
+  .rpt-pop-close:hover { background: #f1f5f9; }
+</style>
+</head>
+<body>
+${page.outerHTML}
+<dialog class="rpt-pop" id="room-pop"><button class="rpt-pop-close" aria-label="Close">&times;</button><div class="rpt-pop-body pdf-page rpt"></div></dialog>
+<script>
+  const ROOMS = ${data};
+  const pop = document.getElementById('room-pop');
+  document.addEventListener('click', (e) => {
+    const room = e.target.closest('[data-room]');
+    if (room && ROOMS[room.dataset.room]) {
+      pop.querySelector('.rpt-pop-body').innerHTML = ROOMS[room.dataset.room];
+      pop.showModal();
+    }
+  });
+  pop.querySelector('.rpt-pop-close').addEventListener('click', () => pop.close());
+  pop.addEventListener('click', (e) => { if (e.target === pop) pop.close(); });
+</script>
+</body>
+</html>`;
+  const url = URL.createObjectURL(new Blob([doc], { type: 'text/html;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }

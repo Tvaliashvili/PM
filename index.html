@@ -1245,7 +1245,7 @@
   </dialog>
 
   <!-- Project report: PDF or Word -->
-  <dialog id="modal-project-report" class="modal modal-sm" aria-labelledby="project-report-title">
+  <dialog id="modal-project-report" class="modal" aria-labelledby="project-report-title">
     <form id="form-project-report">
       <div class="modal-header">
         <h2 id="project-report-title">Project Report</h2>
@@ -1256,9 +1256,10 @@
           The whole project on one designed page, in Georgian and English: key figures, progress vs plan, timetable,
           contractors, budget &amp; cash flow, rooms (for sites that have them), recent logs and delays.
         </p>
-        <p class="text-xs text-slate-500">PDF is one long page to read on screen; Word is A4, to arrange and print.</p>
+        <p class="text-xs text-slate-500">PDF is one long page to read on screen; Word is A4, to arrange and print. Interactive is a single file that opens in any browser, no login - click a room on the room map to see its details and the work done in it.</p>
       </div>
       <div class="modal-footer">
+        <button type="submit" value="html" class="btn btn-secondary" title="One file that opens in any browser - click a room to see its details"><span>Interactive (.html)</span></button>
         <button type="submit" value="word" class="btn btn-secondary"><span>Word</span></button>
         <button type="submit" value="pdf" class="btn btn-primary"><span>PDF</span></button>
       </div>

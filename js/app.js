@@ -4888,6 +4888,7 @@ async function exportProjectReport(e) {
   const btn = e.submitter ?? $('[value=pdf]', form);
   // Word: its pages are Word's to lay out, and can be moved by hand.
   const word = btn.value === 'word';
+  const html = btn.value === 'html'; // one web page, with a pop-up for each room
   const label = btn.querySelector('span') ?? btn;
   const original = label.textContent;
 
@@ -4899,7 +4900,7 @@ async function exportProjectReport(e) {
   try {
     const project = currentProject();
     const page = await buildProjectReport(projectReportArgs(project));
-    await downloadProjectReport(page, project, { word });
+    await downloadProjectReport(page, project, { word, html });
     closeModal('modal-project-report');
   } catch (err) {
     toast(err.message || 'Could not build the report.', 'error');

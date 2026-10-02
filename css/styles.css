@@ -1022,6 +1022,19 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
   background: #f8fafc;
 }
 .rpt-room-muted { background: #f8fafc; color: #64748b; }
+/* A room with work recorded in it: a dot in its corner (the room's pop-up in
+   the interactive report lists the work). */
+.rpt-room-has-work { position: relative; }
+.rpt-room-has-work::after {
+  content: ''; position: absolute; top: -2px; right: -2px;
+  width: 5px; height: 5px; border-radius: 999px; background: #2563eb; border: 1px solid #fff;
+}
+.rpt-room-key { min-width: 12px; height: 10px; padding: 0; vertical-align: middle; }
+/* Only the interactive (.html) report shows these - the PDF and Word can't be clicked. */
+.rpt .rpt-html-only { display: none; }
+.rpt-click-note { margin: 6px 0 8px; font-size: 10px; color: #1d4ed8; }
+.rpt-pop-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 10px; font-size: 11px; color: #334155; }
+.rpt-pop-notes { margin: 0 0 10px; font-size: 11px; color: #475569; white-space: pre-wrap; }
 .rpt-room-info  { background: #dbeafe; border-color: #bfdbfe; color: #1d4ed8; }
 .rpt-room-ok    { background: #d1fae5; border-color: #a7f3d0; color: #047857; }
 .rpt-room-dark  { background: #1e293b; border-color: #1e293b; color: #fff; }
