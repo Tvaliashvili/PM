@@ -556,7 +556,6 @@
         <table>
           <thead>
             <tr>
-              <th data-work-room>ოთახი<em>Room</em></th>
               <th>სამუშაო<em>Work</em></th>
               <th>კონტრაქტორი<em>Contractor</em></th>
               <th class="num">რაოდენობა<em>Quantity</em></th>
@@ -1115,16 +1114,18 @@
     <div class="modal-body space-y-4">
       <form id="form-room-work" class="panel space-y-3">
         <input type="hidden" name="id">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label id="room-work-pick-wrap" class="block">
+          <span class="form-label">Work</span>
+          <select id="room-work-pick" name="pick" class="select-dark w-full"></select>
+        </label>
+        <div id="room-work-new" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block">
-            <span class="form-label">Work - ქართული</span>
-            <input name="work" maxlength="300" list="work-names-ka" class="input-dark w-full" placeholder="მაგ. თაბაშირ-მუყაოს მონტაჟი">
-            <datalist id="work-names-ka"></datalist>
+            <span class="form-label">New work - ქართული</span>
+            <input name="work" maxlength="300" class="input-dark w-full" placeholder="მაგ. თაბაშირ-მუყაოს მონტაჟი">
           </label>
           <label class="block">
-            <span class="form-label">Work - English</span>
-            <input name="work_en" maxlength="300" list="work-names-en" class="input-dark w-full" placeholder="e.g. Gypsum board installation">
-            <datalist id="work-names-en"></datalist>
+            <span class="form-label">New work - English</span>
+            <input name="work_en" maxlength="300" class="input-dark w-full" placeholder="e.g. Gypsum board installation">
           </label>
         </div>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1146,8 +1147,9 @@
           </label>
         </div>
         <p class="text-xs text-slate-500">
-          Pick work written before from the suggestions, so the project report adds it up (200 m² + 300 m² = 500 m²).
-          New work: write it in one language and the other is filled in for you - check it before saving.
+          The list holds every work used in this project, so the same work adds up in the project report
+          (200 m² + 300 m² = 500 m²). A work leaves the list once no entry uses it. For a new one, choose
+          + New work and write it in one language - the other is filled in for you; check it before saving.
         </p>
         <p class="form-error hidden" data-error></p>
         <div class="flex justify-end gap-2">

@@ -657,6 +657,7 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
 /* Figures keep tabular digits so they stay the same width down the column. */
 .pdf-page .num { font-variant-numeric: tabular-nums; }
 .pdf-page .pdf-empty { color: #64748b; font-style: italic; text-align: center; }
+.pdf-page tr.pdf-group-row td { background: #f1f5f9; font-weight: 700; color: #0f172a; }
 .pdf-page .pdf-bi { white-space: pre-line; }
 
 /* Photos sit in a table, two to a row: the row is the unit that stays whole

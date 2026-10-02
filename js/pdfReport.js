@@ -95,7 +95,7 @@ async function fetchTodayData(db, projectId, day) {
       .order('start_date'),
     // Work recorded in the rooms on this day.
     db.from('work_done')
-      .select('work, work_en, quantity, unit, created_at, contractors(name, name_ka), flats(block, floor, flat_number)')
+      .select('flat_id, work, work_en, quantity, unit, created_at, contractors(name, name_ka), flats(block, floor, flat_number)')
       .eq('project_id', projectId)
       .eq('work_date', day.date)
       .order('created_at'),
@@ -159,6 +159,17 @@ function addRow(tbody, cells) {
     if (className) td.className = className;
     tr.appendChild(td);
   }
+  tbody.appendChild(tr);
+}
+
+/** A heading row across the table: the room the lines under it belong to. */
+function addGroupRow(tbody, colspan, text) {
+  const tr = document.createElement('tr');
+  tr.className = 'pdf-group-row';
+  const td = document.createElement('td');
+  td.colSpan = colspan;
+  td.textContent = text;
+  tr.appendChild(td);
   tbody.appendChild(tr);
 }
 
@@ -245,16 +256,41 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
     addEmptyRow(mpRows, 2, bi('No manpower recorded.'));
   }
 
-  // Work done that day, where and by whom (section hidden when none was recorded)
+  // Work done that day: each room once, as a heading, and under it each kind
+  // of work once - two contractors on the same work share its line, each with
+  // their part (section hidden when none was recorded).
   if (work.length) {
-    if (!rooms) page.querySelectorAll('[data-work-room]').forEach((el) => el.remove());
     const workRows = page.querySelector('[data-rows="work"]');
-    work.forEach((w) => addRow(workRows, [
-      ...(rooms ? [{ text: w.flats ? flatLabelBi(w.flats) : bi('Site-wide') }] : []),
-      { text: [w.work, w.work_en !== w.work ? w.work_en : ''].filter(Boolean).join('\n'), className: 'pdf-bi' },
-      { text: biName(w.contractors?.name, w.contractors?.name_ka) || '-' },
-      { text: quantityOf(w) || '-', className: 'num' },
-    ]));
+    const byNumber = (a, b) => String(a ?? '').localeCompare(String(b ?? ''), undefined, { numeric: true });
+    const roomsOfDay = new Map();
+    for (const w of work) {
+      const room = w.flat_id ?? '';
+      if (!roomsOfDay.has(room)) roomsOfDay.set(room, { flat: w.flats, works: new Map() });
+      const key = `${String(w.work || w.work_en || '').trim().toLowerCase()}|${w.unit ?? ''}`;
+      const works = roomsOfDay.get(room).works;
+      if (!works.has(key)) works.set(key, { ka: w.work, en: w.work_en, unit: w.unit, qty: 0, who: new Map() });
+      const g = works.get(key);
+      const q = Number(w.quantity) || 0;
+      g.qty += q;
+      const name = biName(w.contractors?.name, w.contractors?.name_ka);
+      g.who.set(name, (g.who.get(name) ?? 0) + q);
+    }
+    const ordered = [...roomsOfDay.values()].sort((a, b) => (!a.flat) - (!b.flat)
+      || byNumber(a.flat?.block, b.flat?.block) || byNumber(a.flat?.floor, b.flat?.floor)
+      || byNumber(a.flat?.flat_number, b.flat?.flat_number));
+    for (const { flat, works } of ordered) {
+      if (rooms) addGroupRow(workRows, 3, flat ? flatLabelBi(flat) : bi('Site-wide'));
+      for (const g of works.values()) {
+        const named = [...g.who].filter(([name]) => name);
+        addRow(workRows, [
+          { text: [g.ka, g.en !== g.ka ? g.en : ''].filter(Boolean).join('\n'), className: 'pdf-bi' },
+          { text: named.length > 1
+            ? named.map(([name, q]) => `${name}${q ? ` - ${quantityOf({ quantity: q, unit: g.unit })}` : ''}`).join('\n')
+            : named[0]?.[0] || '-', className: 'pdf-bi' },
+          { text: quantityOf({ quantity: g.qty || null, unit: g.unit }) || '-', className: 'num' },
+        ]);
+      }
+    }
   } else {
     page.querySelector('[data-section="work"]').remove();
   }

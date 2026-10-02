@@ -712,29 +712,35 @@ function openRoomWork(flatId) {
   $('#room-work-title').textContent = `Work done - ${roomLabel(flat)}`;
   $('#room-work-sub').textContent = [`Floor ${flat.floor}`, flat.unit_type, UNIT_STATUSES[flat.status]].filter(Boolean).join(' · ');
   resetRoomWorkForm();
-  fillWorkSuggestions();
   renderRoomWork();
   openModal('modal-room-work');
-  $('#form-room-work').elements.work.focus();
+  $('#room-work-pick').focus();
 }
 
 /**
- * Work written before, newest first, to pick from: the same work spelled the
- * same way is what lets the project report add it up.
+ * The project's kinds of work, like tags: every work written in this project,
+ * once each, with its English, unit and contractor from the last time. A work
+ * no entry uses any more drops off the list by itself. Picking from it keeps
+ * the spelling the same, which is what lets the project report add work up.
  */
-function fillWorkSuggestions() {
-  const seen = { ka: new Set(), en: new Set() };
-  for (const w of [...state.work].reverse()) {
-    if (w.work) seen.ka.add(w.work);
-    if (w.work_en) seen.en.add(w.work_en);
-  }
-  $('#work-names-ka').innerHTML = [...seen.ka].map((t) => `<option value="${esc(t)}"></option>`).join('');
-  $('#work-names-en').innerHTML = [...seen.en].map((t) => `<option value="${esc(t)}"></option>`).join('');
+const workTagKey = (w) => String(w.work || w.work_en || '').trim().toLowerCase().replace(/\s+/g, ' ');
+function workTags() {
+  const tags = new Map();
+  for (const w of state.work) tags.set(workTagKey(w), w); // oldest first, so the last one stays
+  return [...tags].map(([key, w]) => ({ key, ka: w.work, en: w.work_en, unit: w.unit, contractor_id: w.contractor_id }))
+    .sort((a, b) => String(a.ka || a.en).localeCompare(String(b.ka || b.en)));
 }
 
-/** The last entry written exactly like this, in either language. */
-const knownWork = (text, lang) => [...state.work].reverse()
-  .find((w) => (lang === 'ka' ? w.work : w.work_en) === text);
+const NEW_WORK = '__new';
+const biNameText = (t) => (t.ka && t.en && t.ka !== t.en ? `${t.ka} / ${t.en}` : (t.ka || t.en || ''));
+
+/** The picker, and the two name fields when a new work is being written. */
+function syncWorkPicker() {
+  const pick = $('#room-work-pick');
+  const isNew = pick.value === NEW_WORK || pick.options.length <= 1;
+  $('#room-work-new').classList.toggle('hidden', !isNew);
+  $('#room-work-pick-wrap').classList.toggle('hidden', pick.options.length <= 1);
+}
 
 function resetRoomWorkForm(entry = null) {
   const form = $('#form-room-work');
@@ -745,6 +751,14 @@ function resetRoomWorkForm(entry = null) {
   f.work_date.max = todayISO();
   f.work.value = entry?.work ?? '';
   f.work_en.value = entry?.work_en ?? '';
+  const tags = workTags();
+  const selected = entry ? workTagKey(entry) : '';
+  $('#room-work-pick').innerHTML = '<option value="">- Pick the work -</option>'
+    + tags.map((t) => `<option value="${esc(t.key)}"${t.key === selected ? ' selected' : ''}>${esc(biNameText(t))}</option>`).join('')
+    + `<option value="${NEW_WORK}">+ New work…</option>`;
+  // No work in the project yet: there is nothing to pick, so it is a new one.
+  if (!tags.length) $('#room-work-pick').innerHTML = `<option value="${NEW_WORK}">+ New work…</option>`;
+  syncWorkPicker();
   $('#room-work-contractor').innerHTML = contractorOptions(entry?.contractor_id ?? '');
   f.quantity.value = entry?.quantity ?? '';
   f.unit.value = entry?.unit ?? '';
@@ -784,18 +798,21 @@ function renderRoomWork() {
 // before saving - the same as an activity's names.
 async function onRoomWorkNameChange(e) {
   const f = e.currentTarget.elements;
+  // A work picked from the list brings its names, and its unit and contractor
+  // from the last time, with no translation to wait for.
+  if (e.target === f.pick) {
+    const tag = workTags().find((t) => t.key === f.pick.value);
+    f.work.value = tag?.ka ?? '';
+    f.work_en.value = tag?.en ?? '';
+    if (tag?.unit && !f.unit.value) f.unit.value = tag.unit;
+    if (tag?.contractor_id && !f.contractor_id.value) f.contractor_id.value = tag.contractor_id;
+    syncWorkPicker();
+    if (f.pick.value === NEW_WORK) f.work.focus();
+    return;
+  }
   if (e.target !== f.work && e.target !== f.work_en) return;
   const other = e.target === f.work ? f.work_en : f.work;
   const text = e.target.value.trim();
-  // Picked from the suggestions: the other language and the unit come from
-  // the last time, with no translation to wait for.
-  const known = knownWork(text, e.target === f.work ? 'ka' : 'en');
-  if (known) {
-    if (!other.value.trim()) other.value = (e.target === f.work ? known.work_en : known.work) ?? '';
-    if (!f.unit.value && known.unit) f.unit.value = known.unit;
-    if (!f.contractor_id.value && known.contractor_id) f.contractor_id.value = known.contractor_id;
-    return;
-  }
   const both = splitBilingual(text);
   if (both && (!other.value.trim() || other.value.trim() === text)) {
     f.work.value = both.ka;
@@ -826,7 +843,9 @@ async function saveRoomWork(e) {
     if (!en || en === cell) en = both.en;
   }
   if (!ka && !en) {
-    showFormError(form, 'Write what was done, in Georgian or English.');
+    showFormError(form, fd.get('pick') === NEW_WORK
+      ? 'Write the new work, in Georgian or English.'
+      : 'Pick the work, or choose + New work.');
     return;
   }
   const quantity = numOrNull(fd.get('quantity'));
@@ -866,7 +885,7 @@ async function onRoomWorkListClick(e) {
   const edit = e.target.closest('[data-room-work-edit]');
   if (edit) {
     resetRoomWorkForm(state.work.find((w) => w.id === edit.dataset.roomWorkEdit));
-    $('#form-room-work').elements.work.focus();
+    $('#room-work-pick').focus();
     return;
   }
   const del = e.target.closest('[data-room-work-delete]');
