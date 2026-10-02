@@ -5,7 +5,7 @@
 // =============================================================
 import {
   taskState, completionOf, costPosition, contractorPerformance, plannedSpendByMonth, actualSpendByMonth,
-  siteCostsByMonth, rentalTotal, rentalEnd, delayIsOngoing, delayDaysLost, causeOf, dueDate,
+  siteCostsByMonth, rentalTotal, rentalEnd, delayIsOngoing, delayDaysLost, causeOf, dueDate, delayStart,
   stalledTasks, forecastFinish, durationDays, contractorManDays, planVerdict,
 } from './schedule.js';
 import { bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
@@ -155,7 +155,7 @@ async function fetchExtras(db, projectId, today) {
  */
 export async function buildProjectReport({
   db, project, tasks, payments, contractors, contractorDelays, units, progress, money,
-  siteCosts = [], rentals = [], siteLogs = [], materials = [], work = [],
+  siteCosts = [], rentals = [], siteLogs = [], materials = [], work = [], delayImpacts = [],
 }) {
   const today = iso(new Date());
   const { logs, delays, events, variations } = await fetchExtras(db, project.id, today);
@@ -486,7 +486,7 @@ export async function buildProjectReport({
       const extWidth = ext ? Math.max(0.4, x(addDays(dueDate(t), 1)) - extLeft) : 0;
       const who = nameOf(t.contractor_id);
       return `
-        <div class="rpt-g-row rpt-avoid">
+        <div class="rpt-g-row rpt-avoid" data-pop="task:${esc(t.id)}">
           <div class="rpt-g-label">
             <strong>${esc(taskKa(t))}</strong>
             ${t.name_ka && t.name !== t.name_ka ? `<span class="rpt-g-en">${esc(t.name)}</span>` : ''}
@@ -736,7 +736,7 @@ export async function buildProjectReport({
           cp += p;
           ca += spentIn(k);
           return `
-            <tr class="${k === thisMonth ? 'rpt-current' : ''}">
+            <tr class="${k === thisMonth ? 'rpt-current' : ''}" data-pop="month:${k}">
               <td>${MONTHS_KA[Number(k.slice(5)) - 1]} / ${MONTHS_EN[Number(k.slice(5)) - 1]} ${k.slice(0, 4)}</td>
               <td class="num">${m(p)}</td>
               <td class="num">${a ? m(a) : '-'}</td>
@@ -942,7 +942,7 @@ export async function buildProjectReport({
             const held = retentionByContractor.get(c.id) ?? 0;
             const crew = manDays.get(c.id);
             return `
-              <article class="rpt-card rpt-avoid">
+              <article class="rpt-card rpt-avoid" data-pop="con:${esc(c.id)}">
                 <div class="rpt-card-head">
                   <div>
                     <strong>${esc(biName(c.name, c.name_ka))}</strong>
@@ -1022,7 +1022,7 @@ export async function buildProjectReport({
                 <span class="rpt-room-list">
                   ${list
     .sort((a, b) => String(a.flat_number).localeCompare(String(b.flat_number), undefined, { numeric: true }))
-    .map((u) => `<i class="rpt-room rpt-room-${toneOf(u)}${roomsWithWork.has(u.id) ? ' rpt-room-has-work' : ''}" data-room="${esc(u.id)}" title="${esc(bi(u.unit_type || ''))}">${esc(u.flat_number)}</i>`)
+    .map((u) => `<i class="rpt-room rpt-room-${toneOf(u)}${roomsWithWork.has(u.id) ? ' rpt-room-has-work' : ''}" data-pop="room:${esc(u.id)}" title="${esc(bi(u.unit_type || ''))}">${esc(u.flat_number)}</i>`)
     .join('')}
                 </span>
               </div>`).join('')}
@@ -1187,7 +1187,7 @@ export async function buildProjectReport({
       ${series.map((l) => {
         const n = workersOf(l);
         return `
-          <div class="rpt-col">
+          <div class="rpt-col" data-pop="day:${l.log_date}">
             <span class="rpt-col-value">${n}</span>
             <div class="rpt-col-bar" style="height:${Math.max(2, (n / peak) * 82)}%"></div>
             <span class="rpt-col-label">${dm(l.log_date)}</span>
@@ -1412,13 +1412,198 @@ export async function buildProjectReport({
         : `<p class="rpt-all-good">✓ ${L('ყველა ჩანაწერი დახურულია', 'Every record has been closed out')}</p>`}
     </section>`;
 
+  // ---------- Pop-ups for the interactive (.html) report ----------
+  // Every click-able part of the page - an activity on the timeline, a
+  // contractor, a day on the site activity chart, a month of the cash flow, a
+  // room - has its pop-up here, keyed as on its data-pop attribute.
+  const popups = {};
+  const popTable = (heads, rows) => (rows.length ? `
+    <table class="rpt-compact">
+      <thead><tr>${heads.map(([ka, en, cls = '']) => `<th class="${cls}">${L(ka, en)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.join('')}</tbody>
+    </table>` : '');
+  const popH = (ka, en) => `<h4 class="rpt-pop-h">${L(ka, en)}</h4>`;
+  const facts = (list) => `<div class="rpt-pop-grid">${list.filter(Boolean).map(([ka, en, v]) => `
+    <div><span>${L(ka, en)}</span><b>${v}</b></div>`).join('')}</div>`;
+  const tradeName = (key) => bi(MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key);
+  const qtyText = (q, unit) => `${num.format(q)}${unit ? ` ${esc(unit)}` : ''}`;
+  const delayRow = (dl, extra = '') => `
+    <tr><td>${d(delayStart(dl))}</td><td>${esc(bi(dl.delay_cause))}</td>
+      <td class="num">${delayDaysLost(dl, today)}${delayIsOngoing(dl) ? ` · ${L('მიმდინარე', 'ongoing')}` : ''}</td>${extra}</tr>`;
+
+  // An activity on the timeline: its dates, money, materials and what held it up.
+  for (const t of tasks) {
+    const s = taskState(t, today);
+    const own = payments.filter((p) => p.task_id === t.id).sort((a, b) => a.paid_on.localeCompare(b.paid_on));
+    const paid = own.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    const held = own.reduce((sum, p) => sum + Number(p.retention || 0), 0);
+    const mats = materials.filter((x) => x.task_id === t.id);
+    const holdUps = delayImpacts.filter((i) => i.task_id === t.id && i.delay);
+    popups[`task:${t.id}`] = `
+      <h3>${esc(taskBi(t))}</h3>
+      <p class="rpt-pop-facts">${chip({ ...TASK_STATUS[s.key], tone: TASK_STATUS[s.key].tone })}
+        ${t.contractor_id ? `<span>${esc(nameOf(t.contractor_id))}</span>` : ''}</p>
+      ${facts([
+        ['დაგეგმილი', 'Planned', `${d(t.planned_start)} → ${d(t.planned_finish)}`],
+        t.baseline_finish ? ['დამტკიცებული', 'Baseline', `${d(t.baseline_start)} → ${d(t.baseline_finish)}`] : null,
+        Number(t.extension_days) ? ['ვადა შეფერხებით', 'Due with delays', `${d(dueDate(t))} (+${t.extension_days})`] : null,
+        ['შესრულებული', 'Done', `${Math.round(completionOf(t) * 100)}%${s.daysLate ? ` · ${s.daysLate} ${L('დღე', 'days')} ${L('დაგვიანება', 'late')}` : ''}`],
+        Number(t.budget) ? ['ბიუჯეტი', 'Budget', `${m(Number(t.budget))}${t.quantity != null ? ` <span class="rpt-muted">${num.format(t.quantity)} ${esc(t.unit || '')}${t.rate != null ? ` × ${m(t.rate)}` : ''}</span>` : ''}`] : null,
+        own.length ? ['გადახდილი', 'Paid', `${m(paid)}${held ? ` <span class="rpt-muted">+ ${m(held)} ${L('გარანტია', 'retention')}</span>` : ''}`] : null,
+        Number(t.material_budget) || mats.length ? ['მასალა', 'Materials', `${m(mats.reduce((sum, x) => sum + Number(x.amount || 0), 0))}${Number(t.material_budget) ? ` / ${m(Number(t.material_budget))}` : ''}`] : null,
+      ])}
+      ${own.length ? popH('გადახდები', 'Payments') + popTable(
+        [['თარიღი', 'Date'], ['თანხა', 'Paid', 'num'], ['გარანტია', 'Retention', 'num'], ['შენიშვნა', 'Note']],
+        own.map((p) => `<tr><td>${d(p.paid_on)}</td><td class="num">${m(Number(p.amount))}</td>
+          <td class="num">${Number(p.retention) ? m(Number(p.retention)) : '-'}</td><td>${esc(p.note || '-')}</td></tr>`),
+      ) : ''}
+      ${mats.length ? popH('მასალები', 'Materials') + popTable(
+        [['თარიღი', 'Date'], ['მასალა', 'Material'], ['რაოდენობა', 'Quantity', 'num'], ['თანხა', 'Amount', 'num']],
+        mats.map((x) => `<tr><td>${d(x.bought_on)}</td><td>${esc(biName(x.item, x.item_ka))}</td>
+          <td class="num">${x.quantity != null ? qtyText(Number(x.quantity), x.unit) : '-'}</td><td class="num">${m(Number(x.amount))}</td></tr>`),
+      ) : ''}
+      ${holdUps.length ? popH('შეაფერხა', 'Held up by') + popTable(
+        [['თარიღი', 'Date'], ['მიზეზი', 'Cause'], ['დღე', 'Days', 'num']],
+        holdUps.map((i) => delayRow(i.delay)),
+      ) : ''}`;
+  }
+
+  // A contractor: their jobs, money, delays, crew and the work recorded for them.
+  for (const c of contractors) {
+    const jobs = tasks.filter((t) => t.contractor_id === c.id);
+    const jobIds = new Set(jobs.map((t) => t.id));
+    const own = payments.filter((p) => jobIds.has(p.task_id)).sort((a, b) => a.paid_on.localeCompare(b.paid_on));
+    const mats = materials.filter((x) => jobIds.has(x.task_id));
+    const caused = contractorDelays.filter((dl) => causeOf(dl) === c.id);
+    const crewDays = siteLogs.filter((l) => (l.crew ?? []).some((x) => x.contractor_id === c.id && Number(x.workers) > 0));
+    const theirWork = new Map();
+    for (const w of work.filter((x) => x.contractor_id === c.id)) {
+      const key = String(w.work || w.work_en || '').trim().toLowerCase();
+      const g = theirWork.get(key) ?? { ka: w.work, en: w.work_en, byUnit: new Map(), rooms: new Set() };
+      if (Number(w.quantity) > 0) addTo(g.byUnit, w.unit ?? '', Number(w.quantity));
+      if (w.flat_id) g.rooms.add(w.flat_id);
+      theirWork.set(key, g);
+    }
+    popups[`con:${c.id}`] = `
+      <h3>${esc(biName(c.name, c.name_ka))}</h3>
+      <p class="rpt-pop-facts">${c.trade ? `<span>${esc(bi(c.trade))}</span>` : ''}
+        ${[c.contact_person, c.phone, c.email].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join('')}</p>
+      ${jobs.length ? popH('სამუშაოები', 'Jobs') + popTable(
+        [['სამუშაო', 'Work item'], ['ვადა', 'Due'], ['შესრ.', 'Done', 'num'], ['ბიუჯეტი', 'Budget', 'num']],
+        jobs.map((t) => `<tr><td>${esc(taskBi(t))}</td><td>${d(dueDate(t))}</td>
+          <td class="num">${Math.round(completionOf(t) * 100)}%</td><td class="num">${Number(t.budget) ? m(Number(t.budget)) : '-'}</td></tr>`),
+      ) : `<p class="rpt-none">${L('სამუშაო არ აქვს', 'No jobs assigned')}</p>`}
+      ${own.length ? popH('გადახდები', 'Payments') + popTable(
+        [['თარიღი', 'Date'], ['სამუშაო', 'Work item'], ['თანხა', 'Paid', 'num'], ['გარანტია', 'Retention', 'num']],
+        own.map((p) => `<tr><td>${d(p.paid_on)}</td><td>${esc(taskBi(taskById.get(p.task_id) ?? {}))}</td>
+          <td class="num">${m(Number(p.amount))}</td><td class="num">${Number(p.retention) ? m(Number(p.retention)) : '-'}</td></tr>`),
+      ) : ''}
+      ${mats.length ? popH('მიწოდებული მასალა', 'Materials supplied') + popTable(
+        [['თარიღი', 'Date'], ['მასალა', 'Material'], ['თანხა', 'Amount', 'num']],
+        mats.map((x) => `<tr><td>${d(x.bought_on)}</td><td>${esc(biName(x.item, x.item_ka))}</td><td class="num">${m(Number(x.amount))}</td></tr>`),
+      ) : ''}
+      ${theirWork.size ? popH('შესრულებული სამუშაოები', 'Work recorded') + popTable(
+        [['სამუშაო', 'Work'], ['გაზომილი', 'Measured', 'num'], ['ოთახი', 'Rooms', 'num']],
+        [...theirWork.values()].map((g) => `<tr><td>${biText(g.ka, g.en !== g.ka ? g.en : '')}</td>
+          <td class="num">${g.byUnit.size ? [...g.byUnit].map(([u, q]) => qtyText(q, u)).join(' · ') : L('მიმდინარეობს', 'In progress')}</td>
+          <td class="num">${g.rooms.size || '-'}</td></tr>`),
+      ) : ''}
+      ${caused.length ? popH('მისი ბრალით შეფერხებები', 'Delays they caused') + popTable(
+        [['თარიღი', 'Date'], ['მიზეზი', 'Cause'], ['დღე', 'Days', 'num']], caused.map((dl) => delayRow(dl)),
+      ) : ''}
+      ${crewDays.length ? `<p class="rpt-pop-foot">${L('ობიექტზე იყო', 'On site on')} <b>${crewDays.length}</b> ${L('დღე', 'days')}
+        · ${L('ბოლოს', 'last')} ${d(crewDays.at(-1).log_date)}</p>` : ''}`;
+  }
+
+  // A day on the site activity chart: its log, crew and the work recorded.
+  for (const l of logs) {
+    const crew = siteLogs.find((x) => x.log_date === l.log_date)?.crew ?? [];
+    const byWho = new Map();
+    for (const x of crew) {
+      if (!(Number(x.workers) > 0)) continue;
+      const who = x.contractor_id ? nameOf(x.contractor_id) : bi('Hired by the client');
+      if (!byWho.has(who)) byWho.set(who, []);
+      byWho.get(who).push(`${tradeName(x.trade)} ${x.workers}`);
+    }
+    const dayWork = work.filter((w) => w.work_date === l.log_date);
+    popups[`day:${l.log_date}`] = `
+      <h3>${esc(dateKa(l.log_date))} <span class="rpt-muted">${esc(dateEn(l.log_date))}</span></h3>
+      <p class="rpt-pop-facts">${l.weather ? `<span>${esc(bi(l.weather))}</span>` : ''}
+        <span>${L('სამუშაო ძალა', 'Manpower')} <b>${workersOf(l)}</b></span></p>
+      ${byWho.size ? popH('ვინ იყო ობიექტზე', 'On site') + popTable(
+        [['ვინ', 'Who'], ['სპეციალობა', 'Trades']],
+        [...byWho].map(([who, list]) => `<tr><td>${esc(who)}</td><td>${esc(list.join(' · '))}</td></tr>`),
+      ) : ''}
+      ${dayWork.length ? popH('შესრულებული სამუშაოები', 'Work recorded') + popTable(
+        [['ოთახი', 'Room'], ['სამუშაო', 'Work'], ['კონტრაქტორი', 'Contractor'], ['რაოდენობა', 'Quantity', 'num']],
+        dayWork.map((w) => {
+          const u = units.find((x) => x.id === w.flat_id);
+          return `<tr><td>${u ? esc(u.flat_number) : '-'}</td><td>${biText(w.work, w.work_en !== w.work ? w.work_en : '')}</td>
+            <td>${w.contractor_id ? esc(nameOf(w.contractor_id)) : '-'}</td>
+            <td class="num">${Number(w.quantity) > 0 ? qtyText(Number(w.quantity), w.unit) : L('მიმდინარეობს', 'In progress')}</td></tr>`;
+        }),
+      ) : ''}
+      ${l.notes || l.notes_en ? popH('ჩანაწერები', 'Site notes') + `<div class="rpt-pop-notes">${biText(l.notes, l.notes_en)}</div>` : ''}`;
+  }
+
+  // A month of the cash flow: what the spending was made of.
+  for (const k of monthKeys) {
+    const inMonth = (dt) => String(dt ?? '').slice(0, 7) === k;
+    const pays = payments.filter((p) => inMonth(p.paid_on));
+    const mats = materials.filter((x) => inMonth(x.bought_on));
+    const costs = siteCosts.filter((e) => inMonth(e.date) && e.date <= today);
+    const byRental = new Map();
+    for (const e of costs.filter((x) => x.kind === 'rental')) byRental.set(e.rentalId, (byRental.get(e.rentalId) ?? 0) + e.amount);
+    const dayRate = (kind) => {
+      const list = costs.filter((x) => x.kind === kind);
+      return { days: list.reduce((s, x) => s + (x.workers || 0), 0), cost: list.reduce((s, x) => s + x.amount, 0) };
+    };
+    const labour = dayRate('labour');
+    const guard = dayRate('guard');
+    popups[`month:${k}`] = `
+      <h3>${MONTHS_KA[Number(k.slice(5)) - 1]} <span class="rpt-muted">${MONTHS_EN[Number(k.slice(5)) - 1]} ${k.slice(0, 4)}</span></h3>
+      ${facts([
+        ['გეგმა', 'Planned', m(planned.get(k) ?? 0)],
+        ['დახარჯული', 'Spent', m(spentIn(k))],
+      ])}
+      ${pays.length ? popH('გადახდები კონტრაქტორებზე', 'Contract payments') + popTable(
+        [['თარიღი', 'Date'], ['სამუშაო', 'Work item'], ['კონტრაქტორი', 'Contractor'], ['თანხა', 'Paid', 'num']],
+        pays.map((p) => {
+          const t = taskById.get(p.task_id) ?? {};
+          return `<tr><td>${d(p.paid_on)}</td><td>${esc(taskBi(t))}</td><td>${t.contractor_id ? esc(nameOf(t.contractor_id)) : '-'}</td>
+            <td class="num">${m(Number(p.amount))}</td></tr>`;
+        }),
+      ) : ''}
+      ${mats.length ? popH('მასალები', 'Materials') + popTable(
+        [['თარიღი', 'Date'], ['მასალა', 'Material'], ['თანხა', 'Amount', 'num']],
+        mats.map((x) => `<tr><td>${d(x.bought_on)}</td><td>${esc(biName(x.item, x.item_ka))}</td><td class="num">${m(Number(x.amount))}</td></tr>`),
+      ) : ''}
+      ${byRental.size ? popH('ტექნიკის ქირა', 'Equipment rentals') + popTable(
+        [['ტექნიკა', 'Equipment'], ['ამ თვეში', 'This month', 'num']],
+        [...byRental].map(([id, sum]) => {
+          const r = rentals.find((x) => x.id === id);
+          return `<tr><td>${esc(r ? biName(r.equipment, r.equipment_ka) : '-')}</td><td class="num">${m(sum)}</td></tr>`;
+        }),
+      ) : ''}
+      ${labour.cost || guard.cost ? popH('დღიური ანაზღაურება', 'Paid by the day') + popTable(
+        [['ვინ', 'Who'], ['კაც-დღე', 'Person-days', 'num'], ['ღირებულება', 'Cost', 'num']],
+        [labour.cost ? `<tr><td>${L('დღიური მუშები', 'Daily workers')}</td><td class="num">${labour.days}</td><td class="num">${m(labour.cost)}</td></tr>` : '',
+          guard.cost ? `<tr><td>${L('დარაჯები', 'Guards')}</td><td class="num">${guard.days}</td><td class="num">${m(guard.cost)}</td></tr>` : ''].filter(Boolean),
+      ) : ''}
+      ${!pays.length && !mats.length && !byRental.size && !labour.cost && !guard.cost
+        ? `<p class="rpt-none">${L('ამ თვეში ხარჯი არ ყოფილა', 'Nothing was spent this month')}</p>` : ''}`;
+  }
+
+  // Each room, from the room map.
+  for (const [id, html] of Object.entries(roomPopups)) popups[`room:${id}`] = html;
+
   const footer = `<div class="rpt-avoid">${signatureHtml(REPORT_AUTHOR)}</div>`;
 
   const page = document.createElement('div');
   page.className = 'pdf-page rpt';
   page.innerHTML = header + glance + attention + notMoving + driftSection + timeline + roadAhead
     + costSection + contractorsSection + unitsSection + workSection + logsSection + delaysSection + safetySection + footer;
-  page.roomPopups = roomPopups; // read by the interactive (.html) export only
+  page.popups = popups; // read by the interactive (.html) export only
   return page;
 }
 
@@ -1462,7 +1647,7 @@ async function saveInteractive(page, project, fileName) {
   const css = await (await fetch(new URL('../css/styles.css', import.meta.url))).text();
   // Only what the report needs to be read: the room map's pop-up data, as JSON
   // a <script> can't be broken out of.
-  const data = JSON.stringify(page.roomPopups ?? {}).replace(/</g, '\\u003c');
+  const data = JSON.stringify(page.popups ?? {}).replace(/</g, '\\u003c');
   const title = `Project Report - ${project.name}`;
   const doc = `<!doctype html>
 <html lang="ka">
@@ -1481,8 +1666,29 @@ async function saveInteractive(page, project, fileName) {
   @media (max-width: 820px) { body { padding: 0; } .pdf-page.rpt { padding: 20px 16px 28px; border-radius: 0; } }
   .rpt .rpt-html-only { display: block; }
   .rpt .rpt-print-only { display: none; }
-  .rpt [data-room] { cursor: pointer; }
-  .rpt [data-room]:hover { outline: 2px solid #2563eb; outline-offset: 1px; }
+  .rpt [data-pop] { cursor: pointer; }
+  .rpt .rpt-room[data-pop]:hover, .rpt .rpt-card[data-pop]:hover { outline: 2px solid #2563eb; outline-offset: 1px; }
+  .rpt .rpt-g-row[data-pop]:hover, .rpt tr[data-pop]:hover td { background: #eff6ff; }
+  .rpt .rpt-col[data-pop]:hover .rpt-col-bar { background: #2563eb; }
+  /* Contents and language, fixed above the sheet */
+  .rpt-bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+    max-width: 798px; margin: -24px auto 16px; padding: 10px 12px; background: rgba(238, 242, 246, 0.95);
+    backdrop-filter: blur(4px); border-bottom: 1px solid #e2e8f0; font-size: 12px; }
+  .rpt-bar nav { display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
+  .rpt-bar a { flex: none; white-space: nowrap; }
+  /* The contents in one language: Georgian, or English when that is chosen. */
+  body:not(.lang-en) .rpt-bar .le, body.lang-en .rpt-bar .lk { display: none; }
+  .rpt-bar a { padding: 3px 8px; border-radius: 999px; color: #334155; text-decoration: none; background: #fff; border: 1px solid #e2e8f0; }
+  .rpt-bar a:hover { border-color: #2563eb; color: #2563eb; }
+  .rpt-langs { display: flex; gap: 2px; padding: 2px; border-radius: 999px; background: #fff; border: 1px solid #e2e8f0; }
+  .rpt-langs button { border: 0; padding: 3px 10px; border-radius: 999px; background: transparent; font: inherit; color: #334155; cursor: pointer; }
+  .rpt-langs button.on { background: #2563eb; color: #fff; }
+  .rpt h2[id] { scroll-margin-top: 64px; }
+  /* One language at a time: the Georgian and English parts are marked on load */
+  body.lang-ka .rpt em, body.lang-ka .rpt .le, body.lang-ka .rpt .lsep { display: none !important; }
+  body.lang-en .rpt .lk, body.lang-en .rpt .lsep { display: none !important; }
+  body.lang-en .rpt th em, body.lang-en .rpt span > em:only-child { display: inline !important; }
+  @media (max-width: 820px) { .rpt-bar { margin: 0 0 8px; } }
   dialog.rpt-pop { width: min(46rem, calc(100vw - 2rem)); padding: 0; border: 1px solid #e2e8f0; border-radius: 8px;
     box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.35); }
   dialog.rpt-pop::backdrop { background: rgba(15, 23, 42, 0.45); }
@@ -1492,20 +1698,114 @@ async function saveInteractive(page, project, fileName) {
   .rpt-pop-close { position: absolute; top: 10px; right: 12px; width: 30px; height: 30px; border: 0; border-radius: 6px;
     background: transparent; font-size: 22px; line-height: 1; color: #64748b; cursor: pointer; }
   .rpt-pop-close:hover { background: #f1f5f9; }
+  .rpt-pop-h { margin: 14px 0 6px; font-size: 12px; font-weight: 700; color: #0f172a; }
+  .rpt-pop-h em { font-weight: 400; color: #64748b; margin-left: 4px; }
+  .rpt-pop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 4px 0 6px; }
+  .rpt-pop-grid > div { padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f8fafc; }
+  .rpt-pop-grid span { display: block; font-size: 10px; color: #64748b; }
+  .rpt-pop-grid span em { display: inline; margin-left: 3px; }
+  .rpt-pop-grid b { display: block; margin-top: 2px; font-size: 13px; color: #0f172a; }
+  .rpt-pop-foot { margin-top: 10px; font-size: 11px; color: #475569; }
+  .rpt-pop-body table { margin-top: 2px; }
 </style>
 </head>
 <body>
+<div class="rpt-bar"><nav id="rpt-nav"></nav>
+  <div class="rpt-langs" role="group" aria-label="Language">
+    <button data-lang="ka">ქართული</button><button data-lang="both" class="on">ორივე / Both</button><button data-lang="en">English</button>
+  </div>
+</div>
 ${page.outerHTML}
 <dialog class="rpt-pop" id="room-pop"><button class="rpt-pop-close" aria-label="Close">&times;</button><div class="rpt-pop-body pdf-page rpt"></div></dialog>
-<script>
-  const ROOMS = ${data};
+<script>(${reportViewer.toString()})(${data});</script>
+</body>
+</html>`;
+  const url = URL.createObjectURL(new Blob([doc], { type: 'text/html;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/**
+ * The interactive report's own script, written out into the .html as source
+ * (reportViewer.toString()): pop-ups for whatever has a data-pop key, the
+ * language switch, the contents bar, and fitting the sheet to a phone.
+ */
+function reportViewer(POPUPS) {
   const pop = document.getElementById('room-pop');
-  document.addEventListener('click', (e) => {
-    const room = e.target.closest('[data-room]');
-    if (room && ROOMS[room.dataset.room]) {
-      pop.querySelector('.rpt-pop-body').innerHTML = ROOMS[room.dataset.room];
-      pop.showModal();
+  const GEORGIAN = /[\u10A0-\u10FF]/;
+  // Marks the Georgian and English parts of the text, so either can be hidden.
+  // A text can hold several "ქართული / English" pairs between middle dots;
+  // each pair splits into .lk / .le, Georgian on its own becomes .lk, and
+  // spaces, separators and a count after the English ("Masons 9") stay shown.
+  const make = (text, cls) => {
+    const el = document.createElement('bdi');
+    el.className = cls;
+    el.textContent = text;
+    return el;
+  };
+  function piece(text, frag) {
+    const [, lead, core, tail] = text.match(/^(\s*)([\s\S]*?)(\s*)$/);
+    if (lead) frag.append(lead);
+    const pair = core.split(/\s\/\s/);
+    if (pair.length === 2 && GEORGIAN.test(pair[0]) !== GEORGIAN.test(pair[1])) {
+      let [a, b] = pair;
+      let count = '';
+      const n = b.match(/^(.*?)(\s+[\d\s.,]+%?)$/);
+      if (n && !GEORGIAN.test(b)) [, b, count] = n;
+      frag.append(make(a, GEORGIAN.test(a) ? 'lk' : 'le'), make(' / ', 'lsep'), make(b, GEORGIAN.test(b) ? 'lk' : 'le'));
+      if (count) frag.append(count);
+    } else if (GEORGIAN.test(core)) {
+      frag.append(make(core, 'lk'));
+    } else if (core) {
+      frag.append(core);
     }
+    if (tail) frag.append(tail);
+  }
+  function markLanguages(root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    for (const node of nodes) {
+      const text = node.nodeValue;
+      if (!GEORGIAN.test(text) || node.parentElement.closest('.lk, .le, script, style')) continue;
+      const frag = document.createDocumentFragment();
+      text.split(/(\s[·|]\s)/).forEach((t, i) => (i % 2 ? frag.append(t) : piece(t, frag)));
+      node.replaceWith(frag);
+    }
+  }
+  markLanguages(document.querySelector('body > .pdf-page.rpt'));
+  document.addEventListener('click', (e) => {
+    const lang = e.target.closest('[data-lang]');
+    if (lang) {
+      document.body.classList.remove('lang-ka', 'lang-en');
+      if (lang.dataset.lang !== 'both') document.body.classList.add(`lang-${lang.dataset.lang}`);
+      document.querySelectorAll('[data-lang]').forEach((b) => b.classList.toggle('on', b === lang));
+      return;
+    }
+    const target = e.target.closest('[data-pop]');
+    if (target && POPUPS[target.dataset.pop]) {
+      const body = pop.querySelector('.rpt-pop-body');
+      body.innerHTML = POPUPS[target.dataset.pop];
+      markLanguages(body);
+      pop.showModal();
+      body.scrollTop = 0;
+    }
+  });
+  // Contents: one link per section heading, in the reader's language.
+  const nav = document.getElementById('rpt-nav');
+  document.querySelectorAll('body > .pdf-page.rpt .rpt-h h2').forEach((h, i) => {
+    if (h.closest('.rpt-print-only')) return;
+    h.id = `s${i}`;
+    const a = document.createElement('a');
+    a.href = `#s${i}`;
+    const en = h.querySelector('em');
+    a.innerHTML = `<bdi class="lk">${h.firstChild.textContent.trim()}</bdi><bdi class="le">${en ? en.textContent : h.firstChild.textContent.trim()}</bdi>`;
+    nav.append(a);
   });
   pop.querySelector('.rpt-pop-close').addEventListener('click', () => pop.close());
   pop.addEventListener('click', (e) => { if (e.target === pop) pop.close(); });
@@ -1519,15 +1819,4 @@ ${page.outerHTML}
   };
   addEventListener('resize', fit);
   fit();
-</script>
-</body>
-</html>`;
-  const url = URL.createObjectURL(new Blob([doc], { type: 'text/html;charset=utf-8' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }

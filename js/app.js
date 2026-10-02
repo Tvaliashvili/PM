@@ -4870,6 +4870,7 @@ function projectReportArgs(project) {
     siteLogs: state.siteLogs,
     siteCosts: state.siteCosts,
     rentals: state.rentals,
+    delayImpacts: state.delayImpacts,
     materials: state.materials,
     work: state.work,
     progress: state.progress ?? scheduleProgress([], todayISO()),
