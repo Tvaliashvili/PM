@@ -174,14 +174,13 @@ function addEmptyRow(tbody, colspan, text) {
   tbody.appendChild(tr);
 }
 
-function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, roomProgress, photoUrls = [], manpower, progress, events = [], variations = [] }) {
+function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, roomProgress, photoUrls = [], manpower, events = [], variations = [] }) {
   const page = document.getElementById('daily-report-template').content.firstElementChild.cloneNode(true);
   const set = (field, value) => { page.querySelector(`[data-field="${field}"]`).textContent = value; };
   const rooms = Boolean(project.has_rooms);
-  if (!rooms) {
-    page.querySelectorAll('[data-rooms-only]').forEach((el) => el.remove());
-    page.querySelector('.pdf-facts').classList.add('pdf-facts-5');
-  }
+  // Four facts in a row, or five with the rooms - the last one then spans two.
+  if (!rooms) page.querySelectorAll('[data-rooms-only]').forEach((el) => el.remove());
+  page.querySelector('.pdf-facts').classList.add(rooms ? 'pdf-facts-5' : 'pdf-facts-4');
 
   // Site details
   const workers = manpower.reduce((sum, [, n]) => sum + n, 0);
@@ -204,11 +203,6 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
   if (rooms) set('total-flats', roomProgress.total
     ? `${roomProgress.done} / ${roomProgress.total} (${Math.round((roomProgress.done / roomProgress.total) * 100)}%)`
     : '-');
-  // An earlier day's report has no progress figure: the timetable only knows
-  // where the work stands now, not where it stood then.
-  set('progress', progress === null ? '-' : progress?.count
-    ? `${progress.actualPct}% (${ka('plan')}/plan ${progress.plannedPct}%)`
-    : bi('No timetable'));
 
   // Manpower. Heads only: what the day's labour and hire cost belongs in the
   // project report, as one figure for the whole job. A price standing next to a
@@ -337,7 +331,7 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
  * Daily_Report_<name>_<YYYY-MM-DD>.pdf - or, with `word`, as a .docx to arrange
  * by hand before printing.
  */
-export async function generateDailyReport({ db, project, progress, date, printable = false, word = false }) {
+export async function generateDailyReport({ db, project, date, printable = false, word = false }) {
   const day = dayRange(date);
   const { logs, delays, carriedDelays, rentals, roomProgress, events, variations } =
     await fetchTodayData(db, project.id, day, { withRooms: Boolean(project.has_rooms) });
@@ -346,7 +340,7 @@ export async function generateDailyReport({ db, project, progress, date, printab
   const photoUrls = await fetchPhotoUrls(db, { logs, delays, carriedDelays });
   const page = buildReport({
     project, day, logs, delays, carriedDelays, rentals, roomProgress, photoUrls,
-    manpower, progress, events, variations,
+    manpower, events, variations,
   });
   const root = document.getElementById('pdf-export-root');
   root.replaceChildren(page);

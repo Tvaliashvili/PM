@@ -4151,16 +4151,13 @@ async function exportDailyReport(e) {
   const label = btn.querySelector('span') ?? btn;
   const original = label.textContent;
   const project = state.projects.find((p) => p.id === state.projectId);
-  const today = date === todayISO();
-
   exporting = true;
   $$('[type=submit]', form).forEach((b) => { b.disabled = true; });
   label.textContent = 'Generating…';
   toast(`Building the report of ${formatDate(date)}…`);
 
   try {
-    // Progress is where the timetable stands now, so only today's report has it.
-    await generateDailyReport({ db, project, progress: today ? state.progress : null, date, word });
+    await generateDailyReport({ db, project, date, word });
     closeModal('modal-daily-report');
     toast('Daily report downloaded.', 'success');
   } catch (err) {

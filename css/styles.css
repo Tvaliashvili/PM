@@ -631,6 +631,7 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
   margin: 16px 0;
 }
 .pdf-facts-5 > div:last-child { grid-column: span 2; }
+.pdf-facts-4 { grid-template-columns: repeat(4, 1fr); }
 .pdf-facts > div {
   padding: 8px 10px;
   background: #f8fafc;
