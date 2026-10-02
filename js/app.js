@@ -3559,21 +3559,56 @@ async function downloadTemplate() {
   XLSX.writeFile(book, `${(project?.name || 'Timetable').replace(/[\\/:*?"<>|]+/g, ' ').trim()} - timetable.xlsx`);
 }
 
+// Weekday a date is written with, as MS Project puts it in front ("Mon 1/5/26"):
+// the first letters of the name → 0 (Sunday) … 6.
+const WEEKDAYS = [
+  ['sun', 'კვ'], ['mon', 'ორ'], ['tue', 'სა'], ['wed', 'ოთ'], ['thu', 'ხუ'], ['fri', 'პა'], ['sat', 'შა'],
+];
+const weekdayOf = (word) => WEEKDAYS.findIndex((names) => names.some((n) => word.toLowerCase().startsWith(n)));
+const NUMERIC_DATE = /^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})\b/;
+
+/**
+ * Whether a column of text dates is written day first or month first. MS
+ * Project in US format writes 1/5/26 for 5 January, a Georgian sheet 05.01.26:
+ * any first number above 12 settles it as day first, any second one above 12
+ * as month first. Day first, as dates are written in Georgia, when nothing
+ * tells them apart.
+ */
+function dateOrder(values) {
+  for (const v of values) {
+    const m = String(v ?? '').trim().replace(/^[^\d\s]+\.?\s+/, '').match(NUMERIC_DATE);
+    if (!m) continue;
+    if (Number(m[1]) > 12) return 'dmy';
+    if (Number(m[2]) > 12) return 'mdy';
+  }
+  return 'dmy';
+}
+
 /**
  * A date cell to YYYY-MM-DD: an Excel date, or text the way people type or
- * paste it - 2026-01-05, 05.01.2026, 5/1/26, "Mon 05.01.26". Day before month,
- * as dates are written in Georgia. '' when it can't be read.
+ * paste it - 2026-01-05, 05.01.2026, 5/1/26, "Mon 1/5/26". `order` says which
+ * of day and month comes first (see dateOrder); a weekday written in front
+ * overrules it when only the other reading falls on that day. '' when it
+ * can't be read.
  */
-function cellDate(v) {
+function cellDate(v, order = 'dmy') {
   if (typeof v === 'number' && v > 0) {
     return new Date(Math.round((v - 25_569) * 86_400_000)).toISOString().slice(0, 10);
   }
-  const text = String(v ?? '').trim().replace(/^[^\d\s]+\.?\s+/, ''); // weekday in front, as MS Project writes it
+  const raw = String(v ?? '').trim();
+  const weekday = raw.match(/^([^\d\s]+)\.?\s+/);
+  const text = weekday ? raw.slice(weekday[0].length) : raw;
   let m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (m) return isoOf(m[1], m[2], m[3]);
-  m = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})\b/);
-  if (m) return isoOf(m[3].length === 2 ? `20${m[3]}` : m[3], m[2], m[1]);
-  return '';
+  m = text.match(NUMERIC_DATE);
+  if (!m) return '';
+  const year = m[3].length === 2 ? `20${m[3]}` : m[3];
+  const dmy = isoOf(year, m[2], m[1]);
+  const mdy = isoOf(year, m[1], m[2]);
+  const day = weekday ? weekdayOf(weekday[1]) : -1;
+  const falls = (iso) => iso && new Date(`${iso}T00:00`).getDay() === day;
+  if (day >= 0 && falls(dmy) !== falls(mdy)) return falls(dmy) ? dmy : mdy;
+  return order === 'mdy' ? mdy : dmy;
 }
 
 function isoOf(y, mo, d) {
@@ -3604,14 +3639,16 @@ async function parseWorkbook(buffer) {
   if (!hasHeader) [ka, en, name, start, finish] = [-1, 0, 0, 1, 2];
   if (ka < 0 && en < 0) en = name;
 
-  return grid.slice(hasHeader ? 1 : 0).map((row) => {
+  const rows = grid.slice(hasHeader ? 1 : 0);
+  const order = dateOrder(rows.flatMap((row) => [row[start], row[finish]]));
+  return rows.map((row) => {
     const nameKa = ka >= 0 ? String(row[ka] ?? '').trim() : '';
     const nameEn = en >= 0 ? String(row[en] ?? '').trim() : '';
     // A single name column in Georgian is the Georgian name.
     const georgianOnly = !nameKa && isGeorgian(nameEn) && ka < 0;
     // A blank date is null - left as it is on the timetable - and one that
     // can't be read is ''.
-    const date = (v) => (String(v ?? '').trim() ? cellDate(v) : null);
+    const date = (v) => (String(v ?? '').trim() ? cellDate(v, order) : null);
     return {
       name: nameEn || nameKa,
       nameKa: georgianOnly ? nameEn : nameKa || null,
