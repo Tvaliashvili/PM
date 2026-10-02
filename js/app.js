@@ -124,7 +124,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-daily-print', '#btn-report-project', '#btn-report-project-print', '#btn-add-unit', '#btn-add-task', '#btn-import-mpp', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental', '#btn-add-material',
+  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-daily-print', '#btn-report-project', '#btn-report-project-print', '#btn-add-unit', '#btn-add-task', '#btn-import-mpp', '#btn-import-template', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental', '#btn-add-material',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -3462,22 +3462,132 @@ async function onEventsClick(e) {
   loadEvents(state.projectId);
 }
 
-// ---------- Baseline ----------
-/**
- * Freezes today's planned dates as the approved programme. Everything after
- * this is measured against it, so re-setting it throws away the drift recorded
- * so far - which is why it asks twice the second time.
- */
 // =============================================================
-// Import from MS Project
-// .mpp is a closed binary format nothing in the browser reads reliably, so the
-// file comes in as MS Project's own XML (File → Save As → XML), which carries
-// the same tasks and dates.
+// Import activities: an Excel sheet (from the template) or MS Project XML
+// .mpp is a closed binary format nothing in the browser reads reliably, so a
+// programme comes in either pasted into the Excel template or as MS Project's
+// own XML (File → Save As → XML).
 // =============================================================
 let importRows = [];
 
 const isGeorgian = (text) => /[Ⴀ-ჿ]/.test(text);
 const nameKey = (text) => String(text ?? '').trim().toLowerCase();
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+// SheetJS is only needed here, so it loads the first time it is.
+let sheetJs = null;
+function loadSheetJs() {
+  sheetJs ??= new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = () => resolve(window.XLSX);
+    s.onerror = () => {
+      sheetJs = null;
+      reject(new Error('Could not load the Excel reader - check the connection and try again.'));
+    };
+    document.head.append(s);
+  });
+  return sheetJs;
+}
+
+const TEMPLATE_HEADERS = ['Activity - ქართული', 'Activity - English', 'Start', 'Finish'];
+
+/** The template, filled with the timetable as it stands, so dates can be changed there too. */
+async function downloadTemplate() {
+  if (!requireProject()) return;
+  let XLSX;
+  try {
+    XLSX = await loadSheetJs();
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
+  }
+  // Excel counts days from 30 Dec 1899; a serial with a date format shows as a date.
+  const serial = (iso) => Date.UTC(...iso.split('-').map((n, i) => Number(n) - (i === 1 ? 1 : 0))) / 86_400_000 + 25_569;
+  const rows = state.tasks.map((t) => [
+    t.name_ka ?? '',
+    t.name_ka && t.name === t.name_ka ? '' : t.name,
+    { t: 'n', v: serial(t.planned_start), z: 'dd.mm.yyyy' },
+    { t: 'n', v: serial(t.planned_finish), z: 'dd.mm.yyyy' },
+  ]);
+  const sheet = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, ...rows]);
+  sheet['!cols'] = [{ wch: 45 }, { wch: 45 }, { wch: 12 }, { wch: 12 }];
+  const help = XLSX.utils.aoa_to_sheet([
+    ['How to fill in the Timetable sheet'],
+    ['One activity per row. A name in either language will do; fill in both if you have them.'],
+    ['Start and Finish: dates, e.g. 05.01.2026 (day first). You can paste the Task Name, Start and Finish columns straight from MS Project.'],
+    ['Activities already on the timetable are matched by name, and only their dates change.'],
+    ['Save, then use Import on the Timetable page.'],
+  ]);
+  help['!cols'] = [{ wch: 110 }];
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, 'Timetable');
+  XLSX.utils.book_append_sheet(book, help, 'How to');
+  const project = currentProject();
+  XLSX.writeFile(book, `${(project?.name || 'Timetable').replace(/[\\/:*?"<>|]+/g, ' ').trim()} - timetable.xlsx`);
+}
+
+/**
+ * A date cell to YYYY-MM-DD: an Excel date, or text the way people type or
+ * paste it - 2026-01-05, 05.01.2026, 5/1/26, "Mon 05.01.26". Day before month,
+ * as dates are written in Georgia. '' when it can't be read.
+ */
+function cellDate(v) {
+  if (typeof v === 'number' && v > 0) {
+    return new Date(Math.round((v - 25_569) * 86_400_000)).toISOString().slice(0, 10);
+  }
+  const text = String(v ?? '').trim().replace(/^[^\d\s]+\.?\s+/, ''); // weekday in front, as MS Project writes it
+  let m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return isoOf(m[1], m[2], m[3]);
+  m = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})\b/);
+  if (m) return isoOf(m[3].length === 2 ? `20${m[3]}` : m[3], m[2], m[1]);
+  return '';
+}
+
+function isoOf(y, mo, d) {
+  const iso = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const back = new Date(`${iso}T00:00`);
+  return Number.isNaN(back.getTime()) || back.getDate() !== Number(d) ? '' : iso;
+}
+
+/**
+ * Activities in the first sheet of a workbook. Columns are found by their
+ * headings (the template's, or MS Project's Task Name / Start / Finish); a
+ * sheet without headings is read in the template's order.
+ */
+async function parseWorkbook(buffer) {
+  const XLSX = await loadSheetJs();
+  const book = XLSX.read(buffer, { type: 'array' });
+  const sheet = book.Sheets[book.SheetNames[0]];
+  const grid = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
+
+  const heads = (grid[0] ?? []).map((h) => String(h).toLowerCase());
+  const col = (re) => heads.findIndex((h) => re.test(h));
+  let ka = col(/ქართ/);
+  let en = col(/english|ინგლ/);
+  let name = col(/activity|task|name|სამუშაო|დასახელ/);
+  let start = col(/start|დაწყ/);
+  let finish = col(/finish|end|დასრ/);
+  const hasHeader = start >= 0 && finish >= 0;
+  if (!hasHeader) [ka, en, name, start, finish] = [0, 1, -1, 2, 3];
+  if (ka < 0 && en < 0) en = name;
+
+  return grid.slice(hasHeader ? 1 : 0).map((row) => {
+    const nameKa = ka >= 0 ? String(row[ka] ?? '').trim() : '';
+    const nameEn = en >= 0 ? String(row[en] ?? '').trim() : '';
+    const s = cellDate(row[start]);
+    const f = cellDate(row[finish]);
+    // A single name column in Georgian is the Georgian name.
+    const georgianOnly = !nameKa && isGeorgian(nameEn) && ka < 0;
+    return {
+      name: nameEn || nameKa,
+      nameKa: georgianOnly ? nameEn : nameKa || null,
+      start: s,
+      finish: f && s && f < s ? s : f,
+      level: 1,
+    };
+  }).filter((r) => r.name);
+}
 
 /** Tasks in an MS Project XML file: { name, start, finish, summary, milestone, level }. */
 function parseMsProject(xml) {
@@ -3503,7 +3613,7 @@ function parseMsProject(xml) {
         level: Math.max(1, Number(text(t, 'OutlineLevel')) || 1),
       };
     })
-    .filter((t) => t.name && /^\d{4}-\d{2}-\d{2}$/.test(t.start) && /^\d{4}-\d{2}-\d{2}$/.test(t.finish));
+    .filter((t) => t.name && ISO_DATE.test(t.start) && ISO_DATE.test(t.finish));
 }
 
 async function onImportFile(e) {
@@ -3511,18 +3621,20 @@ async function onImportFile(e) {
   e.target.value = ''; // picking the same file again still fires
   if (!file) return;
   if (/\.mpp$/i.test(file.name)) {
-    toast('An .mpp file can\'t be read directly. In MS Project use File → Save As → XML, then import that file.', 'error');
+    toast('An .mpp file can\'t be read directly. Copy its tasks into the Excel template, or in MS Project use File → Save As → XML.', 'error');
     return;
   }
   let tasks;
   try {
-    tasks = parseMsProject(await file.text());
+    tasks = /\.xml$/i.test(file.name)
+      ? parseMsProject(await file.text())
+      : await parseWorkbook(await file.arrayBuffer());
   } catch (err) {
-    toast(err.message, 'error');
+    toast(err.message || 'Could not read this file.', 'error');
     return;
   }
   if (!tasks.length) {
-    toast('No tasks with dates found in this file.', 'error');
+    toast('No activities found in this file.', 'error');
     return;
   }
 
@@ -3532,26 +3644,30 @@ async function onImportFile(e) {
     if (t.name_ka) existing.set(nameKey(t.name_ka), t);
   }
   importRows = tasks.map((t) => {
-    const match = existing.get(nameKey(t.name));
+    const match = existing.get(nameKey(t.name)) ?? (t.nameKa ? existing.get(nameKey(t.nameKa)) : undefined);
+    const bad = !ISO_DATE.test(t.start) || !ISO_DATE.test(t.finish);
     const same = match && match.planned_start === t.start && match.planned_finish === t.finish;
-    return { ...t, match, same, checked: !t.summary && !t.milestone && !same };
+    return { ...t, match, same, bad, checked: !bad && !same && !t.summary && !t.milestone };
   });
 
   const form = $('#form-import');
-  $('#import-title').textContent = `Import from MS Project - ${file.name}`;
+  $('#import-title').textContent = `Import activities - ${file.name}`;
+  const label = (r) => [r.nameKa, r.name !== r.nameKa ? r.name : ''].filter(Boolean).map(esc).join(' · ') || esc(r.name);
+  const dateCell = (iso) => (ISO_DATE.test(iso) ? esc(formatDate(iso)) : '<span class="variance-over">?</span>');
   $('#import-list').innerHTML = `
     <table class="data-table">
       <thead><tr><th></th><th>Activity</th><th>Start</th><th>Finish</th><th>On the timetable</th></tr></thead>
       <tbody>
         ${importRows.map((r, i) => `
           <tr>
-            <td><input type="checkbox" data-import-row="${i}"${r.checked ? ' checked' : ''}${r.same ? ' disabled' : ''}></td>
+            <td><input type="checkbox" data-import-row="${i}"${r.checked ? ' checked' : ''}${r.same || r.bad ? ' disabled' : ''}></td>
             <td style="padding-left:${0.75 + (r.level - 1) * 1}rem" class="${r.summary ? 'font-semibold text-white' : ''}">
-              ${esc(r.name)}${r.summary ? ' <span class="text-xs text-slate-500">summary</span>' : ''}${r.milestone ? ' <span class="text-xs text-slate-500">milestone</span>' : ''}
+              ${label(r)}${r.summary ? ' <span class="text-xs text-slate-500">summary</span>' : ''}${r.milestone ? ' <span class="text-xs text-slate-500">milestone</span>' : ''}
             </td>
-            <td class="whitespace-nowrap">${esc(formatDate(r.start))}</td>
-            <td class="whitespace-nowrap">${esc(formatDate(r.finish))}</td>
-            <td class="whitespace-nowrap text-xs">${!r.match ? '<span class="text-emerald-400">New</span>'
+            <td class="whitespace-nowrap">${dateCell(r.start)}</td>
+            <td class="whitespace-nowrap">${dateCell(r.finish)}</td>
+            <td class="whitespace-nowrap text-xs">${r.bad ? '<span class="variance-over">Dates not readable - skipped</span>'
+              : !r.match ? '<span class="text-emerald-400">New</span>'
               : r.same ? '<span class="text-slate-500">Already there, same dates</span>'
               : `<span class="text-amber-400">Dates change</span> <span class="text-slate-500">from ${esc(formatDate(r.match.planned_start))} → ${esc(formatDate(r.match.planned_finish))}</span>`}</td>
           </tr>`).join('')}
@@ -3567,8 +3683,10 @@ function updateImportCount() {
   const picked = importRows.filter((r) => r.checked);
   const added = picked.filter((r) => !r.match).length;
   const moved = picked.length - added;
-  $('#import-summary').textContent = `${importRows.length} tasks in the file. Ticked: ${added} new`
-    + `${moved ? `, ${moved} with new dates` : ''}.`;
+  const bad = importRows.filter((r) => r.bad).length;
+  $('#import-summary').textContent = `${importRows.length} activities in the file. Ticked: ${added} new`
+    + `${moved ? `, ${moved} with new dates` : ''}.`
+    + `${bad ? ` ${bad} skipped - their dates couldn't be read (write them like 05.01.2026).` : ''}`;
   $('[type=submit]', $('#form-import')).disabled = !picked.length;
 }
 
@@ -3582,7 +3700,7 @@ async function saveImport(e) {
   const inserts = picked.filter((r) => !r.match).map((r) => ({
     project_id: state.projectId,
     name: r.name,
-    name_ka: isGeorgian(r.name) ? r.name : null,
+    name_ka: r.nameKa ?? (isGeorgian(r.name) ? r.name : null),
     planned_start: r.start,
     planned_finish: r.finish,
   }));
@@ -3616,6 +3734,12 @@ async function saveImport(e) {
   loadSchedule(state.projectId);
 }
 
+// ---------- Baseline ----------
+/**
+ * Freezes today's planned dates as the approved programme. Everything after
+ * this is measured against it, so re-setting it throws away the drift recorded
+ * so far - which is why it asks twice the second time.
+ */
 async function setBaseline() {
   if (!requireProject()) return;
   const project = currentProject();
@@ -3969,6 +4093,7 @@ $('#form-unit').addEventListener('submit', saveUnit);
 $('#btn-add-task').addEventListener('click', () => openTaskModal(null));
 $('#btn-baseline').addEventListener('click', setBaseline);
 $('#btn-import-mpp').addEventListener('click', () => requireProject() && $('#input-import-mpp').click());
+$('#btn-import-template').addEventListener('click', downloadTemplate);
 $('#input-import-mpp').addEventListener('change', onImportFile);
 $('#form-import').addEventListener('submit', saveImport);
 $('#form-import').addEventListener('change', updateImportCount);

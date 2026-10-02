@@ -230,10 +230,13 @@
               </p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-              <button id="btn-import-mpp" class="btn btn-secondary" title="Add activities from an MS Project file saved as XML">
-                Import MS Project
+              <button id="btn-import-template" class="btn btn-secondary" title="Excel sheet with the timetable in it - fill it in or paste from MS Project, then Import">
+                Excel Template
               </button>
-              <input id="input-import-mpp" type="file" accept=".xml,.mpp" class="hidden">
+              <button id="btn-import-mpp" class="btn btn-secondary" title="Add activities from the Excel template (or an MS Project XML file)">
+                Import
+              </button>
+              <input id="input-import-mpp" type="file" accept=".xlsx,.xls,.csv,.xml,.mpp" class="hidden">
               <button id="btn-baseline" class="btn btn-secondary" title="Freeze today's planned dates as the approved programme">
                 Set Baseline
               </button>
@@ -1118,7 +1121,7 @@
   <dialog id="modal-import" class="modal" aria-labelledby="import-title">
     <form id="form-import">
       <div class="modal-header">
-        <h2 id="import-title">Import from MS Project</h2>
+        <h2 id="import-title">Import activities</h2>
         <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
       </div>
       <div class="modal-body space-y-3">
@@ -1126,7 +1129,7 @@
         <div id="import-list" class="overflow-x-auto max-h-[55vh] overflow-y-auto"></div>
         <p class="text-xs text-slate-500">
           Activities already on the timetable are matched by name and only their dates change. Summary rows and
-          milestones are left unticked. Contractors and budgets are set on the timetable afterwards.
+          milestones from MS Project are left unticked. Contractors and budgets are set on the timetable afterwards.
         </p>
         <p class="form-error hidden" data-error></p>
       </div>
