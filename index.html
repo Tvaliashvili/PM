@@ -1365,15 +1365,17 @@
             </select>
           </label>
         </div>
-        <div id="material-credit" class="grid grid-cols-1 sm:grid-cols-2 gap-3 hidden">
-          <label class="block">
-            <span class="form-label">Due (optional)</span>
-            <input name="due_on" type="date" class="input-dark w-full">
-          </label>
-          <label class="block">
-            <span class="form-label">Paid on - empty while still owed</span>
-            <input name="paid_on" type="date" class="input-dark w-full">
-          </label>
+        <div id="material-credit" class="hidden">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label class="block">
+              <span class="form-label">Due (optional)</span>
+              <input name="due_on" type="date" class="input-dark w-full">
+            </label>
+            <label class="block">
+              <span class="form-label">Paid on - empty while still owed</span>
+              <input name="paid_on" type="date" class="input-dark w-full">
+            </label>
+          </div>
         </div>
         <p class="text-xs text-slate-500 -mt-2">Amount fills in from quantity × unit price; or just type the invoice total.</p>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
