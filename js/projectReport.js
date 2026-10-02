@@ -1042,27 +1042,33 @@ export async function buildProjectReport({
   }
 
   // ---------- Work done: room by room, each kind of work added up ----------
-  // 200 m² of gypsum one day and 300 m² the next reads as 500 m². Work is the
-  // same work when it is written the same way and measured in the same unit;
-  // the room form suggests names already used, so it usually is. The date is
-  // the last time it was measured.
-  const workKey = (w) => `${w.flat_id ?? ''}|${String(w.work || w.work_en || '').trim().toLowerCase().replace(/\s+/g, ' ')}|${w.unit ?? ''}`;
+  // An entry with a quantity is a measurement, and measurements add up: 200 m²
+  // of gypsum one day and 300 m² the next reads as 500 m². One without is work
+  // that went on that day unmeasured - "in progress". Work is the same work
+  // when it is written the same way (the room form picks it from a list); each
+  // unit it was measured in adds up on its own. The date is the last
+  // measurement.
+  const workKey = (w) => `${w.flat_id ?? ''}|${String(w.work || w.work_en || '').trim().toLowerCase().replace(/\s+/g, ' ')}`;
+  const addTo = (map, unit, q) => map.set(unit, (map.get(unit) ?? 0) + q);
   const workGroups = new Map();
   for (const w of [...work].sort((a, b) => a.work_date.localeCompare(b.work_date))) {
     const key = workKey(w);
     if (!workGroups.has(key)) {
-      workGroups.set(key, { flatId: w.flat_id ?? null, unit: w.unit ?? '', qty: 0, entries: 0, byContractor: new Map() });
+      workGroups.set(key, { flatId: w.flat_id ?? null, byUnit: new Map(), byContractor: new Map() });
     }
     const g = workGroups.get(key);
     // The latest spelling stands for the group.
     g.ka = w.work;
     g.en = w.work_en;
-    g.entries += 1;
     g.last = w.work_date;
-    const q = Number(w.quantity) || 0;
-    g.qty += q;
     const who = w.contractor_id ?? '';
-    g.byContractor.set(who, (g.byContractor.get(who) ?? 0) + q);
+    if (!g.byContractor.has(who)) g.byContractor.set(who, new Map());
+    const q = Number(w.quantity) || 0;
+    if (q > 0) {
+      addTo(g.byUnit, w.unit ?? '', q);
+      addTo(g.byContractor.get(who), w.unit ?? '', q);
+      g.measured = w.work_date;
+    }
   }
   // Rooms in the order of the room list (block, floor, number); work outside one last.
   const roomOrder = new Map(units.map((u, i) => [u.id, i]));
@@ -1078,15 +1084,24 @@ export async function buildProjectReport({
     return [u.block ? L(`ბლოკი ${u.block}`, `Block ${u.block}`) : '', L(`ოთახი ${u.flat_number}`, `Room ${u.flat_number}`),
       `<span class="rpt-muted">${L(`${u.floor} სართ.`, `floor ${u.floor}`)}</span>`].filter(Boolean).join(' · ');
   };
-  const qtyOf = (q, unit) => (q ? `${num.format(q)}${unit ? ` ${esc(unit)}` : ''}` : '');
+  // "500 m²", or "500 m² · 12 pcs" for work measured in two units.
+  const qtyList = (byUnit) => [...byUnit].map(([unit, q]) => `${num.format(q)}${unit ? ` ${esc(unit)}` : ''}`).join(' · ');
+  const inProgress = L('მიმდინარეობს', 'In progress');
   // Who did it - with each one's share when more than one contractor did the same work.
   const whoDid = (g) => {
     const named = [...g.byContractor].filter(([id]) => id);
     if (!named.length) return '-';
     if (named.length === 1) return esc(nameOf(named[0][0]));
-    return named.sort((a, b) => b[1] - a[1])
-      .map(([id, q]) => `${esc(nameOf(id))}${q ? ` <span class="rpt-muted">${qtyOf(q, g.unit)}</span>` : ''}`)
+    const total = (m) => [...m.values()].reduce((s, q) => s + q, 0);
+    return named.sort((a, b) => total(b[1]) - total(a[1]))
+      .map(([id, m]) => `${esc(nameOf(id))} <span class="rpt-muted">${qtyList(m) || inProgress}</span>`)
       .join('<br>');
+  };
+  // Measured so far; and whether work went on after the last measurement.
+  const totalCell = (g) => {
+    if (!g.measured) return inProgress;
+    const after = g.last > g.measured ? `<br><span class="rpt-muted">+ ${inProgress}</span>` : '';
+    return `<b>${qtyList(g.byUnit)}</b>${after}`;
   };
   const workSection = !workRooms.size ? '' : `
     <section class="rpt-section">
@@ -1106,9 +1121,9 @@ export async function buildProjectReport({
             ${list.sort((a, b) => b.last.localeCompare(a.last)).map((g) => `
               <tr>
                 <td class="rpt-prose">${biText(g.ka, g.en !== g.ka ? g.en : '')}</td>
-                <td class="num"><b>${qtyOf(g.qty, g.unit) || '-'}</b></td>
+                <td class="num">${totalCell(g)}</td>
                 <td>${whoDid(g)}</td>
-                <td>${d(g.last)}</td>
+                <td>${g.measured ? d(g.measured) : '-'}</td>
               </tr>`).join('')}
           </tbody>`).join('')}
       </table>

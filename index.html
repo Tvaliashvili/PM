@@ -1130,7 +1130,7 @@
         </div>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <label class="block col-span-2 sm:col-span-1">
-            <span class="form-label">Date measured</span>
+            <span class="form-label">Date</span>
             <input name="work_date" type="date" required class="input-dark w-full">
           </label>
           <label class="block col-span-2 sm:col-span-1">
@@ -1138,7 +1138,7 @@
             <select id="room-work-contractor" name="contractor_id" class="select-dark w-full"></select>
           </label>
           <label class="block">
-            <span class="form-label">Quantity (optional)</span>
+            <span class="form-label">Quantity (when measured)</span>
             <input name="quantity" type="number" min="0" step="any" class="input-dark w-full">
           </label>
           <label class="block">
@@ -1147,6 +1147,8 @@
           </label>
         </div>
         <p class="text-xs text-slate-500">
+          No quantity: the work went on that day, unmeasured - it shows as in progress. A quantity: you measured it that
+          day, and measurements add up in the project report.
           The list holds every work used in this project, so the same work adds up in the project report
           (200 m² + 300 m² = 500 m²). A work leaves the list once no entry uses it. For a new one, choose
           + New work and write it in one language - the other is filled in for you; check it before saving.

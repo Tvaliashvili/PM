@@ -777,14 +777,14 @@ function renderRoomWork() {
   }
   list.innerHTML = `
     <table class="data-table">
-      <thead><tr><th>Date measured</th><th>Work</th><th>Contractor</th><th class="num">Quantity</th><th></th></tr></thead>
+      <thead><tr><th>Date</th><th>Work</th><th>Contractor</th><th class="num">Measured</th><th></th></tr></thead>
       <tbody>
         ${work.map((w) => `
           <tr>
             <td class="whitespace-nowrap">${esc(formatDate(w.work_date))}</td>
             <td>${esc(w.work || w.work_en)}${w.work_en && w.work_en !== w.work ? `<span class="block text-xs text-slate-500">${esc(w.work_en)}</span>` : ''}</td>
             <td>${w.contractor_id ? esc(contractorName(w.contractor_id)) : '<span class="text-slate-500">-</span>'}</td>
-            <td class="num whitespace-nowrap">${esc(quantityText(w)) || '<span class="text-slate-500">-</span>'}</td>
+            <td class="num whitespace-nowrap">${esc(quantityText(w)) || '<span class="status-chip status-pending">In progress</span>'}</td>
             <td class="text-right whitespace-nowrap">
               <button type="button" class="table-action" data-room-work-edit="${esc(w.id)}">Edit</button>
               <button type="button" class="table-action is-danger" data-room-work-delete="${esc(w.id)}">Delete</button>
@@ -2780,7 +2780,9 @@ function workList(work) {
     .sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')))
     .map((w) => {
       const where = flatName(w.flat_id);
-      const extra = [quantityText(w), w.contractor_id ? contractorName(w.contractor_id) : ''].filter(Boolean).join(' · ');
+      // Measured that day, or work that went on unmeasured.
+      const extra = [quantityText(w) ? `${quantityText(w)} measured` : 'in progress',
+        w.contractor_id ? contractorName(w.contractor_id) : ''].filter(Boolean).join(' · ');
       return `<li>${where ? `<span class="text-white">${esc(where)}</span> - ` : ''}${esc(w.work || w.work_en)}`
         + `${w.work_en && w.work_en !== w.work ? ` <span class="text-slate-500">/ ${esc(w.work_en)}</span>` : ''}`
         + `${extra ? ` <span class="text-slate-400">(${esc(extra)})</span>` : ''}</li>`;

@@ -258,7 +258,8 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
 
   // Work done that day: each room once, as a heading, and under it each kind
   // of work once - two contractors on the same work share its line, each with
-  // their part (section hidden when none was recorded).
+  // their part. A quantity is what was measured that day; work with none went
+  // on unmeasured, "in progress" (section hidden when none was recorded).
   if (work.length) {
     const workRows = page.querySelector('[data-rows="work"]');
     const byNumber = (a, b) => String(a ?? '').localeCompare(String(b ?? ''), undefined, { numeric: true });
@@ -266,15 +267,20 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
     for (const w of work) {
       const room = w.flat_id ?? '';
       if (!roomsOfDay.has(room)) roomsOfDay.set(room, { flat: w.flats, works: new Map() });
-      const key = `${String(w.work || w.work_en || '').trim().toLowerCase()}|${w.unit ?? ''}`;
+      const key = String(w.work || w.work_en || '').trim().toLowerCase();
       const works = roomsOfDay.get(room).works;
-      if (!works.has(key)) works.set(key, { ka: w.work, en: w.work_en, unit: w.unit, qty: 0, who: new Map() });
+      if (!works.has(key)) works.set(key, { ka: w.work, en: w.work_en, byUnit: new Map(), who: new Map() });
       const g = works.get(key);
-      const q = Number(w.quantity) || 0;
-      g.qty += q;
       const name = biName(w.contractors?.name, w.contractors?.name_ka);
-      g.who.set(name, (g.who.get(name) ?? 0) + q);
+      if (!g.who.has(name)) g.who.set(name, new Map());
+      const q = Number(w.quantity) || 0;
+      if (q > 0) {
+        for (const map of [g.byUnit, g.who.get(name)]) map.set(w.unit ?? '', (map.get(w.unit ?? '') ?? 0) + q);
+      }
     }
+    // "200 m²" - or "200 m² · 12 pcs" when measured in two units; '' when not measured.
+    const measured = (byUnit) => [...byUnit].map(([unit, q]) => quantityOf({ quantity: q, unit })).join(' · ');
+    const inProgress = 'მიმდინარეობს / In progress';
     const ordered = [...roomsOfDay.values()].sort((a, b) => (!a.flat) - (!b.flat)
       || byNumber(a.flat?.block, b.flat?.block) || byNumber(a.flat?.floor, b.flat?.floor)
       || byNumber(a.flat?.flat_number, b.flat?.flat_number));
@@ -285,9 +291,9 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
         addRow(workRows, [
           { text: [g.ka, g.en !== g.ka ? g.en : ''].filter(Boolean).join('\n'), className: 'pdf-bi' },
           { text: named.length > 1
-            ? named.map(([name, q]) => `${name}${q ? ` - ${quantityOf({ quantity: q, unit: g.unit })}` : ''}`).join('\n')
+            ? named.map(([name, m]) => `${name} - ${measured(m) || inProgress}`).join('\n')
             : named[0]?.[0] || '-', className: 'pdf-bi' },
-          { text: quantityOf({ quantity: g.qty || null, unit: g.unit }) || '-', className: 'num' },
+          { text: measured(g.byUnit) || inProgress, className: 'num pdf-bi' },
         ]);
       }
     }
