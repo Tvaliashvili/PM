@@ -14,7 +14,7 @@ import { json, serveJson } from "../_shared/gemini.ts";
 import { AwsClient } from "npm:aws4fetch@1.0.20";
 
 const EXPIRES = 3600;   // seconds a signed link stays valid
-const MAX_PATHS = 48;   // a day's photos is 12, each with a thumbnail
+const MAX_PATHS = 48;   // an entry's photos is 24, each with a thumbnail; the app sends more in batches
 
 serveJson(async (payload: { paths?: string[]; method?: string }) => {
   const account = Deno.env.get("R2_ACCOUNT_ID");

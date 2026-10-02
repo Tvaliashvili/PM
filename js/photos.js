@@ -12,7 +12,7 @@
 // reach the browser.
 // =============================================================
 
-export const MAX_PHOTOS = 12;
+export const MAX_PHOTOS = 24;
 const URL_FUNCTION = 'photo-url';
 
 const FULL = { px: 1280, quality: 0.72 };
@@ -37,18 +37,26 @@ async function shrink(file, { px, quality }) {
  * Signed R2 links for `paths`, in the same order. `method` is what the link may
  * be used for: GET to read, PUT to upload, DELETE to remove.
  */
+// The function signs at most this many paths a request (see photo-url).
+const PATHS_PER_REQUEST = 48;
+
 async function signedUrls(db, paths, method = 'GET') {
   if (!paths.length) return [];
-  const { data, error } = await db.functions.invoke(URL_FUNCTION, { body: { paths, method } });
-  if (error) {
-    let message = error.message;
-    try {
-      const body = await error.context?.json();
-      if (body?.error) message = body.error;
-    } catch { /* non-JSON error body */ }
-    throw new Error(message);
-  }
-  return data.urls ?? [];
+  const batches = [];
+  for (let i = 0; i < paths.length; i += PATHS_PER_REQUEST) batches.push(paths.slice(i, i + PATHS_PER_REQUEST));
+  const signed = await Promise.all(batches.map(async (batch) => {
+    const { data, error } = await db.functions.invoke(URL_FUNCTION, { body: { paths: batch, method } });
+    if (error) {
+      let message = error.message;
+      try {
+        const body = await error.context?.json();
+        if (body?.error) message = body.error;
+      } catch { /* non-JSON error body */ }
+      throw new Error(message);
+    }
+    return data.urls ?? [];
+  }));
+  return signed.flat();
 }
 
 const ownerColumn = (owner) => (owner.dailyLogId ? 'daily_log_id' : 'delay_id');
