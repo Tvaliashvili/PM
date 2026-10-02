@@ -1033,6 +1033,7 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
 /* Only the interactive (.html) report shows these - the PDF and Word can't be clicked. */
 .rpt .rpt-html-only { display: none; }
 .rpt-click-note { margin: 6px 0 8px; font-size: 10px; color: #1d4ed8; }
+.rpt-click-key { display: block; margin-top: 4px; }
 .rpt-pop-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 10px; font-size: 11px; color: #334155; }
 .rpt-pop-notes { margin: 0 0 10px; font-size: 11px; color: #475569; white-space: pre-wrap; }
 .rpt-room-info  { background: #dbeafe; border-color: #bfdbfe; color: #1d4ed8; }

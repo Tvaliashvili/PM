@@ -1042,7 +1042,7 @@ export async function buildProjectReport({
               <span class="rpt-type">${esc(bi(type))} <b>× ${e.n}</b>${e.area ? ` · ${num.format(e.area)} m²` : ''}</span>`).join('')}
           </div>
           <p class="rpt-html-only rpt-click-note">${L('ოთახზე დაჭერით ნახავთ მის მონაცემებს და შესრულებულ სამუშაოებს', 'Click a room to see its details and the work done in it')}${roomsWithWork.size
-            ? ` · <span class="rpt-room rpt-room-has-work rpt-room-key"></span> ${L('სამუშაო ჩაწერილია', 'work recorded')}` : ''}</p>
+            ? `<span class="rpt-click-key"><span class="rpt-room rpt-room-has-work rpt-room-key"></span> ${L('სამუშაო ჩაწერილია', 'work recorded')}</span>` : ''}</p>
           ${roomGrid}` : none}
       </section>`;
   }
