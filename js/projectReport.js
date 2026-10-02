@@ -1670,24 +1670,16 @@ async function saveInteractive(page, project, fileName) {
   .rpt .rpt-room[data-pop]:hover, .rpt .rpt-card[data-pop]:hover { outline: 2px solid #2563eb; outline-offset: 1px; }
   .rpt .rpt-g-row[data-pop]:hover, .rpt tr[data-pop]:hover td { background: #eff6ff; }
   .rpt .rpt-col[data-pop]:hover .rpt-col-bar { background: #2563eb; }
-  /* Contents and language, fixed above the sheet */
+  /* Contents, fixed above the sheet */
   .rpt-bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
     max-width: 798px; margin: -24px auto 16px; padding: 10px 12px; background: rgba(238, 242, 246, 0.95);
     backdrop-filter: blur(4px); border-bottom: 1px solid #e2e8f0; font-size: 12px; }
   .rpt-bar nav { display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
   .rpt-bar a { flex: none; white-space: nowrap; }
-  /* The contents in one language: Georgian, or English when that is chosen. */
-  body:not(.lang-en) .rpt-bar .le, body.lang-en .rpt-bar .lk { display: none; }
+  .rpt-bar a .le { margin-left: 4px; color: #64748b; }
   .rpt-bar a { padding: 3px 8px; border-radius: 999px; color: #334155; text-decoration: none; background: #fff; border: 1px solid #e2e8f0; }
   .rpt-bar a:hover { border-color: #2563eb; color: #2563eb; }
-  .rpt-langs { display: flex; gap: 2px; padding: 2px; border-radius: 999px; background: #fff; border: 1px solid #e2e8f0; }
-  .rpt-langs button { border: 0; padding: 3px 10px; border-radius: 999px; background: transparent; font: inherit; color: #334155; cursor: pointer; }
-  .rpt-langs button.on { background: #2563eb; color: #fff; }
   .rpt h2[id] { scroll-margin-top: 64px; }
-  /* One language at a time: the Georgian and English parts are marked on load */
-  body.lang-ka .rpt em, body.lang-ka .rpt .le, body.lang-ka .rpt .lsep { display: none !important; }
-  body.lang-en .rpt .lk, body.lang-en .rpt .lsep { display: none !important; }
-  body.lang-en .rpt th em, body.lang-en .rpt span > em:only-child { display: inline !important; }
   @media (max-width: 820px) { .rpt-bar { margin: 0 0 8px; } }
   dialog.rpt-pop { width: min(46rem, calc(100vw - 2rem)); padding: 0; border: 1px solid #e2e8f0; border-radius: 8px;
     box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.35); }
@@ -1711,9 +1703,6 @@ async function saveInteractive(page, project, fileName) {
 </head>
 <body>
 <div class="rpt-bar"><nav id="rpt-nav"></nav>
-  <div class="rpt-langs" role="group" aria-label="Language">
-    <button data-lang="ka">ქართული</button><button data-lang="both" class="on">ორივე / Both</button><button data-lang="en">English</button>
-  </div>
 </div>
 ${page.outerHTML}
 <dialog class="rpt-pop" id="room-pop"><button class="rpt-pop-close" aria-label="Close">&times;</button><div class="rpt-pop-body pdf-page rpt"></div></dialog>
@@ -1733,70 +1722,20 @@ ${page.outerHTML}
 /**
  * The interactive report's own script, written out into the .html as source
  * (reportViewer.toString()): pop-ups for whatever has a data-pop key, the
- * language switch, the contents bar, and fitting the sheet to a phone.
+ * contents bar, and fitting the sheet to a phone.
  */
 function reportViewer(POPUPS) {
   const pop = document.getElementById('room-pop');
-  const GEORGIAN = /[\u10A0-\u10FF]/;
-  // Marks the Georgian and English parts of the text, so either can be hidden.
-  // A text can hold several "ქართული / English" pairs between middle dots;
-  // each pair splits into .lk / .le, Georgian on its own becomes .lk, and
-  // spaces, separators and a count after the English ("Masons 9") stay shown.
-  const make = (text, cls) => {
-    const el = document.createElement('bdi');
-    el.className = cls;
-    el.textContent = text;
-    return el;
-  };
-  function piece(text, frag) {
-    const [, lead, core, tail] = text.match(/^(\s*)([\s\S]*?)(\s*)$/);
-    if (lead) frag.append(lead);
-    const pair = core.split(/\s\/\s/);
-    if (pair.length === 2 && GEORGIAN.test(pair[0]) !== GEORGIAN.test(pair[1])) {
-      let [a, b] = pair;
-      let count = '';
-      const n = b.match(/^(.*?)(\s+[\d\s.,]+%?)$/);
-      if (n && !GEORGIAN.test(b)) [, b, count] = n;
-      frag.append(make(a, GEORGIAN.test(a) ? 'lk' : 'le'), make(' / ', 'lsep'), make(b, GEORGIAN.test(b) ? 'lk' : 'le'));
-      if (count) frag.append(count);
-    } else if (GEORGIAN.test(core)) {
-      frag.append(make(core, 'lk'));
-    } else if (core) {
-      frag.append(core);
-    }
-    if (tail) frag.append(tail);
-  }
-  function markLanguages(root) {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    const nodes = [];
-    while (walker.nextNode()) nodes.push(walker.currentNode);
-    for (const node of nodes) {
-      const text = node.nodeValue;
-      if (!GEORGIAN.test(text) || node.parentElement.closest('.lk, .le, script, style')) continue;
-      const frag = document.createDocumentFragment();
-      text.split(/(\s[·|]\s)/).forEach((t, i) => (i % 2 ? frag.append(t) : piece(t, frag)));
-      node.replaceWith(frag);
-    }
-  }
-  markLanguages(document.querySelector('body > .pdf-page.rpt'));
   document.addEventListener('click', (e) => {
-    const lang = e.target.closest('[data-lang]');
-    if (lang) {
-      document.body.classList.remove('lang-ka', 'lang-en');
-      if (lang.dataset.lang !== 'both') document.body.classList.add(`lang-${lang.dataset.lang}`);
-      document.querySelectorAll('[data-lang]').forEach((b) => b.classList.toggle('on', b === lang));
-      return;
-    }
     const target = e.target.closest('[data-pop]');
     if (target && POPUPS[target.dataset.pop]) {
       const body = pop.querySelector('.rpt-pop-body');
       body.innerHTML = POPUPS[target.dataset.pop];
-      markLanguages(body);
       pop.showModal();
       body.scrollTop = 0;
     }
   });
-  // Contents: one link per section heading, in the reader's language.
+  // Contents: one link per section heading, Georgian with the English beside it.
   const nav = document.getElementById('rpt-nav');
   document.querySelectorAll('body > .pdf-page.rpt .rpt-h h2').forEach((h, i) => {
     if (h.closest('.rpt-print-only')) return;
@@ -1804,7 +1743,13 @@ function reportViewer(POPUPS) {
     const a = document.createElement('a');
     a.href = `#s${i}`;
     const en = h.querySelector('em');
-    a.innerHTML = `<bdi class="lk">${h.firstChild.textContent.trim()}</bdi><bdi class="le">${en ? en.textContent : h.firstChild.textContent.trim()}</bdi>`;
+    a.textContent = h.firstChild.textContent.trim();
+    if (en) {
+      const em = document.createElement('span');
+      em.className = 'le';
+      em.textContent = en.textContent;
+      a.append(em);
+    }
     nav.append(a);
   });
   pop.querySelector('.rpt-pop-close').addEventListener('click', () => pop.close());
