@@ -708,10 +708,29 @@ function openRoomWork(flatId) {
   $('#room-work-title').textContent = `Work done - ${roomLabel(flat)}`;
   $('#room-work-sub').textContent = [`Floor ${flat.floor}`, flat.unit_type, UNIT_STATUSES[flat.status]].filter(Boolean).join(' · ');
   resetRoomWorkForm();
+  fillWorkSuggestions();
   renderRoomWork();
   openModal('modal-room-work');
   $('#form-room-work').elements.work.focus();
 }
+
+/**
+ * Work written before, newest first, to pick from: the same work spelled the
+ * same way is what lets the project report add it up.
+ */
+function fillWorkSuggestions() {
+  const seen = { ka: new Set(), en: new Set() };
+  for (const w of [...state.work].reverse()) {
+    if (w.work) seen.ka.add(w.work);
+    if (w.work_en) seen.en.add(w.work_en);
+  }
+  $('#work-names-ka').innerHTML = [...seen.ka].map((t) => `<option value="${esc(t)}"></option>`).join('');
+  $('#work-names-en').innerHTML = [...seen.en].map((t) => `<option value="${esc(t)}"></option>`).join('');
+}
+
+/** The last entry written exactly like this, in either language. */
+const knownWork = (text, lang) => [...state.work].reverse()
+  .find((w) => (lang === 'ka' ? w.work : w.work_en) === text);
 
 function resetRoomWorkForm(entry = null) {
   const form = $('#form-room-work');
@@ -764,6 +783,15 @@ async function onRoomWorkNameChange(e) {
   if (e.target !== f.work && e.target !== f.work_en) return;
   const other = e.target === f.work ? f.work_en : f.work;
   const text = e.target.value.trim();
+  // Picked from the suggestions: the other language and the unit come from
+  // the last time, with no translation to wait for.
+  const known = knownWork(text, e.target === f.work ? 'ka' : 'en');
+  if (known) {
+    if (!other.value.trim()) other.value = (e.target === f.work ? known.work_en : known.work) ?? '';
+    if (!f.unit.value && known.unit) f.unit.value = known.unit;
+    if (!f.contractor_id.value && known.contractor_id) f.contractor_id.value = known.contractor_id;
+    return;
+  }
   const both = splitBilingual(text);
   if (both && (!other.value.trim() || other.value.trim() === text)) {
     f.work.value = both.ka;
@@ -4347,6 +4375,7 @@ function projectReportArgs(project) {
     siteCosts: state.siteCosts,
     rentals: state.rentals,
     materials: state.materials,
+    work: state.work,
     progress: state.progress ?? scheduleProgress([], todayISO()),
     money,
   };

@@ -154,7 +154,7 @@ async function fetchExtras(db, projectId, today) {
  */
 export async function buildProjectReport({
   db, project, tasks, payments, contractors, contractorDelays, units, progress, money,
-  siteCosts = [], rentals = [], siteLogs = [], materials = [],
+  siteCosts = [], rentals = [], siteLogs = [], materials = [], work = [],
 }) {
   const today = iso(new Date());
   const { logs, delays, events, variations } = await fetchExtras(db, project.id, today);
@@ -1041,6 +1041,69 @@ export async function buildProjectReport({
       </section>`;
   }
 
+  // ---------- Work done: each kind of work added up over every day and room ----------
+  // 200 m² of gypsum one day and 300 m² the next reads as 500 m². Work is the
+  // same work when it is written the same way and measured in the same unit;
+  // the room form suggests names already used, so it usually is.
+  const workKey = (w) => `${String(w.work || w.work_en || '').trim().toLowerCase().replace(/\s+/g, ' ')}|${w.unit ?? ''}`;
+  const workGroups = new Map();
+  for (const w of [...work].sort((a, b) => a.work_date.localeCompare(b.work_date))) {
+    const key = workKey(w);
+    if (!workGroups.has(key)) {
+      workGroups.set(key, {
+        unit: w.unit ?? '', qty: 0, entries: 0, rooms: new Set(), byContractor: new Map(), first: w.work_date,
+      });
+    }
+    const g = workGroups.get(key);
+    // The latest spelling stands for the group.
+    g.ka = w.work;
+    g.en = w.work_en;
+    g.entries += 1;
+    g.last = w.work_date;
+    const q = Number(w.quantity) || 0;
+    g.qty += q;
+    if (w.flat_id) g.rooms.add(w.flat_id);
+    const who = w.contractor_id ?? '';
+    g.byContractor.set(who, (g.byContractor.get(who) ?? 0) + q);
+  }
+  const groups = [...workGroups.values()].sort((a, b) => b.last.localeCompare(a.last) || b.entries - a.entries);
+  const period = (g) => (g.first === g.last ? d(g.first) : `${d(g.first)} – ${d(g.last)}`);
+  const qtyOf = (q, unit) => (q ? `${num.format(q)}${unit ? ` ${esc(unit)}` : ''}` : '');
+  // Who did it - with each one's share when more than one contractor did the same work.
+  const whoDid = (g) => {
+    const named = [...g.byContractor].filter(([id]) => id);
+    if (!named.length) return '-';
+    if (named.length === 1) return esc(nameOf(named[0][0]));
+    return named.sort((a, b) => b[1] - a[1])
+      .map(([id, q]) => `${esc(nameOf(id))}${q ? ` <span class="rpt-muted">${qtyOf(q, g.unit)}</span>` : ''}`)
+      .join('<br>');
+  };
+  const workSection = !groups.length ? '' : `
+    <section class="rpt-section rpt-avoid">
+      ${H('შესრულებული სამუშაოები', 'Work Done', `${work.length} ${L('ჩანაწერი', 'entries')}`)}
+      <table class="rpt-compact">
+        <thead>
+          <tr>
+            <th>${L('სამუშაო', 'Work')}</th>
+            <th class="num">${L('სულ', 'Total')}</th>
+            <th class="num">${L('ოთახი', 'Rooms')}</th>
+            <th>${L('კონტრაქტორი', 'Contractor')}</th>
+            <th>${L('პერიოდი', 'Period')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${groups.map((g) => `
+            <tr>
+              <td class="rpt-prose">${biText(g.ka, g.en !== g.ka ? g.en : '')}</td>
+              <td class="num"><b>${qtyOf(g.qty, g.unit) || '-'}</b></td>
+              <td class="num">${g.rooms.size || '-'}</td>
+              <td>${whoDid(g)}</td>
+              <td>${period(g)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </section>`;
+
   // ---------- Site activity: manpower chart + latest logs ----------
   const tradeLabel = (key) => MANPOWER_TRADES.find((t) => t.key === key)?.label ?? key;
   const workersOf = (l) => Object.values(l.manpower || {}).reduce((s, n) => s + Number(n || 0), 0);
@@ -1281,7 +1344,7 @@ export async function buildProjectReport({
   const page = document.createElement('div');
   page.className = 'pdf-page rpt';
   page.innerHTML = header + glance + attention + notMoving + driftSection + timeline + roadAhead
-    + costSection + contractorsSection + unitsSection + logsSection + delaysSection + safetySection + footer;
+    + costSection + contractorsSection + unitsSection + workSection + logsSection + delaysSection + safetySection + footer;
   return page;
 }
 
