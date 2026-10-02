@@ -1005,6 +1005,13 @@ async function onTaskNameChange(e) {
   if (e.target !== f.name && e.target !== f.name_ka) return;
   const other = e.target === f.name ? f.name_ka : f.name;
   const text = e.target.value.trim();
+  // "კედელი / Wall" typed into one field: each half goes to its own.
+  const both = splitBilingual(text);
+  if (both && (!other.value.trim() || other.value.trim() === text)) {
+    f.name_ka.value = both.ka;
+    f.name.value = both.en;
+    return;
+  }
   if (!text || other.value.trim()) return;
   const row = e.target === f.name_ka ? { name: text, name_ka: text } : { name: text, name_ka: null };
   const placeholder = other.placeholder;
@@ -1035,8 +1042,14 @@ async function saveTask(e) {
   const id = fd.get('id');
   // Either language will do; the English column falls back to the Georgian
   // text until a translation fills it (see translateNames below).
-  const nameKa = fd.get('name_ka').trim();
-  const nameEn = fd.get('name').trim();
+  let nameKa = fd.get('name_ka').trim();
+  let nameEn = fd.get('name').trim();
+  for (const cell of [nameKa, nameEn]) {
+    const both = splitBilingual(cell);
+    if (!both) continue;
+    if (!nameKa || nameKa === cell) nameKa = both.ka;
+    if (!nameEn || nameEn === cell) nameEn = both.en;
+  }
   if (!nameKa && !nameEn) {
     showFormError(form, 'Enter the activity in Georgian or English.');
     return;
@@ -3527,6 +3540,21 @@ let importRows = [];
 
 const isGeorgian = (text) => /[Ⴀ-ჿ]/.test(text);
 const nameKey = (text) => String(text ?? '').trim().toLowerCase();
+
+/**
+ * Both languages written in one name, either way round: "კედელი / Wall" →
+ * { ka: 'კედელი', en: 'Wall' }. Only a slash with spaces around it splits, and
+ * only when one side is Georgian and the other has none, so "ბლოკი A/B" stays
+ * whole. null when the name is in one language.
+ */
+function splitBilingual(text) {
+  const parts = String(text ?? '').split(/\s+[/|]\s+/).map((p) => p.trim());
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+  const [a, b] = parts;
+  if (isGeorgian(a) && !isGeorgian(b)) return { ka: a, en: b };
+  if (isGeorgian(b) && !isGeorgian(a)) return { ka: b, en: a };
+  return null;
+}
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // SheetJS is only needed here, so it loads the first time it is.
@@ -3665,8 +3693,15 @@ async function parseWorkbook(buffer) {
   const rows = grid.slice(hasHeader ? 1 : 0);
   const order = dateOrder(rows.flatMap((row) => [row[start], row[finish]]));
   return rows.map((row) => {
-    const nameKa = ka >= 0 ? String(row[ka] ?? '').trim() : '';
-    const nameEn = en >= 0 ? String(row[en] ?? '').trim() : '';
+    let nameKa = ka >= 0 ? String(row[ka] ?? '').trim() : '';
+    let nameEn = en >= 0 ? String(row[en] ?? '').trim() : '';
+    // "კედელი / Wall" in either column is both names.
+    for (const cell of [nameKa, nameEn]) {
+      const both = splitBilingual(cell);
+      if (!both) continue;
+      if (!nameKa || nameKa === cell) nameKa = both.ka;
+      if (!nameEn || nameEn === cell) nameEn = both.en;
+    }
     // A single name column in Georgian is the Georgian name.
     const georgianOnly = !nameKa && isGeorgian(nameEn) && ka < 0;
     // A blank date is null - left as it is on the timetable - and one that
@@ -3698,7 +3733,8 @@ function parseMsProject(xml) {
       const start = text(t, 'Start').slice(0, 10);
       const finish = text(t, 'Finish').slice(0, 10);
       return {
-        name: text(t, 'Name'),
+        name: splitBilingual(text(t, 'Name'))?.en ?? text(t, 'Name'),
+        nameKa: splitBilingual(text(t, 'Name'))?.ka,
         start,
         finish: finish < start ? start : finish,
         summary: text(t, 'Summary') === '1',
