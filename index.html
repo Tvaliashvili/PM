@@ -795,10 +795,15 @@
       </div>
       <div class="modal-body space-y-4">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label class="block sm:col-span-2">
-            <span class="form-label">Activity</span>
-            <input name="name" maxlength="200" class="input-dark w-full" placeholder="მაგ. ფილის ჩასხმა - ბლოკი A, მე-3 სართული">
+          <label class="block">
+            <span class="form-label">Activity - ქართული</span>
+            <input name="name_ka" maxlength="200" class="input-dark w-full" placeholder="მაგ. ფილის ჩასხმა - ბლოკი A, მე-3 სართული">
           </label>
+          <label class="block">
+            <span class="form-label">Activity - English</span>
+            <input name="name" maxlength="200" class="input-dark w-full" placeholder="e.g. Pouring slab - Block A, floor 3">
+          </label>
+          <p class="text-xs text-slate-500 sm:col-span-2 -mt-1">Write one and the other is translated for you - check it and correct it if needed.</p>
           <label class="block sm:col-span-2">
             <span class="form-label">Contractor</span>
             <select id="task-contractor" name="contractor_id" class="select-dark w-full"></select>
