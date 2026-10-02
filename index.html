@@ -277,18 +277,15 @@
               <h1 class="text-xl font-semibold text-white">Daily Logs</h1>
               <p class="text-sm text-slate-500">Weather, manpower and site notes - and ask Gemini anything about the project.</p>
             </div>
-            <div class="grid grid-cols-2 gap-2 shrink-0 lg:flex lg:items-center">
+            <div class="grid grid-cols-2 gap-2 shrink-0 sm:flex sm:items-center">
               <button id="btn-report-daily" class="btn btn-secondary" title="One day's log as a PDF or Word file - pick the date">
                 Daily Report
               </button>
               <button id="btn-report-project" class="btn btn-secondary"
-                      title="The whole project on one page, in Georgian and English">
-                <span>Project Report</span>
+                      title="The whole project on one page, in Georgian and English - as a PDF or Word file">
+                Project Report
               </button>
-              <button id="btn-report-project-print" class="btn btn-secondary" title="The project report as a Word file on A4, to arrange and print">
-                <span>Project Report (Word)</span>
-              </button>
-              <button id="btn-new-log-page" class="btn btn-primary">
+              <button id="btn-new-log-page" class="btn btn-primary col-span-2">
                 <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
                 New Daily Log
               </button>
@@ -1108,6 +1105,27 @@
           to read on screen; Word is A4, to arrange and print.
         </p>
         <p class="form-error hidden" data-error></p>
+      </div>
+      <div class="modal-footer">
+        <button type="submit" value="word" class="btn btn-secondary"><span>Word</span></button>
+        <button type="submit" value="pdf" class="btn btn-primary"><span>PDF</span></button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Project report: PDF or Word -->
+  <dialog id="modal-project-report" class="modal modal-sm" aria-labelledby="project-report-title">
+    <form id="form-project-report">
+      <div class="modal-header">
+        <h2 id="project-report-title">Project Report</h2>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body space-y-3">
+        <p class="text-sm text-slate-400">
+          The whole project on one designed page, in Georgian and English: key figures, progress vs plan, timetable,
+          contractors, budget &amp; cash flow, rooms (for sites that have them), recent logs and delays.
+        </p>
+        <p class="text-xs text-slate-500">PDF is one long page to read on screen; Word is A4, to arrange and print.</p>
       </div>
       <div class="modal-footer">
         <button type="submit" value="word" class="btn btn-secondary"><span>Word</span></button>

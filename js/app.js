@@ -124,7 +124,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-project', '#btn-report-project-print', '#btn-add-unit', '#btn-add-task', '#btn-import-mpp', '#btn-import-template', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental', '#btn-add-material',
+  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-project', '#btn-add-unit', '#btn-add-task', '#btn-import-mpp', '#btn-import-template', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental', '#btn-add-material',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -4146,19 +4146,21 @@ function projectReportArgs(project) {
 }
 
 /**
- * Builds the project report and saves it, without opening the preview - the
- * same one-click path the daily report has.
+ * Builds the project report and saves it as the PDF or Word file picked in its
+ * popup, without opening a preview.
  */
 async function exportProjectReport(e) {
+  e.preventDefault();
   if (exporting || !requireProject()) return;
-  const btn = e.currentTarget;
-  // Printable means Word: its pages are Word's to lay out, and can be moved by hand.
-  const word = btn.id === 'btn-report-project-print';
+  const form = e.currentTarget;
+  const btn = e.submitter ?? $('[value=pdf]', form);
+  // Word: its pages are Word's to lay out, and can be moved by hand.
+  const word = btn.value === 'word';
   const label = btn.querySelector('span') ?? btn;
   const original = label.textContent;
 
   exporting = true;
-  btn.disabled = true;
+  $$('[type=submit]', form).forEach((b) => { b.disabled = true; });
   label.textContent = 'Building…';
   toast('Building the project report…');
 
@@ -4166,11 +4168,12 @@ async function exportProjectReport(e) {
     const project = currentProject();
     const page = await buildProjectReport(projectReportArgs(project));
     await downloadProjectReport(page, project, { word });
+    closeModal('modal-project-report');
   } catch (err) {
     toast(err.message || 'Could not build the report.', 'error');
   } finally {
     exporting = false;
-    btn.disabled = !state.projectId;
+    $$('[type=submit]', form).forEach((b) => { b.disabled = false; });
     label.textContent = original;
   }
 }
@@ -4315,8 +4318,8 @@ $('#form-delete-project').addEventListener('submit', confirmDeleteProject);
 $('#btn-report-daily').addEventListener('click', openDailyReportModal);
 $('#form-daily-report').addEventListener('submit', exportDailyReport);
 $('#form-daily-report').addEventListener('input', updateDailyReportHint);
-$('#btn-report-project').addEventListener('click', exportProjectReport);
-$('#btn-report-project-print').addEventListener('click', exportProjectReport);
+$('#btn-report-project').addEventListener('click', () => requireProject() && openModal('modal-project-report'));
+$('#form-project-report').addEventListener('submit', exportProjectReport);
 
 if (db) {
   $('#form-login').addEventListener('submit', signIn);
