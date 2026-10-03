@@ -22,6 +22,10 @@
 }
 
 html, body { background: var(--ink-950); color: var(--text); }
+/* An iPhone enlarges text it thinks too small - in a report shrunk to fit the
+   screen, that is all of it, and it spills out of its boxes. Sizes stay as set.
+   (Tailwind does this for the app; the report previews are pages of their own.) */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
 /* ---------- Scrollbars ---------- */
 * { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
