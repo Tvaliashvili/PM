@@ -689,7 +689,10 @@ function renderAccess() {
         <p class="text-white font-medium">${u.name ? esc(u.name) : '<span class="text-slate-500">No name</span>'}</p>
         <p class="text-sm text-slate-400">${esc(u.email)}</p>
         <p class="text-xs text-slate-500">last signed in ${esc(when(u.last_sign_in_at))}</p>
-        <button type="button" class="table-action" data-access-rename="${esc(u.id)}">${u.name ? 'Rename' : 'Add name'}</button>`;
+        <button type="button" class="table-action" data-access-rename="${esc(u.id)}">${u.name ? 'Rename' : 'Add name'}</button>
+        ${u.email?.toLowerCase() === ADMIN_EMAIL ? '' : `
+        <button type="button" class="table-action" data-access-link="${esc(u.id)}" title="A one-time link to sign in and choose a password - send it yourself">Sign-in link</button>
+        <button type="button" class="table-action is-danger" data-access-delete="${esc(u.id)}">Delete</button>`}`;
     if (u.email?.toLowerCase() === ADMIN_EMAIL) {
       return `<div class="panel">${head}
         <span class="status-chip status-done">Administrator - sees and changes every project</span></div></div>`;
@@ -731,6 +734,100 @@ async function setAccess(userId, projectIds, give) {
   renderAccess();
 }
 
+// ---------- Adding and removing accounts (the manage-users function) ----------
+async function manageUsers(body) {
+  const { data, error } = await db.functions.invoke('manage-users', { body });
+  if (error) throw new Error(await functionErrorMessage(error));
+  return data;
+}
+
+function syncAddUser() {
+  const how = $('#add-user-how').value;
+  $('#add-user-password').classList.toggle('hidden', how !== 'create');
+  $('#form-add-user').elements.password.required = how === 'create';
+}
+
+// Shows what was done, and the link when there is one to send.
+function showAddUserResult(note, link = '') {
+  $('#add-user-note').textContent = note;
+  $('#add-user-link').value = link;
+  $('#add-user-link-row').classList.toggle('hidden', !link);
+  $('#add-user-result').classList.remove('hidden');
+}
+
+async function addUser(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn = $('[type=submit]', form);
+  const fd = new FormData(form);
+  const how = fd.get('how');
+  const email = fd.get('email').trim();
+  const name = fd.get('name').trim();
+  showFormError(form, '');
+  $('#add-user-result').classList.add('hidden');
+  setBusy(btn, true, 'Adding…');
+  try {
+    if (how === 'create') {
+      await manageUsers({ action: 'create', email, name, password: fd.get('password') });
+      showAddUserResult(`${email} can sign in now with the password you set.`);
+    } else if (how === 'invite') {
+      await manageUsers({ action: 'invite', email, name, redirectTo: appUrl() });
+      showAddUserResult(`Invitation sent to ${email}.`);
+    } else {
+      const { link } = await manageUsers({ action: 'link', email, name, redirectTo: appUrl() });
+      showAddUserResult(`Send this link to ${email} - it works once, and asks them to choose a password.`, link);
+    }
+    form.elements.email.value = '';
+    form.elements.name.value = '';
+    form.elements.password.value = '';
+    openAccess(); // the new account in the list, to tick its projects
+  } catch (err) {
+    showFormError(form, /rate limit/i.test(err.message)
+      ? 'Supabase sends only a few emails an hour. Choose "Make a sign-in link" instead and send it yourself.'
+      : err.message);
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
+// A fresh one-time link for an account that is already there (a forgotten
+// password, an invitation that went astray).
+async function userSignInLink(userId) {
+  const u = accessUsers.find((x) => x.id === userId);
+  if (!u) return;
+  try {
+    const { link } = await manageUsers({ action: 'link', email: u.email, redirectTo: appUrl() });
+    showAddUserResult(`Send this link to ${u.email} - it works once, and asks them to choose a password.`, link);
+    $('#form-add-user').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) {
+    toast(`Could not make the link: ${err.message}`, 'error');
+  }
+}
+
+async function deleteUser(userId) {
+  const u = accessUsers.find((x) => x.id === userId);
+  if (!u || !confirm(`Delete the account ${u.name ? `${u.name} (${u.email})` : u.email}? It loses access to every project and can no longer sign in.`)) return;
+  try {
+    await manageUsers({ action: 'delete', userId });
+    $('#add-user-result').classList.add('hidden'); // a link it may have had is dead now
+    toast('Account deleted.', 'success');
+    openAccess();
+  } catch (err) {
+    toast(`Could not delete: ${err.message}`, 'error');
+  }
+}
+
+async function copyAddUserLink() {
+  const input = $('#add-user-link');
+  try {
+    await navigator.clipboard.writeText(input.value);
+  } catch {
+    input.select();
+    document.execCommand('copy');
+  }
+  toast('Link copied.', 'success');
+}
+
 async function renameUser(userId) {
   const u = accessUsers.find((x) => x.id === userId);
   if (!u) return;
@@ -755,6 +852,10 @@ async function renameUser(userId) {
 function onAccessClick(e) {
   const rename = e.target.closest('[data-access-rename]');
   if (rename) return renameUser(rename.dataset.accessRename);
+  const link = e.target.closest('[data-access-link]');
+  if (link) return userSignInLink(link.dataset.accessLink);
+  const del = e.target.closest('[data-access-delete]');
+  if (del) return deleteUser(del.dataset.accessDelete);
   const all = e.target.closest('[data-access-all]');
   if (all) return setAccess(all.dataset.accessAll, state.projects.map((p) => p.id), true);
   const none = e.target.closest('[data-access-none]');
@@ -6684,6 +6785,9 @@ $('#projects-container').addEventListener('click', onProjectsClick);
 $('#btn-new-project').addEventListener('click', openProjectModal);
 $('#form-project').addEventListener('submit', saveProject);
 $('#btn-access').addEventListener('click', openAccess);
+$('#form-add-user').addEventListener('submit', addUser);
+$('#add-user-how').addEventListener('change', syncAddUser);
+$('#btn-copy-link').addEventListener('click', copyAddUserLink);
 $('#access-list').addEventListener('click', onAccessClick);
 $('#access-list').addEventListener('change', onAccessChange);
 $('#form-project').elements.income_from.addEventListener('change', (e) => syncRoomsTick(e.target.form));

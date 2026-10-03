@@ -947,7 +947,41 @@
       </div>
       <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
     </div>
-    <div class="modal-body">
+    <div class="modal-body space-y-4">
+      <form id="form-add-user" class="panel space-y-3">
+        <h3 class="panel-title !mb-0">Add a user</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="form-label">Name</span>
+            <input type="text" name="name" maxlength="80" class="input-dark w-full" placeholder="e.g. Davit Kartvelishvili">
+          </label>
+          <label class="block">
+            <span class="form-label">Email</span>
+            <input name="email" type="email" required class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">How</span>
+            <select id="add-user-how" name="how" class="select-dark w-full">
+              <option value="link">Make a sign-in link to send yourself (no email)</option>
+              <option value="invite">Send an invitation email</option>
+              <option value="create">Set a password now</option>
+            </select>
+          </label>
+          <label id="add-user-password" class="show-block hidden">
+            <span class="form-label">Password (at least 6 characters)</span>
+            <input name="password" type="text" minlength="6" autocomplete="off" class="input-dark w-full">
+          </label>
+        </div>
+        <p class="form-error hidden" data-error></p>
+        <div id="add-user-result" class="hidden space-y-2">
+          <p id="add-user-note" class="text-sm text-emerald-500"></p>
+          <div id="add-user-link-row" class="flex gap-2">
+            <input id="add-user-link" type="text" readonly class="input-dark w-full text-xs">
+            <button type="button" id="btn-copy-link" class="btn btn-secondary btn-sm shrink-0">Copy</button>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Add user</button>
+      </form>
       <div id="access-list" class="space-y-3"></div>
     </div>
   </dialog>
