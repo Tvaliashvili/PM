@@ -779,6 +779,22 @@ const KA_UI = {
   'Schedule: work done is on or ahead of plan.': 'გრაფიკი: შესრულებული სამუშაო გეგმის მიხედვითაა ან უსწრებს.',
   'NBG': 'ეროვნული ბანკი',
 
+  // Supabase's own sign-in messages
+  'Invalid login credentials': 'არასწორი ელფოსტა ან პაროლი',
+  'Email not confirmed': 'ელფოსტა ჯერ არ არის დადასტურებული',
+  'Email rate limit exceeded': 'წერილების ლიმიტი ამოიწურა - სცადეთ ერთ საათში',
+  'email rate limit exceeded': 'წერილების ლიმიტი ამოიწურა - სცადეთ ერთ საათში',
+  'New password should be different from the old password.': 'ახალი პაროლი ძველისგან უნდა განსხვავდებოდეს.',
+  'Password should be at least 6 characters.': 'პაროლი მინიმუმ 6 სიმბოლო უნდა იყოს.',
+
+  // Project cards
+  'Days left': 'დარჩენილი დღე',
+  'Days late': 'დღით გვიან',
+  'Last log': 'ბოლო ჩანაწერი',
+  'Today': 'დღეს',
+  'Yesterday': 'გუშინ',
+  'None yet': 'ჯერ არ არის',
+
   // The week at a glance
   'This week on site': 'ეს კვირა ობიექტზე',
   'Coming up': 'მომავალი სამუშაოები',
@@ -907,6 +923,7 @@ const PATTERNS = [
   [/^(.+) of the income is rooms not sold yet, at their asking prices\.$/, 'შემოსავლიდან $1 ჯერ გაუყიდავი ოთახებია, მოთხოვნილი ფასებით.'],
   [/^(\d+) rooms? (has|have) no price, so (it adds|they add) nothing to income - give (it|them) an asking price or set a price per m² in Edit Project\.$/, '$1 ოთახს ფასი არ აქვს და შემოსავალში არ ითვლება.'],
   [/^Site-wide - (.+)$/, 'მთელი ობიექტი - $1'],
+  [/^(\d+) days? ago$/, '$1 დღის წინ'],
   [/^· starts (.+)$/, '· იწყება $1'],
   [/^· due (.+?) · (\d+)%(.*)$/, '· ვადა $1 · $2%$3'],
   [/^· in progress(.*)$/, '· მიმდინარეობს$1'],

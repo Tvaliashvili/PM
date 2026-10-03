@@ -107,7 +107,9 @@ html, body { background: var(--ink-950); color: var(--text); }
   .projects-actions > .btn { flex: 1; justify-content: center; }
 }
 @media (max-width: 479px) {
-  .projects-actions { flex-direction: column; align-items: stretch; }
+  /* Tailwind's items-center on the same element would win without !important. */
+  .projects-actions { flex-direction: column; align-items: stretch !important; width: 100%; }
+  .projects-actions > .btn { width: 100%; justify-content: center; }
 }
 
 .panel {
@@ -1547,3 +1549,6 @@ body.read-only .select-contractor { appearance: none; -webkit-appearance: none; 
   /* A client's contractor reads in full, not cut to the width of a field. */
   body.read-only .select-contractor { max-width: none; width: auto; text-align: right; text-overflow: clip; }
 }
+
+/* A project card's figure that is a word ("Today", "3 days ago"), not a number. */
+.project-stats dd.is-text { font-size: 0.85rem; padding-top: 0.15rem; white-space: nowrap; }

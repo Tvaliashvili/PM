@@ -512,29 +512,41 @@ async function renderProjectList() {
   }
 
   const request = ++projectListRequest;
-  const [tasks, delays, impacts] = await Promise.all([
+  const [tasks, impacts, logs] = await Promise.all([
     db.from('schedule_tasks').select('id, project_id, planned_start, planned_finish, done, progress_pct'),
-    db.from('delays').select('project_id'),
     // An item a delay held up is not overdue until its extension runs out.
     db.from('delay_impacts').select('task_id, delay:delays(duration_days, created_at)'),
+    // The newest log of each project: is the site being reported on?
+    db.from('daily_logs').select('project_id, log_date').order('log_date', { ascending: false }),
   ]);
   if (request !== projectListRequest) return; // a newer render started
-  if (tasks.error || delays.error || impacts.error) toast('Could not load project stats.', 'error');
+  if (tasks.error || impacts.error || logs.error) toast('Could not load project stats.', 'error');
 
   const tasksByProject = new Map(state.projects.map((p) => [p.id, []]));
   const projectById = new Map(state.projects.map((p) => [p.id, p]));
   for (const t of withExtensions(tasks.data ?? [], impacts.data ?? [], todayISO())) {
     tasksByProject.get(t.project_id)?.push(...closeTasks([t], projectById.get(t.project_id)));
   }
-  const delayCount = new Map();
-  for (const d of delays.data ?? []) delayCount.set(d.project_id, (delayCount.get(d.project_id) ?? 0) + 1);
+  const lastLog = new Map();
+  for (const l of logs.data ?? []) if (!lastLog.has(l.project_id)) lastLog.set(l.project_id, l.log_date);
+  const daysBetween = (a, b) => Math.round((new Date(`${b}T00:00`) - new Date(`${a}T00:00`)) / 86_400_000);
 
   const today = todayISO();
   el.className = 'projects-grid';
   el.innerHTML = state.projects.map((p) => {
     const prog = scheduleProgress(tasksByProject.get(p.id) ?? [], scheduleDay(p, today));
-    const s = { units: p.total_flats ?? 0, overdue: prog.overdue.length, delays: delayCount.get(p.id) ?? 0 };
     const pct = prog.actualPct;
+    // Days to the planned completion - or past it; nothing once the project has ended.
+    const left = p.end_date && !p.closed_how ? daysBetween(today, p.end_date) : null;
+    const time = p.closed_how ? { label: 'Days left', value: '-' }
+      : left == null ? { label: 'Days left', value: '-' }
+      : left >= 0 ? { label: 'Days left', value: String(left) }
+      : { label: 'Days late', value: String(-left), alert: true };
+    // How long since the site was last reported on.
+    const last = lastLog.get(p.id);
+    const ago = last ? daysBetween(last, today) : null;
+    const logged = ago == null ? 'None yet' : ago <= 0 ? 'Today' : ago === 1 ? 'Yesterday' : `${ago} days ago`;
+    const stale = !p.closed_how && (ago == null || ago > 3) && pct < 100;
     return `
       <article class="project-card${p.id === state.projectId ? ' is-active' : ''}">
         <button type="button" class="project-card-open" data-open-project="${esc(p.id)}">
@@ -552,9 +564,9 @@ async function renderProjectList() {
             <span class="text-xs text-slate-400 tabular-nums">${pct}%</span>
           </div>
           <dl class="project-stats">
-            ${hasRooms(p) ? `<div><dt>Rooms</dt><dd>${s.units}</dd></div>` : `<div><dt>Items</dt><dd>${prog.count}</dd></div>`}
-            <div><dt>Overdue</dt><dd class="${s.overdue ? 'is-alert' : ''}">${s.overdue}</dd></div>
-            <div><dt>Delays</dt><dd class="${s.delays ? 'is-alert' : ''}">${s.delays}</dd></div>
+            <div><dt>${time.label}</dt><dd class="${time.alert ? 'is-alert' : ''}">${time.value}</dd></div>
+            <div><dt>Overdue</dt><dd class="${prog.overdue.length ? 'is-alert' : ''}">${prog.overdue.length}</dd></div>
+            <div><dt>Last log</dt><dd class="is-text${stale ? ' is-alert' : ''}">${esc(logged)}</dd></div>
           </dl>
         </button>
         <button type="button" class="project-card-delete" data-delete-project="${esc(p.id)}"
