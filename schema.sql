@@ -1037,3 +1037,15 @@ alter table public.projects
   add column if not exists closed_note text;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 36. Work done by the client's own daily workers
+-- Daily workers (counted in daily_logs) are nobody's contractor, so a work
+-- entry can say it was theirs. Their work may be in a room, on a timetable
+-- item, or on neither - cleaning, arranging the site - which is why flat_id
+-- and task_id stay optional; such general work keeps its daily log.
+-- -------------------------------------------------------------
+alter table public.work_done
+  add column if not exists by_day_workers boolean not null default false;
+
+notify pgrst, 'reload schema';

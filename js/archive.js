@@ -197,7 +197,7 @@ export async function buildArchive({
       crew: (l.crew ?? []).filter((c) => Number(c.workers) > 0),
     })),
     work: work.map((w) => ({
-      id: w.id, date: w.work_date, flat: flatLabel(w.flat_id), flat_id: w.flat_id, task_id: w.task_id ?? null,
+      id: w.id, date: w.work_date, flat: flatLabel(w.flat_id), flat_id: w.flat_id, task_id: w.task_id ?? null, by_day_workers: Boolean(w.by_day_workers),
       contractor_id: w.contractor_id, work: w.work, work_en: w.work_en, quantity: w.quantity, unit: w.unit,
     })),
     delays: delays.map((d) => ({
@@ -274,7 +274,7 @@ function workbook(XLSX, d) {
     Date: l.date, Contractor: who(c.contractor_id) || 'Hired by the client', Trade: d.trades[c.trade] ?? c.trade, Workers: c.workers,
   }))));
   sheet('Work done', d.work.map((w) => ({
-    Date: w.date, Where: w.flat || item(w.task_id), Work: w.work, 'Work (EN)': w.work_en, Contractor: who(w.contractor_id), Quantity: w.quantity, Unit: w.unit,
+    Date: w.date, Where: w.flat || item(w.task_id) || 'Site', Work: w.work, 'Work (EN)': w.work_en, 'Done by': w.by_day_workers ? 'Daily workers' : who(w.contractor_id), Quantity: w.quantity, Unit: w.unit,
   })));
   sheet('Delays', d.delays.map((x) => ({
     Start: x.start, End: x.end, Days: x.days, Cause: x.cause, 'Caused by': who(x.contractor_id), Room: x.flat,
@@ -573,7 +573,7 @@ function archiveViewer(D) {
     }
     for (const w of D.work) {
       const where = w.flat ? esc(w.flat) : taskName(w.task_id);
-      add(w.date, '🔨', `${where ? `<b>${where}</b> - ` : ''}${nameBi(w.work_en, w.work)}${w.quantity != null ? ` · ${qty(w.quantity, w.unit)}` : ` · ${L('მიმდინარეობს', 'in progress')}`}${w.contractor_id ? ` · ${who(w.contractor_id)}` : ''}`,
+      add(w.date, w.by_day_workers ? '👷' : '🔨', `${where ? `<b>${where}</b> - ` : ''}${nameBi(w.work_en, w.work)}${w.quantity != null ? ` · ${qty(w.quantity, w.unit)}` : ` · ${L('მიმდინარეობს', 'in progress')}`}${w.contractor_id ? ` · ${who(w.contractor_id)}` : w.by_day_workers ? ` · ${L('დღიური მუშები', 'Daily workers')}` : ''}`,
         `${w.flat} ${w.work} ${w.work_en} ${whoText(w.contractor_id)}`, w.contractor_id);
     }
     for (const p of D.payments) {
@@ -747,7 +747,7 @@ function archiveViewer(D) {
       ${mats.length ? `<h3>${L('მასალები', 'Materials')}</h3>${table([['თარიღი', 'Date'], ['მასალა', 'Material'], ['რაოდენობა', 'Quantity', 'num'], ['თანხა', 'Amount', 'num']],
     mats.map((m) => `<tr><td>${d(m.bought_on)}</td><td>${nameBi(m.item, m.item_ka)}</td><td class="num">${qty(m.quantity, m.unit) || '-'}</td><td class="num">${money(m.amount)}</td></tr>`))}` : ''}
       ${work.length ? `<h3>${L('შესრულებული სამუშაოები', 'Work recorded')}</h3>${table([['თარიღი', 'Date'], ['სამუშაო', 'Work'], ['კონტრაქტორი', 'Contractor'], ['რაოდენობა', 'Quantity', 'num']],
-    work.map((w) => `<tr><td>${d(w.date)}</td><td>${nameBi(w.work_en, w.work)}</td><td>${who(w.contractor_id) || '-'}</td><td class="num">${w.quantity != null ? qty(w.quantity, w.unit) : L('მიმდინარე', 'in progress')}</td></tr>`))}` : ''}
+    work.map((w) => `<tr><td>${d(w.date)}</td><td>${nameBi(w.work_en, w.work)}</td><td>${w.by_day_workers ? L('დღიური მუშები', 'Daily workers') : who(w.contractor_id) || '-'}</td><td class="num">${w.quantity != null ? qty(w.quantity, w.unit) : L('მიმდინარე', 'in progress')}</td></tr>`))}` : ''}
       ${held.length ? `<h3>${L('შეაფერხა', 'Held up by')}</h3>${table([['დაიწყო', 'Started'], ['მიზეზი', 'Cause'], ['დღე', 'Days', 'num']],
     held.map((x) => `<tr><td>${d(x.start)}</td><td>${bi(x.cause)}${x.description || x.description_en ? `<em>${esc(x.description_en || x.description)}</em>` : ''}</td><td class="num">${x.days}</td></tr>`))}` : ''}
       ${thumbs(photos)}`;

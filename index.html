@@ -1308,9 +1308,13 @@
             <span class="form-label">Date</span>
             <input name="work_date" type="date" required class="input-dark w-full">
           </label>
-          <label class="block col-span-2 sm:col-span-1">
-            <span class="form-label">Contractor</span>
+          <label id="room-work-who" class="block col-span-2 sm:col-span-1">
+            <span class="form-label">Done by</span>
             <select id="room-work-contractor" name="contractor_id" class="select-dark w-full"></select>
+          </label>
+          <label id="room-work-where-wrap" class="block col-span-2 sm:col-span-1 hidden">
+            <span class="form-label">Where</span>
+            <select id="room-work-where" name="where" class="select-dark w-full"></select>
           </label>
           <label class="block">
             <span class="form-label">Quantity (when measured)</span>

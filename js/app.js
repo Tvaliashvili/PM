@@ -796,11 +796,15 @@ async function saveUnit(e) {
 // Entered by hand from a room's Work popup, or a timetable item's for work in
 // no room (a slab pour, the facade): the day, what was done (Georgian and
 // English), who did it and, when measured, how much.
-let workTarget = {}; // { flatId } or { taskId }: whose Work popup is open
+let workTarget = {}; // { flatId }, { taskId } or { day, logId } (the daily workers' day): whose Work popup is open
+// "Done by" value for the client's own daily workers, who are nobody's contractor.
+const DAY_WORKERS = '__day';
+// Who did a work entry, in words.
+const workBy = (w) => (w.by_day_workers ? 'Daily workers' : w.contractor_id ? contractorName(w.contractor_id) : '');
 
 async function loadWork(projectId) {
   const { data, error } = await db.from('work_done')
-    .select('id, flat_id, task_id, contractor_id, work_date, work, work_en, quantity, unit, created_at')
+    .select('id, flat_id, task_id, daily_log_id, by_day_workers, contractor_id, work_date, work, work_en, quantity, unit, created_at')
     .eq('project_id', projectId)
     .order('work_date')
     .order('created_at');
@@ -814,6 +818,10 @@ async function loadWork(projectId) {
   if (state.tasks.length) renderSchedule(); // each item's Work count
   // Each log card shows what was done on its day.
   $$('[data-log-work]').forEach((el) => { el.innerHTML = workList(workOn(el.dataset.logWork)); });
+  $$('[data-log-day-workers]').forEach((el) => {
+    const n = dayWorkCount(el.dataset.day);
+    el.textContent = `Daily workers${n ? ` (${n})` : ''}`;
+  });
   if ($('#modal-room-work').open) renderRoomWork();
 }
 
@@ -841,9 +849,36 @@ function openTaskWork(taskId) {
   $('#room-work-pick').focus();
 }
 
-const workOfTarget = () => state.work.filter((w) => (workTarget.taskId
-  ? w.task_id === workTarget.taskId
-  : w.flat_id === workTarget.flatId));
+const workOfTarget = () => state.work.filter((w) => (workTarget.day
+  ? w.by_day_workers && w.work_date === workTarget.day
+  : workTarget.taskId
+    ? w.task_id === workTarget.taskId
+    : w.flat_id === workTarget.flatId));
+
+// What the client's daily workers did on one day: cleaning, arranging the
+// site, or work in a room or on an item.
+function openDayWorkersWork(logId) {
+  const log = shownLogs.find((l) => l.id === logId);
+  if (!log) return;
+  workTarget = { day: log.log_date, logId };
+  const crew = (log.crew ?? []).filter((c) => !c.contractor_id && c.trade === DAY_WORKER_KEY);
+  const count = crew.reduce((s, c) => s + Number(c.workers || 0), 0) || Number(log.manpower?.[DAY_WORKER_KEY]) || 0;
+  $('#room-work-title').textContent = `Daily workers - ${formatDate(log.log_date)}`;
+  $('#room-work-sub').textContent = count ? `${count} daily worker${count === 1 ? '' : 's'} on site that day` : 'No daily workers counted in this log';
+  resetRoomWorkForm();
+  renderRoomWork();
+  openModal('modal-room-work');
+  $('#room-work-pick').focus();
+}
+
+// The day-workers popup asks where the work was; the others know already.
+function whereOptions(entry) {
+  const value = entry?.flat_id ? `flat:${entry.flat_id}` : entry?.task_id ? `task:${entry.task_id}` : '';
+  const opt = (v, label) => `<option value="${esc(v)}"${v === value ? ' selected' : ''}>${esc(label)}</option>`;
+  return opt('', 'General - the site (cleaning, arranging…)')
+    + (state.flats.length ? `<optgroup label="Room">${state.flats.map((u) => opt(`flat:${u.id}`, roomLabel(u))).join('')}</optgroup>` : '')
+    + (state.tasks.length ? `<optgroup label="Timetable item">${state.tasks.map((t) => opt(`task:${t.id}`, t.name)).join('')}</optgroup>` : '');
+}
 
 /**
  * What an item's recorded work adds up to against its BOQ quantity: the
@@ -908,7 +943,17 @@ function resetRoomWorkForm(entry = null) {
   // No work in the project yet: there is nothing to pick, so it is a new one.
   if (!tags.length) $('#room-work-pick').innerHTML = `<option value="${NEW_WORK}">+ New work…</option>`;
   syncWorkPicker();
-  $('#room-work-contractor').innerHTML = contractorOptions(entry?.contractor_id ?? '');
+  // Done by: a contractor, or the client's own daily workers.
+  $('#room-work-contractor').innerHTML = contractorOptions(entry?.by_day_workers ? '' : entry?.contractor_id ?? '')
+    + `<option value="${DAY_WORKERS}"${entry?.by_day_workers ? ' selected' : ''}>Daily workers (hired by the client)</option>`;
+  const dayMode = Boolean(workTarget.day);
+  $('#room-work-who').classList.toggle('hidden', dayMode);
+  $('#room-work-where-wrap').classList.toggle('hidden', !dayMode);
+  if (dayMode) {
+    f.contractor_id.value = DAY_WORKERS;
+    $('#room-work-where').innerHTML = whereOptions(entry);
+    if (!entry) f.work_date.value = workTarget.day;
+  }
   f.quantity.value = entry?.quantity ?? '';
   f.unit.value = entry?.unit ?? '';
   // A new entry on an item starts from the item: its contractor and BOQ unit,
@@ -933,21 +978,23 @@ function resetRoomWorkForm(entry = null) {
 function renderRoomWork() {
   const list = $('#room-work-list');
   if (workTarget.taskId) renderTaskWorkSub();
+  const dayMode = Boolean(workTarget.day);
+  const whereOf = (w) => flatName(w.flat_id) || state.tasks.find((t) => t.id === w.task_id)?.name || 'General - the site';
   const work = workOfTarget()
     .sort((a, b) => b.work_date.localeCompare(a.work_date) || String(b.created_at).localeCompare(String(a.created_at)));
   if (!work.length) {
-    list.innerHTML = `<div class="empty-state">No work recorded ${workTarget.taskId ? 'on this item' : 'in this room'} yet.</div>`;
+    list.innerHTML = `<div class="empty-state">No work recorded ${dayMode ? 'for the daily workers that day' : workTarget.taskId ? 'on this item' : 'in this room'} yet.</div>`;
     return;
   }
   list.innerHTML = `
     <table class="data-table">
-      <thead><tr><th>Date</th><th>Work</th><th>Contractor</th><th class="num">Measured</th><th></th></tr></thead>
+      <thead><tr><th>Date</th><th>Work</th><th>${dayMode ? 'Where' : 'Done by'}</th><th class="num">Measured</th><th></th></tr></thead>
       <tbody>
         ${work.map((w) => `
           <tr>
             <td class="whitespace-nowrap">${esc(formatDate(w.work_date))}</td>
             <td>${esc(w.work || w.work_en)}${w.work_en && w.work_en !== w.work ? `<span class="block text-xs text-slate-500">${esc(w.work_en)}</span>` : ''}</td>
-            <td>${w.contractor_id ? esc(contractorName(w.contractor_id)) : '<span class="text-slate-500">-</span>'}</td>
+            <td>${dayMode ? esc(whereOf(w)) : workBy(w) ? esc(workBy(w)) : '<span class="text-slate-500">-</span>'}</td>
             <td class="num whitespace-nowrap">${esc(quantityText(w)) || '<span class="status-chip status-pending">In progress</span>'}</td>
             <td class="text-right whitespace-nowrap">
               <button type="button" class="table-action" data-room-work-edit="${esc(w.id)}">Edit</button>
@@ -1031,14 +1078,24 @@ async function saveRoomWork(e) {
   }
   const quantity = numOrNull(fd.get('quantity'));
   const id = fd.get('id');
-  const row = {
+  const byDayWorkers = fd.get('contractor_id') === DAY_WORKERS;
+  // The daily workers' popup says where; a room's or an item's is that room or item.
+  const [whereKind, whereId] = String(fd.get('where') || '').split(':');
+  const row = workTarget.day ? {
+    flat_id: whereKind === 'flat' ? whereId : null,
+    task_id: whereKind === 'task' ? whereId : null,
+    daily_log_id: workTarget.logId ?? null,
+  } : {
     flat_id: workTarget.flatId ?? null,
     task_id: workTarget.taskId ?? null,
+  };
+  Object.assign(row, {
+    by_day_workers: byDayWorkers,
     work_date: fd.get('work_date'),
-    contractor_id: fd.get('contractor_id') || null,
+    contractor_id: byDayWorkers ? null : fd.get('contractor_id') || null,
     quantity: quantity > 0 ? quantity : null,
     unit: quantity > 0 ? fd.get('unit') || null : null,
-  };
+  });
 
   showFormError(form, '');
   setBusy(btn, true, ka && en ? 'Saving…' : 'Translating…');
@@ -3702,6 +3759,7 @@ const quantityText = (w) => (w.quantity != null ? `${qtyFormat.format(w.quantity
 const workOn = (date) => state.work.filter((w) => w.work_date === date);
 const workCount = (flatId) => state.work.filter((w) => w.flat_id === flatId).length;
 const taskWorkCount = (taskId) => state.work.filter((w) => w.task_id === taskId).length;
+const dayWorkCount = (date) => state.work.filter((w) => w.by_day_workers && w.work_date === date).length;
 
 /** The day's work on its log card: "Block A · Room 301 - Gypsum board 200 m² (Giorgi)". */
 function workList(work) {
@@ -3711,8 +3769,7 @@ function workList(work) {
     .map((w) => {
       const where = flatName(w.flat_id) || (state.tasks.find((t) => t.id === w.task_id)?.name ?? '');
       // Measured that day, or work that went on unmeasured.
-      const extra = [quantityText(w) ? `${quantityText(w)} measured` : 'in progress',
-        w.contractor_id ? contractorName(w.contractor_id) : ''].filter(Boolean).join(' · ');
+      const extra = [quantityText(w) ? `${quantityText(w)} measured` : 'in progress', workBy(w)].filter(Boolean).join(' · ');
       return `<li>${where ? `<span class="text-white">${esc(where)}</span> - ` : ''}${esc(w.work || w.work_en)}`
         + `${w.work_en && w.work_en !== w.work ? ` <span class="text-slate-500">/ ${esc(w.work_en)}</span>` : ''}`
         + `${extra ? ` <span class="text-slate-400">(${esc(extra)})</span>` : ''}</li>`;
@@ -3739,6 +3796,8 @@ const logCard = (l) => {
         <span class="log-card-date">${esc(formatDate(l.log_date))}</span>
         <span class="log-card-meta">${esc([l.weather, total ? `${total} on site` : ''].filter(Boolean).join(' · '))}</span>
         <span class="log-card-actions">
+          <button type="button" class="table-action" data-log-day-workers="${esc(l.id)}" data-day="${esc(l.log_date)}" title="What the client's daily workers did that day">Daily workers${
+            dayWorkCount(l.log_date) ? ` (${dayWorkCount(l.log_date)})` : ''}</button>
           <button type="button" class="table-action" data-log-edit="${esc(l.id)}">Edit</button>
           <button type="button" class="table-action is-danger" data-log-delete="${esc(l.id)}">Delete</button>
         </span>
@@ -3808,6 +3867,8 @@ async function loadLogs(projectId, { more = false } = {}) {
 }
 
 async function onLogsClick(e) {
+  const dayWorkers = e.target.closest('[data-log-day-workers]');
+  if (dayWorkers) return openDayWorkersWork(dayWorkers.dataset.logDayWorkers);
   if (e.target.closest('#btn-log-more')) return loadLogs(state.projectId, { more: true });
 
   const edit = e.target.closest('[data-log-edit]');

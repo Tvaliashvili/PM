@@ -173,10 +173,14 @@ export async function buildProjectReport({
   const manDays = contractorManDays(siteLogs); // who actually put men on the job
   const rooms = Boolean(project.has_rooms); // sites like a stadium have no rooms
   const contractorById = new Map(contractors.map((c) => [c.id, c]));
+  // DAY_WORKERS stands for the client's own daily workers on a work entry.
+  const DAY_WORKERS = '__day';
   const nameOf = (id) => {
+    if (id === DAY_WORKERS) return 'დღიური მუშები / Daily workers';
     const c = contractorById.get(id);
     return c ? biName(c.name, c.name_ka) : '';
   };
+  const workerOf = (w) => w.contractor_id ?? (w.by_day_workers ? DAY_WORKERS : '');
   const paidOn = (taskId) => payments.filter((p) => p.task_id === taskId).reduce((s, p) => s + Number(p.amount), 0);
   // Retention is money the contractor has earned and not been given yet, so it
   // is owed, not spent - it never touches the cost figures, only its own line.
@@ -1196,7 +1200,7 @@ export async function buildProjectReport({
     g.ka = w.work;
     g.en = w.work_en;
     g.last = w.work_date;
-    const who = w.contractor_id ?? '';
+    const who = workerOf(w);
     if (!g.byContractor.has(who)) g.byContractor.set(who, new Map());
     const q = Number(w.quantity) || 0;
     if (q > 0) {
@@ -1249,7 +1253,7 @@ export async function buildProjectReport({
     g.en = w.work_en;
     g.last = w.work_date;
     if (w.flat_id) g.rooms.add(w.flat_id);
-    const who = w.contractor_id ?? '';
+    const who = workerOf(w);
     if (!g.byContractor.has(who)) g.byContractor.set(who, new Map());
     const q = Number(w.quantity) || 0;
     if (q > 0) {
@@ -1601,7 +1605,7 @@ export async function buildProjectReport({
       ${onTask.length ? popH('შესრულებული სამუშაოები', 'Work recorded') + popTable(
         [['თარიღი', 'Date'], ['სამუშაო', 'Work'], ['კონტრაქტორი', 'Contractor'], ['რაოდენობა', 'Quantity', 'num']],
         onTask.map((w) => `<tr><td>${d(w.work_date)}</td><td>${biText(w.work, w.work_en !== w.work ? w.work_en : '')}</td>
-          <td>${w.contractor_id ? esc(nameOf(w.contractor_id)) : '-'}</td>
+          <td>${workerOf(w) ? esc(nameOf(workerOf(w))) : '-'}</td>
           <td class="num">${w.quantity != null ? qtyText(Number(w.quantity), w.unit) : inProgress}</td></tr>`),
       ) : ''}`;
   }
@@ -1677,7 +1681,7 @@ export async function buildProjectReport({
         dayWork.map((w) => {
           const u = units.find((x) => x.id === w.flat_id);
           return `<tr><td>${u ? esc(u.flat_number) : '-'}</td><td>${biText(w.work, w.work_en !== w.work ? w.work_en : '')}</td>
-            <td>${w.contractor_id ? esc(nameOf(w.contractor_id)) : '-'}</td>
+            <td>${workerOf(w) ? esc(nameOf(workerOf(w))) : '-'}</td>
             <td class="num">${Number(w.quantity) > 0 ? qtyText(Number(w.quantity), w.unit) : L('მიმდინარეობს', 'In progress')}</td></tr>`;
         }),
       ) : ''}
