@@ -158,7 +158,7 @@ async function fetchExtras(db, projectId, today) {
  */
 export async function buildProjectReport({
   db, project, tasks, payments, contractors, contractorDelays, units, progress, money,
-  siteCosts = [], rentals = [], siteLogs = [], materials = [], work = [], delayImpacts = [],
+  siteCosts = [], rentals = [], siteLogs = [], materials = [], work = [], delayImpacts = [], usdRate = null,
 }) {
   const today = iso(new Date());
   const { logs, delays, events, variations } = await fetchExtras(db, project.id, today);
@@ -253,7 +253,11 @@ export async function buildProjectReport({
                  ${clientEn && clientEn !== clientKa ? `<span class="rpt-client-en">${esc(clientEn)}</span>` : ''}</p>`
             : ''}
           ${project.currency
-            ? `<p class="rpt-currency">${L(currencyKa(project.currency), `All amounts in ${project.currency}`)}</p>`
+            ? `<p class="rpt-currency" id="rpt-currency">${L(currencyKa(project.currency), `All amounts in ${project.currency}`)}</p>`
+            : ''}
+          ${usdRate
+            ? `<p class="rpt-currency" data-fx-skip>${L(`ეროვნული ბანკის კურსი ${d(usdRate.date)}: $1 = ${usdRate.rate.toFixed(4)} ₾`,
+              `National Bank of Georgia rate ${d(usdRate.date)}`)}</p>`
             : ''}
         </div>
         <div class="rpt-header-date">
@@ -1732,6 +1736,16 @@ export async function buildProjectReport({
   page.innerHTML = header + glance + attention + notMoving + driftSection + timeline + roadAhead
     + costSection + financeSection + contractorsSection + unitsSection + workSection + logsSection + delaysSection + safetySection + footer;
   page.popups = popups; // read by the interactive (.html) export only
+  // The interactive report's $ / ₾ switch: the rate, and the currency line in each.
+  const other = project.currency === 'GEL' ? 'USD' : 'GEL';
+  page.fx = usdRate && project.currency ? {
+    rate: usdRate.rate,
+    own: project.currency,
+    labels: {
+      [project.currency]: L(currencyKa(project.currency), `All amounts in ${project.currency}`),
+      [other]: L(`${currencyKa(other)} (ეროვნული ბანკის კურსით)`, `All amounts in ${other}, at the National Bank rate`),
+    },
+  } : null;
   return page;
 }
 
@@ -1776,6 +1790,7 @@ async function saveInteractive(page, project, fileName) {
   // Only what the report needs to be read: the room map's pop-up data, as JSON
   // a <script> can't be broken out of.
   const data = JSON.stringify(page.popups ?? {}).replace(/</g, '\\u003c');
+  const fx = JSON.stringify(page.fx ?? null).replace(/</g, '\\u003c');
   const title = `Project Report - ${project.name}`;
   const doc = `<!doctype html>
 <html lang="ka">
@@ -1827,14 +1842,18 @@ async function saveInteractive(page, project, fileName) {
   .rpt-pop-grid b { display: block; margin-top: 2px; font-size: 13px; color: #0f172a; }
   .rpt-pop-foot { margin-top: 10px; font-size: 11px; color: #475569; }
   .rpt-pop-body table { margin-top: 2px; }
+  .rpt-cur { display: inline-flex; flex: none; border: 1px solid #cbd5e1; border-radius: 999px; overflow: hidden; background: #fff; }
+  .rpt-cur button { padding: 3px 10px; border: 0; background: transparent; font: inherit; font-weight: 600; color: #64748b; cursor: pointer; }
+  .rpt-cur button.is-active { background: #0f172a; color: #fff; }
 </style>
 </head>
 <body>
 <div class="rpt-bar"><nav id="rpt-nav"></nav>
+${page.fx ? '<div class="rpt-cur" id="rpt-cur" role="group" aria-label="Currency"><button type="button" data-cur="USD">$</button><button type="button" data-cur="GEL">₾</button></div>' : ''}
 </div>
 ${page.outerHTML}
 <dialog class="rpt-pop" id="room-pop"><button class="rpt-pop-close" aria-label="Close">&times;</button><div class="rpt-pop-body pdf-page rpt"></div></dialog>
-<script>(${reportViewer.toString()})(${data});</script>
+<script>(${reportViewer.toString()})(${data}, ${fx});</script>
 </body>
 </html>`;
   const url = URL.createObjectURL(new Blob([doc], { type: 'text/html;charset=utf-8' }));
@@ -1852,14 +1871,57 @@ ${page.outerHTML}
  * (reportViewer.toString()): pop-ups for whatever has a data-pop key, the
  * contents bar, and fitting the sheet to a phone.
  */
-function reportViewer(POPUPS) {
+function reportViewer(POPUPS, FX) {
   const pop = document.getElementById('room-pop');
+
+  // $ / ₾: every amount on the sheet and in the pop-ups, converted at the
+  // National Bank rate printed in the header. Amounts are found in the text as
+  // the report writes them - "$1 200.00", "-₾300.00", or "$1.2K" on a chart.
+  let shown = FX ? FX.own : null;
+  const original = new WeakMap();
+  const AMOUNT = /(-?)([$₾])(-?)(\d{1,3}(?:[ \u00a0]\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)([KMB]?)/g;
+  const SYMBOL = { USD: '$', GEL: '₾' };
+  const full = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const short = new Intl.NumberFormat('en-GB', { notation: 'compact', maximumFractionDigits: 1 });
+  const spaced = (fmt, n) => fmt.formatToParts(n).map((x) => (x.type === 'group' ? ' ' : x.value)).join('');
+  const convertText = (text) => text.replace(AMOUNT, (all, signBefore, symbol, signAfter, digits, suffix) => {
+    const value = Number(digits.replace(/[ \u00a0]/g, '')) * ({ K: 1e3, M: 1e6, B: 1e9 }[suffix] ?? 1);
+    const to = FX.own === 'USD' ? value * FX.rate : value / FX.rate;
+    const compact = suffix || !digits.includes('.');
+    return signBefore + SYMBOL[shown] + signAfter + (compact ? short.format(to) : spaced(full, to));
+  });
+  const convert = (root) => {
+    if (!FX) return;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node.parentElement?.closest('[data-fx-skip], .rpt-bar')) continue;
+      if (!original.has(node)) original.set(node, node.textContent);
+      const text = original.get(node);
+      node.textContent = shown === FX.own ? text : convertText(text);
+    }
+    const line = document.getElementById('rpt-currency');
+    if (line) line.innerHTML = FX.labels[shown];
+  };
+  const showIn = (currency) => {
+    shown = currency;
+    document.querySelectorAll('#rpt-cur [data-cur]').forEach((b) => b.classList.toggle('is-active', b.dataset.cur === shown));
+    convert(document.querySelector('body > .pdf-page.rpt'));
+    if (pop.open) convert(pop.querySelector('.rpt-pop-body'));
+  };
+  if (FX) {
+    document.getElementById('rpt-cur').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-cur]');
+      if (b) showIn(b.dataset.cur);
+    });
+    showIn(FX.own);
+  }
   document.addEventListener('click', (e) => {
     const target = e.target.closest('[data-pop]');
     if (!target) return;
     if (target && POPUPS[target.dataset.pop]) {
       const body = pop.querySelector('.rpt-pop-body');
       body.innerHTML = POPUPS[target.dataset.pop];
+      if (FX && shown !== FX.own) convert(body);
       pop.showModal();
       body.scrollTop = 0;
     }

@@ -961,3 +961,48 @@ alter table public.materials
   check (kind in ('material', 'tool', 'other'));
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 32. Contracts with contractors (PDFs), for the administrator only
+-- The file is in R2 under contracts/<project>/ (see photo-url, which signs
+-- those links for the administrator alone); this row says whose it is.
+-- Unlike every other table, nobody else may even read these rows.
+-- Deleting the contractor or the project deletes the rows; the app removes
+-- the files first.
+-- -------------------------------------------------------------
+create table if not exists public.contract_files (
+  id             uuid primary key default gen_random_uuid(),
+  project_id     uuid not null references public.projects(id) on delete cascade,
+  contractor_id  uuid not null references public.contractors(id) on delete cascade,
+  title          text not null,
+  signed_on      date,
+  path           text not null unique,
+  file_name      text,
+  bytes          bigint,
+  created_at     timestamptz not null default now()
+);
+
+create index if not exists contract_files_contractor_idx on public.contract_files (contractor_id);
+create index if not exists contract_files_project_idx on public.contract_files (project_id);
+
+alter table public.contract_files enable row level security;
+drop policy if exists "admin_only" on public.contract_files;
+create policy "admin_only" on public.contract_files
+  for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 33. Acceptance acts (მიღება-ჩაბარების აქტი) under their contract
+-- Each interim payment a contractor gets is certified by an act. An act is a
+-- PDF like the contract, kept in the same table with contract_id pointing at
+-- the contract it belongs to (null = the row is a contract itself), its
+-- number and the amount it certifies. Deleting a contract deletes its acts.
+-- -------------------------------------------------------------
+alter table public.contract_files
+  add column if not exists contract_id uuid references public.contract_files(id) on delete cascade,
+  add column if not exists act_no      text,
+  add column if not exists amount      numeric(14,2) check (amount is null or amount >= 0);
+create index if not exists contract_files_contract_idx on public.contract_files (contract_id);
+
+notify pgrst, 'reload schema';

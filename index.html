@@ -145,6 +145,14 @@
           <p id="topbar-project-name" class="font-semibold text-white truncate"></p>
           <p id="topbar-project-location" class="text-xs text-slate-500 truncate"></p>
         </div>
+
+        <!-- Today's official dollar rate (National Bank of Georgia) -->
+        <div id="currency-switch" class="currency-switch hidden" role="group" aria-label="Show amounts in">
+          <button type="button" data-show-currency="USD">$</button>
+          <button type="button" data-show-currency="GEL">₾</button>
+        </div>
+        <a id="fx-rate" class="fx-rate hidden" href="https://nbg.gov.ge/en/monetary-policy/currency" target="_blank" rel="noopener"
+           title="National Bank of Georgia official rate"></a>
       </header>
 
       <!-- ---------- MAIN CONTENT ---------- -->
@@ -941,6 +949,63 @@
       <div id="contractor-jobs-summary" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3"></div>
       <div id="contractor-jobs-list" class="overflow-x-auto"></div>
       <p class="text-xs text-slate-500">Assign or change jobs with the Contractor column on the Timetable.</p>
+    </div>
+  </dialog>
+
+  <!-- A contractor's signed contracts (PDFs) - the administrator's alone -->
+  <dialog id="modal-contracts" class="modal modal-wide" aria-labelledby="contracts-title">
+    <div class="modal-header">
+      <div class="min-w-0">
+        <h2 id="contracts-title">Contracts</h2>
+        <p class="text-xs text-slate-500">Only you can see these - they are never in a report.</p>
+      </div>
+      <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body space-y-4">
+      <form id="form-contract" class="panel space-y-3">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <label class="block">
+            <span class="form-label">Document</span>
+            <select name="doc" class="select-dark w-full">
+              <option value="contract">Contract</option>
+              <option value="act">Acceptance act (მიღება-ჩაბარება)</option>
+            </select>
+          </label>
+          <label id="contract-parent-wrap" class="block sm:col-span-2 hidden">
+            <span class="form-label">Under contract</span>
+            <select id="contract-parent" name="contract_id" class="select-dark w-full"></select>
+          </label>
+        </div>
+        <div id="contract-act-fields" class="grid grid-cols-2 gap-3 hidden">
+          <label class="block">
+            <span class="form-label">Act №</span>
+            <input name="act_no" maxlength="40" class="input-dark w-full" placeholder="e.g. 3">
+          </label>
+          <label class="block">
+            <span class="form-label">Amount certified (optional)</span>
+            <input name="amount" type="number" min="0" step="0.01" class="input-dark w-full">
+          </label>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <label class="block sm:col-span-2">
+            <span class="form-label">PDF</span>
+            <input name="file" type="file" accept="application/pdf,.pdf" required class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label"><span id="contract-date-label">Signed on</span> (optional)</span>
+            <input name="signed_on" type="date" class="input-dark w-full">
+          </label>
+          <label class="block sm:col-span-3">
+            <span class="form-label">Title (optional)</span>
+            <input name="title" maxlength="200" class="input-dark w-full" placeholder="e.g. Plastering contract, addendum 1 - the file name if left empty">
+          </label>
+        </div>
+        <p class="form-error hidden" data-error></p>
+        <div class="flex justify-end">
+          <button type="submit" class="btn btn-primary">Upload</button>
+        </div>
+      </form>
+      <div id="contracts-list" class="overflow-x-auto"></div>
     </div>
   </dialog>
 

@@ -17,6 +17,9 @@ import {
   delayIsOngoing, delayDaysLost, delayStart, delayEnd, delayCovers, causeOf, withExtensions, dueDate, planVerdict,
 } from './schedule.js';
 import { ka, roomLabel } from './bilingual.js';
+import {
+  MAX_CONTRACT_MB, fetchContracts, uploadContract, contractUrl, deleteContracts, deleteProjectContracts,
+} from './contracts.js';
 import { roomIncome, financePosition, salesByType } from './finance.js';
 import {
   MAX_PHOTOS, uploadPhotos, fetchPhotos, signPhotos, photosBy, deletePhoto, deletePhotosFor, deleteProjectPhotos,
@@ -39,6 +42,7 @@ const state = {
   contractorDelays: [], // delays with cause_contractor_id + days
   delayImpacts: [],     // { delay_id, task_id, delay } - work a delay held up, which extends it
   contractors: [],      // this project's contractors
+  contracts: [],        // contract_files: signed PDFs per contractor (administrator only)
   siteLogs: [],         // every daily log's date, manpower and day rate (daily-worker pay)
   events: [],           // safety and quality events, newest first
   variations: [],       // change orders, newest first
@@ -65,11 +69,12 @@ const spaced = (fmt) => ({
   format: (n) => fmt.formatToParts(n).map((p) => (p.type === 'group' ? ' ' : p.value)).join(''),
 });
 
-// Money is shown in the open project's currency ($ or ₾), always with the
-// cents (280 140.00), so a round sum is never read as a rounded one.
+// Money is shown always with the cents (280 140.00), so a round sum is never
+// read as a rounded one. Amounts are stored in the project's currency; the
+// $ / ₾ switch in the top bar shows them in either, converting at today's
+// National Bank rate (see loadDollarRate).
 const moneyFormats = new Map();
-function moneyFormat() {
-  const currency = state.projects.find((p) => p.id === state.projectId)?.currency ?? DEFAULT_CURRENCY;
+function formatIn(currency) {
   if (!moneyFormats.has(currency)) {
     moneyFormats.set(currency, spaced(new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -81,8 +86,25 @@ function moneyFormat() {
   }
   return moneyFormats.get(currency);
 }
-const money  = { format: (n) => moneyFormat().format(n) };
+let usdRate = null; // lari per dollar today, once the National Bank has answered
+const SHOWN_CURRENCY_KEY = 'cpm.shownCurrency';
+const projectCurrency = () => state.projects.find((p) => p.id === state.projectId)?.currency ?? DEFAULT_CURRENCY;
+// The currency amounts are shown in: the one picked on the switch, once there
+// is a rate to convert by; else the project's own.
+function shownCurrency() {
+  const picked = storage.get(SHOWN_CURRENCY_KEY);
+  return picked && CURRENCIES[picked] && usdRate ? picked : projectCurrency();
+}
+function toShown(n) {
+  const from = projectCurrency();
+  const to = shownCurrency();
+  if (from === to) return n;
+  return from === 'USD' ? n * usdRate : n / usdRate;
+}
+const money  = { format: (n) => formatIn(shownCurrency()).format(toShown(Number(n))) };
 const money2 = money;
+// Forms take amounts in the project's currency, so their hints show it too.
+const moneyOwn = { format: (n) => formatIn(projectCurrency()).format(Number(n)) };
 
 const todayISO = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD, local time
 
@@ -276,6 +298,7 @@ async function selectProject(projectId) {
   state.payments = [];
   state.contractorDelays = [];
   state.contractors = [];
+  state.contracts = [];
   state.siteLogs = [];
   state.rentals = [];
   state.materials = [];
@@ -286,6 +309,7 @@ async function selectProject(projectId) {
   state.events = [];
   state.variations = [];
   setProjectActionsEnabled(Boolean(state.projectId));
+  syncCurrencySwitch();
 
   const project = currentProject();
   applyProjectHeader(project);
@@ -298,6 +322,7 @@ async function selectProject(projectId) {
   storage.set('cpm.projectId', project.id);
   resetLogFilter(); // a new project starts with a clean, unfiltered log list
   await Promise.all([
+    loadContracts(project.id),
     loadUnits(project.id), loadWork(project.id), loadSchedule(project.id), refreshDashboard(project.id), loadLogs(project.id),
     loadEvents(project.id), loadVariations(project.id),
   ]);
@@ -460,6 +485,7 @@ async function deleteProject(projectId) {
   // The photo files first: the rows go with the project, the files would not.
   try {
     await deleteProjectPhotos(db, projectId);
+    if (isAdmin()) await deleteProjectContracts(db, projectId);
   } catch (err) {
     toast(`Could not delete project: ${err.message}. Nothing was deleted - try again.`, 'error');
     return false;
@@ -480,6 +506,7 @@ async function deleteProject(projectId) {
 function openProjectModal() {
   const form = $('#form-project');
   form.reset();
+  syncRoomsTick(form);
   showFormError(form, '');
   openModal('modal-project');
 }
@@ -502,7 +529,7 @@ async function saveProject(e) {
       client_name: fd.get('client_name').trim() || null,
       client_name_ka: fd.get('client_name_ka').trim() || null,
       currency: fd.get('currency') || DEFAULT_CURRENCY,
-      has_rooms: fd.has('has_rooms'),
+      has_rooms: fd.has('has_rooms') || fd.get('income_from') === 'sales',
       income_from: fd.get('income_from') || null,
     })
     .select('id')
@@ -515,7 +542,7 @@ async function saveProject(e) {
   }
 
   closeModal('modal-project');
-  toast(`Project created. Add its timetable${fd.has('has_rooms') ? ', rooms' : ''} and dates next.`, 'success');
+  toast(`Project created. Add its timetable${fd.has('has_rooms') || fd.get('income_from') === 'sales' ? ', rooms' : ''} and dates next.`, 'success');
 
   // Open the new project on its Timetable, which drives progress.
   storage.set('cpm.projectId', project.id);
@@ -704,14 +731,14 @@ function updateUnitPriceHint() {
     sale_price: numOrNull(f.sale_price.value),
   };
   const { amount, source } = roomIncome(room, pricePerM2);
-  const perM2 = room.area_m2 ? ` - ${money.format(amount / room.area_m2)} per m²` : '';
+  const perM2 = room.area_m2 ? ` - ${moneyOwn.format(amount / room.area_m2)} per m²` : '';
   $('#unit-price-hint').textContent = {
     kept: 'Not for sale: kept or given away, it adds nothing to income.',
-    sale: `Counts in income at its sale price, ${money.format(amount)}${perM2}.`,
+    sale: `Counts in income at its sale price, ${moneyOwn.format(amount)}${perM2}.`,
     asking: room.sale_status === 'sold'
-      ? `Sold with no sale price yet: counts at its asking price, ${money.format(amount)}${perM2}.`
-      : `Counts in income at its asking price, ${money.format(amount)}${perM2}.`,
-    per_m2: `No asking price: counts at area × the project's ${money.format(pricePerM2)} per m², ${money.format(amount)}.`,
+      ? `Sold with no sale price yet: counts at its asking price, ${moneyOwn.format(amount)}${perM2}.`
+      : `Counts in income at its asking price, ${moneyOwn.format(amount)}${perM2}.`,
+    per_m2: `No asking price: counts at area × the project's ${moneyOwn.format(pricePerM2)} per m², ${moneyOwn.format(amount)}.`,
     none: 'No price yet: give it an asking price (or set a price per m² in Edit Project) for it to count in income.',
   }[source];
 }
@@ -1458,7 +1485,7 @@ function updateTaskMargin() {
     return;
   }
   const margin = price - cost;
-  el.innerHTML = `Margin: <span class="${margin < 0 ? 'variance-over' : 'variance-under'}">${esc(money.format(margin))}</span>`
+  el.innerHTML = `Margin: <span class="${margin < 0 ? 'variance-over' : 'variance-under'}">${esc(moneyOwn.format(margin))}</span>`
     + ` (${(margin / price * 100).toFixed(1)}% of the price)${margin < 0 ? ' - this item loses money' : ''}.`;
 }
 
@@ -2025,7 +2052,7 @@ async function saveEditProject(e) {
     start_date: fd.get('start_date') || null,
     end_date: fd.get('end_date') || null,
     currency: fd.get('currency') || DEFAULT_CURRENCY,
-    has_rooms: fd.has('has_rooms'),
+    has_rooms: fd.has('has_rooms') || fd.get('income_from') === 'sales',
     day_rate: fd.get('day_rate') === '' ? null : Number(fd.get('day_rate')),
     guard_rate: fd.get('guard_rate') === '' ? null : Number(fd.get('guard_rate')),
     retention_pct: Number(fd.get('retention_pct') || 0),
@@ -2051,6 +2078,7 @@ async function saveEditProject(e) {
   closeModal('modal-edit-project');
   toast('Project updated.', 'success');
   applyProjectHeader(project);
+  syncCurrencySwitch();
   renderTimeline();
   renderScheduleViews();           // amounts in the (possibly new) currency
   renderUnits();                   // sale columns come and go with Income from
@@ -2058,8 +2086,20 @@ async function saveEditProject(e) {
 
 // A price per m² only prices rooms for sale.
 function syncIncomeFields() {
-  const f = $('#form-edit-project').elements;
-  $('#edit-price-m2').classList.toggle('hidden', f.income_from.value !== 'sales');
+  const form = $('#form-edit-project');
+  $('#edit-price-m2').classList.toggle('hidden', form.elements.income_from.value !== 'sales');
+  syncRoomsTick(form);
+}
+
+// A project that sells what it builds sells rooms, so it has them: the tick is
+// set and locked. One built for an employer may or may not have rooms.
+// (A locked box is not sent with the form - saving counts it in by income_from.)
+function syncRoomsTick(form) {
+  const f = form.elements;
+  const selling = f.income_from.value === 'sales';
+  if (selling) f.has_rooms.checked = true;
+  f.has_rooms.disabled = selling;
+  f.has_rooms.closest('label').title = selling ? 'A project that sells its flats always has rooms' : '';
 }
 
 // =============================================================
@@ -2599,8 +2639,8 @@ function renderSitePay() {
     : `Pay - ${t.kind === 'guard' ? 'Guards' : 'Daily workers'}, ${monthLabel(t.month)}`;
   const cost = sitePayCost();
   const paid = sitePaid(sitePayMatch);
-  $('#site-pay-sub').textContent = `${rental ? 'Cost so far' : 'Cost'} ${money.format(cost)} · paid ${money.format(paid)} · `
-    + (cost - paid > 0.5 ? `owed ${money.format(cost - paid)}` : cost - paid < -0.5 ? `${money.format(paid - cost)} paid ahead` : 'nothing owed');
+  $('#site-pay-sub').textContent = `${rental ? 'Cost so far' : 'Cost'} ${moneyOwn.format(cost)} · paid ${moneyOwn.format(paid)} · `
+    + (cost - paid > 0.5 ? `owed ${moneyOwn.format(cost - paid)}` : cost - paid < -0.5 ? `${moneyOwn.format(paid - cost)} paid ahead` : 'nothing owed');
   const payments = state.sitePayments.filter(sitePayMatch).sort((a, b) => b.paid_on.localeCompare(a.paid_on));
   $('#site-pay-list').innerHTML = payments.length ? `
     <table class="data-table">
@@ -2609,7 +2649,7 @@ function renderSitePay() {
         ${payments.map((p) => `
           <tr>
             <td class="whitespace-nowrap">${esc(formatDate(p.paid_on))}</td>
-            <td class="num">${money.format(p.amount)}</td>
+            <td class="num">${moneyOwn.format(p.amount)}</td>
             <td class="text-slate-400">${esc(p.note || '-')}</td>
             <td class="text-right"><button type="button" class="table-action is-danger" data-site-pay-delete="${esc(p.id)}">Delete</button></td>
           </tr>`).join('')}
@@ -2760,7 +2800,7 @@ function updateRentalTotal() {
   const days = Number(f.days.value);
   const rate = Number(f.daily_rate.value);
   $('#rental-total').textContent = days > 0 && f.daily_rate.value !== ''
-    ? `Total: ${days} day${days === 1 ? '' : 's'} × ${money2.format(rate)} = ${money.format(days * rate)}`
+    ? `Total: ${days} day${days === 1 ? '' : 's'} × ${moneyOwn.format(rate)} = ${moneyOwn.format(days * rate)}`
     : '';
 }
 
@@ -3076,9 +3116,9 @@ function renderPaymentsList() {
   const held = sumOf(payments, 'retention');
   const certified = paid + held;
   $('#payments-summary').textContent = (budget
-    ? `Budget ${money.format(budget)} · paid ${money.format(paid)} · ${certified > budget ? `${money.format(certified - budget)} over budget` : `${money.format(budget - certified)} left`}`
-    : `Paid ${money.format(paid)} · no budget set for this item`)
-    + (held ? ` · ${money.format(held)} retention held` : '');
+    ? `Budget ${moneyOwn.format(budget)} · paid ${moneyOwn.format(paid)} · ${certified > budget ? `${moneyOwn.format(certified - budget)} over budget` : `${moneyOwn.format(budget - certified)} left`}`
+    : `Paid ${moneyOwn.format(paid)} · no budget set for this item`)
+    + (held ? ` · ${moneyOwn.format(held)} retention held` : '');
 
   $('#payments-list').innerHTML = payments.length ? `
     <table class="data-table">
@@ -3087,8 +3127,8 @@ function renderPaymentsList() {
         ${payments.map((p) => `
           <tr>
             <td class="whitespace-nowrap">${esc(formatDate(p.paid_on))}</td>
-            <td class="num">${money2.format(p.amount)}</td>
-            <td class="num">${Number(p.retention) ? money2.format(p.retention) : '<span class="text-slate-500">-</span>'}</td>
+            <td class="num">${moneyOwn.format(p.amount)}</td>
+            <td class="num">${Number(p.retention) ? moneyOwn.format(p.retention) : '<span class="text-slate-500">-</span>'}</td>
             <td>${esc(p.note ?? '')}</td>
             <td class="text-right">
               <button type="button" class="table-action is-danger" data-payment-delete="${esc(p.id)}">Delete</button>
@@ -3144,8 +3184,8 @@ function updatePaymentNet() {
     return;
   }
   el.textContent = retention > 0
-    ? `${money2.format(gross)} certified - ${money2.format(retention)} retention = ${money2.format(gross - retention)} paid`
-    : `${money2.format(gross)} paid, nothing held`;
+    ? `${moneyOwn.format(gross)} certified - ${moneyOwn.format(retention)} retention = ${moneyOwn.format(gross - retention)} paid`
+    : `${moneyOwn.format(gross)} paid, nothing held`;
 }
 
 async function savePayment(e) {
@@ -3255,6 +3295,8 @@ function renderContractors() {
         <td class="whitespace-nowrap">${contractorRating(s)}</td>
         <td class="text-right whitespace-nowrap">
           <button type="button" class="table-action" data-contractor-jobs="${esc(c.id)}">Jobs</button>
+          <button type="button" class="table-action" data-contractor-contracts="${esc(c.id)}">Contracts${
+            contractCount(c.id) ? ` (${contractCount(c.id)})` : ''}</button>
           <button type="button" class="table-action" data-contractor-edit="${esc(c.id)}">Edit</button>
           <button type="button" class="table-action is-danger" data-contractor-delete="${esc(c.id)}">Delete</button>
         </td>
@@ -3318,8 +3360,17 @@ async function deleteContractor(contractorId) {
   if (!contractor) return;
   const jobs = state.tasks.filter((t) => t.contractor_id === contractorId).length;
   const extra = jobs ? `\n\nTheir ${jobs} timetable item(s) will be left without a contractor.` : '';
-  if (!confirm(`Delete contractor "${contractor.name}"?${extra}`)) return;
+  const papers = state.contracts.filter((x) => x.contractor_id === contractorId);
+  const contractsNote = papers.length ? `\n\nTheir ${papers.length} contract PDF(s) will be deleted too.` : '';
+  if (!confirm(`Delete contractor "${contractor.name}"?${extra}${contractsNote}`)) return;
 
+  // The contract files first: the rows go with the contractor, the files would not.
+  try {
+    await deleteContracts(db, papers);
+  } catch (err) {
+    toast(`Could not delete contractor: ${err.message}`, 'error');
+    return;
+  }
   const { error } = await db.from('contractors').delete().eq('id', contractorId);
   if (error) {
     toast(`Could not delete contractor: ${error.message}`, 'error');
@@ -3327,6 +3378,183 @@ async function deleteContractor(contractorId) {
   }
   toast(`Deleted ${contractor.name}.`, 'success');
   loadSchedule(state.projectId);
+}
+
+// ---------- Contracts (PDFs) with each contractor - the administrator's alone ----------
+const isAdmin = () => state.user?.email?.toLowerCase() === ADMIN_EMAIL;
+// Contracts only - an act is counted under its contract, not beside it.
+const contractCount = (contractorId) => state.contracts.filter((x) => x.contractor_id === contractorId && !x.contract_id).length;
+const actsOf = (contractId) => state.contracts.filter((x) => x.contract_id === contractId)
+  .sort((a, b) => String(a.signed_on ?? a.created_at).localeCompare(String(b.signed_on ?? b.created_at)));
+let contractsFor = null; // the contractor whose Contracts popup is open
+
+async function loadContracts(projectId) {
+  if (!isAdmin()) return; // nobody else may see them; the database agrees
+  try {
+    const data = await fetchContracts(db, projectId);
+    if (projectId !== state.projectId) return;
+    state.contracts = data;
+  } catch (err) {
+    toast(`Could not load the contracts: ${err.message}`, 'error');
+    return;
+  }
+  if (state.contractors.length) renderContractors();
+  if ($('#modal-contracts').open) renderContracts();
+}
+
+function openContracts(contractorId) {
+  const c = state.contractors.find((x) => x.id === contractorId);
+  if (!c) return;
+  contractsFor = contractorId;
+  $('#contracts-title').textContent = `Contracts - ${c.name}`;
+  const form = $('#form-contract');
+  form.reset();
+  $('#contract-parent').innerHTML = ''; // the last contractor's contracts are not this one's
+  showFormError(form, '');
+  renderContracts();
+  openModal('modal-contracts');
+}
+
+const fileSize = (bytes) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+
+function renderContracts() {
+  const contracts = state.contracts.filter((x) => x.contractor_id === contractsFor && !x.contract_id);
+  // The form's contract picker, for an act.
+  const parent = $('#contract-parent');
+  const picked = parent.value;
+  parent.innerHTML = contracts.map((x) => `<option value="${esc(x.id)}">${esc(x.title)}${
+    x.signed_on ? ` · ${esc(formatDate(x.signed_on))}` : ''}</option>`).join('');
+  if (contracts.some((x) => x.id === picked)) parent.value = picked;
+  syncContractForm();
+
+  const dash = '<span class="text-slate-500">-</span>';
+  const fileCell = (x) => `<span class="text-slate-400">${esc(x.file_name || '')}</span>${
+    x.bytes ? ` <span class="text-xs text-slate-500">· ${fileSize(x.bytes)}</span>` : ''}`;
+  const buttons = (x) => `
+    <td class="text-right whitespace-nowrap">
+      <button type="button" class="table-action" data-contract-open="${esc(x.id)}">Open</button>
+      <button type="button" class="table-action is-danger" data-contract-delete="${esc(x.id)}">Delete</button>
+    </td>`;
+  $('#contracts-list').innerHTML = !contracts.length
+    ? '<div class="empty-state">No contracts uploaded for this contractor yet.</div>'
+    : `
+      <table class="data-table">
+        <thead><tr><th>Document</th><th>Date</th><th class="num">Amount</th><th>File</th><th></th></tr></thead>
+        ${contracts.map((x) => {
+    const acts = actsOf(x.id);
+    const certified = sumOf(acts, 'amount');
+    return `
+          <tbody>
+            <tr>
+              <td class="text-white font-medium">${esc(x.title)}
+                <span class="block text-xs text-slate-500 font-normal">Contract${acts.length
+    ? ` · ${acts.length} act${acts.length === 1 ? '' : 's'}${certified ? `, ${esc(moneyOwn.format(certified))} certified` : ''}` : ''}</span></td>
+              <td class="whitespace-nowrap">${x.signed_on ? esc(formatDate(x.signed_on)) : dash}</td>
+              <td class="num">${dash}</td>
+              <td>${fileCell(x)}</td>
+              ${buttons(x)}
+            </tr>
+            ${acts.map((a) => `
+            <tr>
+              <td class="pl-8">↳ ${esc(a.title)}<span class="block text-xs text-slate-500">Acceptance act · მიღება-ჩაბარება</span></td>
+              <td class="whitespace-nowrap">${a.signed_on ? esc(formatDate(a.signed_on)) : dash}</td>
+              <td class="num">${a.amount != null ? esc(moneyOwn.format(a.amount)) : dash}</td>
+              <td>${fileCell(a)}</td>
+              ${buttons(a)}
+            </tr>`).join('')}
+          </tbody>`;
+  }).join('')}
+      </table>`;
+}
+
+// An act needs a contract to go under, and has a number and an amount.
+function syncContractForm() {
+  const f = $('#form-contract').elements;
+  const hasContracts = $('#contract-parent').options.length > 0;
+  if (f.doc.value === 'act' && !hasContracts) f.doc.value = 'contract';
+  f.doc.querySelector('[value=act]').disabled = !hasContracts;
+  const act = f.doc.value === 'act';
+  $('#contract-parent-wrap').classList.toggle('hidden', !act);
+  $('#contract-act-fields').classList.toggle('hidden', !act);
+  $('#contract-date-label').textContent = act ? 'Act date' : 'Signed on';
+}
+
+async function saveContract(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn = $('[type=submit]', form);
+  const fd = new FormData(form);
+  const file = fd.get('file');
+  if (!file?.size) {
+    showFormError(form, 'Choose the PDF.');
+    return;
+  }
+  if (file.size > MAX_CONTRACT_MB * 1024 * 1024) {
+    showFormError(form, `The file is over ${MAX_CONTRACT_MB} MB.`);
+    return;
+  }
+  showFormError(form, '');
+  setBusy(btn, true, 'Uploading…');
+  try {
+    const act = fd.get('doc') === 'act';
+    await uploadContract(db, {
+      projectId: state.projectId,
+      contractorId: contractsFor,
+      file,
+      title: fd.get('title').trim(),
+      signedOn: fd.get('signed_on'),
+      contractId: act ? fd.get('contract_id') || null : null,
+      actNo: act ? fd.get('act_no').trim() : null,
+      amount: act ? numOrNull(fd.get('amount')) : null,
+    });
+  } catch (err) {
+    showFormError(form, err.message);
+    return;
+  } finally {
+    setBusy(btn, false);
+  }
+  const doc = form.elements.doc.value;
+  const parentId = form.elements.contract_id.value;
+  form.reset();
+  // The next upload is most likely another act under the same contract.
+  form.elements.doc.value = doc;
+  if (parentId) form.elements.contract_id.value = parentId;
+  toast(doc === 'act' ? 'Act uploaded.' : 'Contract uploaded.', 'success');
+  loadContracts(state.projectId);
+}
+
+async function onContractsClick(e) {
+  const open = e.target.closest('[data-contract-open]');
+  if (open) {
+    const contract = state.contracts.find((x) => x.id === open.dataset.contractOpen);
+    if (!contract) return;
+    // Opened at once, so the browser doesn't take it for a pop-up; the link follows.
+    const tab = window.open('', '_blank');
+    try {
+      const url = await contractUrl(db, contract);
+      if (tab) tab.location.href = url;
+      else window.location.assign(url);
+    } catch (err) {
+      tab?.close();
+      toast(`Could not open the contract: ${err.message}`, 'error');
+    }
+    return;
+  }
+  const del = e.target.closest('[data-contract-delete]');
+  if (!del) return;
+  const contract = state.contracts.find((x) => x.id === del.dataset.contractDelete);
+  if (!contract) return;
+  const acts = contract.contract_id ? [] : actsOf(contract.id);
+  if (!confirm(`Delete "${contract.title}"?${acts.length
+    ? ` Its ${acts.length} acceptance act${acts.length === 1 ? '' : 's'} go with it.` : ''} The PDFs are removed for good.`)) return;
+  try {
+    await deleteContracts(db, [contract, ...acts]);
+  } catch (err) {
+    toast(`Could not delete: ${err.message}`, 'error');
+    return;
+  }
+  toast('Contract deleted.', 'success');
+  loadContracts(state.projectId);
 }
 
 // Pop-up with every timetable item assigned to one contractor.
@@ -3385,6 +3613,9 @@ function openContractorJobs(contractorId) {
 function onContractorsClick(e) {
   const jobs = e.target.closest('[data-contractor-jobs]');
   if (jobs) return openContractorJobs(jobs.dataset.contractorJobs);
+
+  const contracts = e.target.closest('[data-contractor-contracts]');
+  if (contracts) return openContracts(contracts.dataset.contractorContracts);
 
   const edit = e.target.closest('[data-contractor-edit]');
   if (edit) return openContractorModal(state.contractors.find((c) => c.id === edit.dataset.contractorEdit));
@@ -3839,7 +4070,7 @@ function rateLine(selector, rateField, workers, noun) {
     el.textContent = `${workers} ${noun}${workers === 1 ? '' : 's'} on the client's account - enter the rate to count their pay.`;
     el.className = 'text-sm text-amber-400 pb-2';
   } else {
-    el.textContent = `${workers} × ${money2.format(rate)} = ${money.format(workers * rate)} today`;
+    el.textContent = `${workers} × ${moneyOwn.format(rate)} = ${moneyOwn.format(workers * rate)} today`;
     el.className = 'text-sm text-slate-300 pb-2';
   }
 }
@@ -5283,7 +5514,10 @@ function projectReportArgs(project) {
     materials: state.materials,
     work: state.work,
     progress: state.progress ?? scheduleProgress([], todayISO()),
-    money,
+    // The report is in the project's own currency; the interactive one can
+    // switch, at the National Bank rate given here.
+    money: moneyOwn,
+    usdRate: usdRate ? { rate: usdRate, date: usdRateDate } : null,
   };
 }
 
@@ -5374,8 +5608,86 @@ async function exportDailyReport(e) {
 }
 
 // =============================================================
+// Today's dollar rate - the National Bank of Georgia's official USD → GEL
+// rate, shown in the top bar. Read straight from the bank (it allows
+// browsers to), once a day: the day's answer is kept in this browser, so
+// opening the app again that day asks nothing.
+// =============================================================
+const NBG_RATES = 'https://nbg.gov.ge/gw/api/ct/monetarypolicy/currencies/en/json/?currencies=USD';
+
+let usdRateDate = null; // the day the bank's rate is for
+
+// The $ / ₾ switch: shows every amount in the app in either currency. Only
+// there once a project is open and the bank's rate is in.
+function syncCurrencySwitch() {
+  const el = $('#currency-switch');
+  el.classList.toggle('hidden', !usdRate || !state.projectId);
+  const shown = shownCurrency();
+  const own = projectCurrency();
+  $$('[data-show-currency]', el).forEach((b) => {
+    const active = b.dataset.showCurrency === shown;
+    b.classList.toggle('is-active', active);
+    b.setAttribute('aria-pressed', String(active));
+    b.title = b.dataset.showCurrency === own
+      ? `Amounts as entered, in ${own}`
+      : `Converted from ${own} at today's National Bank rate${usdRate ? ` ($1 = ${usdRate.toFixed(4)} ₾)` : ''}`;
+  });
+}
+
+function onCurrencySwitch(e) {
+  const btn = e.target.closest('[data-show-currency]');
+  if (!btn) return;
+  storage.set(SHOWN_CURRENCY_KEY, btn.dataset.showCurrency);
+  syncCurrencySwitch();
+  rerenderMoney();
+}
+
+// Every view that shows amounts, drawn again in the currency now shown.
+function rerenderMoney() {
+  if (!state.projectId) return;
+  renderScheduleViews();
+  renderUnits();
+  renderVariations();
+}
+
+async function loadDollarRate() {
+  const key = `cpm.usdRate.${todayISO()}`;
+  let rate = null;
+  try { rate = JSON.parse(storage.get(key) || 'null'); } catch { rate = null; }
+  if (!rate) {
+    try {
+      const res = await fetch(NBG_RATES);
+      if (!res.ok) return;
+      const usd = (await res.json())?.[0]?.currencies?.find((c) => c.code === 'USD');
+      if (!usd || !(usd.rate > 0)) return;
+      rate = { rate: usd.rate, diff: Number(usd.diff) || 0, validFrom: String(usd.validFromDate ?? '').slice(0, 10) };
+      storage.set(key, JSON.stringify(rate));
+    } catch {
+      return; // the bank can't be reached: the top bar just goes without it
+    }
+  }
+  usdRate = rate.rate;
+  usdRateDate = rate.validFrom || todayISO();
+  syncCurrencySwitch();
+  if (state.projectId && shownCurrency() !== projectCurrency()) rerenderMoney();
+  const el = $('#fx-rate');
+  const arrow = rate.diff > 0 ? '▲' : rate.diff < 0 ? '▼' : '';
+  // ▲ = the dollar got dearer in lari since the last rate.
+  el.innerHTML = `<span class="fx-label">NBG</span> $1 = <b>${rate.rate.toFixed(4)} ₾</b>`
+    + (arrow ? ` <span class="fx-diff ${rate.diff > 0 ? 'is-up' : 'is-down'}">${arrow} ${Math.abs(rate.diff).toFixed(4)}</span>` : '');
+  el.title = `National Bank of Georgia official rate${rate.validFrom ? ` for ${formatDate(rate.validFrom)}` : ''}`
+    + (rate.diff ? ` · ${rate.diff > 0 ? 'up' : 'down'} ${Math.abs(rate.diff).toFixed(4)} ₾ on the previous rate` : '');
+  el.classList.remove('hidden');
+}
+
+// =============================================================
 // Boot
 // =============================================================
+loadDollarRate();
+$('#currency-switch').addEventListener('click', onCurrencySwitch);
+$('#form-contract').addEventListener('submit', saveContract);
+$('#form-contract').addEventListener('change', syncContractForm);
+$('#contracts-list').addEventListener('click', onContractsClick);
 initNavigation();
 initModals();
 setProjectActionsEnabled(false);
@@ -5457,6 +5769,7 @@ $('#contractors-table').addEventListener('click', onContractorsClick);
 $('#projects-container').addEventListener('click', onProjectsClick);
 $('#btn-new-project').addEventListener('click', openProjectModal);
 $('#form-project').addEventListener('submit', saveProject);
+$('#form-project').elements.income_from.addEventListener('change', (e) => syncRoomsTick(e.target.form));
 $('#btn-parse-log').addEventListener('click', processLogText);
 $('#btn-new-log-page').addEventListener('click', () => openDailyLogModal());
 $('#log-from').addEventListener('change', onLogFilterChange);

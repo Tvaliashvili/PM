@@ -40,7 +40,7 @@ async function shrink(file, { px, quality }) {
 // The function signs at most this many paths a request (see photo-url).
 const PATHS_PER_REQUEST = 48;
 
-async function signedUrls(db, paths, method = 'GET') {
+export async function signedUrls(db, paths, method = 'GET') {
   if (!paths.length) return [];
   const batches = [];
   for (let i = 0; i < paths.length; i += PATHS_PER_REQUEST) batches.push(paths.slice(i, i + PATHS_PER_REQUEST));
