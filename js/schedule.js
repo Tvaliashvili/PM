@@ -91,6 +91,17 @@ export function extensionsByTask(impacts = [], today = new Date().toLocaleDateSt
  * out afresh on every load rather than stored, so it can never fall out of step
  * with the delays: untick an item or delete the delay and the date comes back.
  */
+/**
+ * A project that has ended (projects.closed_how): each item not done by then is
+ * marked closed, so it reads "not done - project closed" rather than overdue.
+ */
+export const closeTasks = (tasks, project) => (project?.closed_how
+  ? tasks.map((t) => (t.done ? t : { ...t, closed: true }))
+  : tasks);
+
+/** The day the schedule is read as of: the day the project ended, or today. */
+export const scheduleDay = (project, today) => (project?.closed_how && project.closed_on ? project.closed_on : today);
+
 export const withExtensions = (tasks, impacts, today) => {
   const ext = extensionsByTask(impacts, today);
   return tasks.map((t) => ({ ...t, extension_days: ext.get(t.id) ?? 0 }));
@@ -127,8 +138,10 @@ export const expectedPct = (task, todayIso) => Math.round(plannedFraction(task, 
 
 /**
  * State of one activity on `todayIso`:
- *   { key: 'done' | 'overdue' | 'active' | 'upcoming', daysLate }
+ *   { key: 'done' | 'overdue' | 'active' | 'upcoming' | 'closed', daysLate }
  * daysLate is set for overdue tasks and for tasks finished after their planned date.
+ * 'closed' = not done when the project ended (task.closed, see closeTasks): the
+ * work was waived or never reached, so it is not late.
  */
 export function taskState(task, todayIso) {
   // Late means late against the due date: an extension is time the contractor
@@ -138,6 +151,7 @@ export function taskState(task, todayIso) {
     const late = task.done_at ? dayDiff(due, task.done_at) : 0;
     return { key: 'done', daysLate: Math.max(0, late) };
   }
+  if (task.closed) return { key: 'closed', daysLate: 0 };
   if (todayIso > due) return { key: 'overdue', daysLate: dayDiff(due, todayIso) };
   if (todayIso >= task.planned_start) return { key: 'active', daysLate: 0 };
   return { key: 'upcoming', daysLate: 0 };
@@ -154,7 +168,7 @@ export function taskState(task, todayIso) {
 export function stalledTasks(tasks, todayIso) {
   const out = [];
   for (const task of tasks) {
-    if (task.done || completionOf(task) >= 1) continue;
+    if (task.done || task.closed || completionOf(task) >= 1) continue;
     if (todayIso <= task.planned_start) continue;
 
     const actual = Math.round(completionOf(task) * 100);
@@ -434,7 +448,7 @@ export function contractorPerformance(tasks, delays, payments, todayIso, materia
       }
     } else if (state.key === 'overdue') {
       s.overdue += 1;
-    } else {
+    } else if (state.key !== 'closed') {
       s.open += 1;
     }
   }

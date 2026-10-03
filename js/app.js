@@ -6,15 +6,17 @@ import {
   UNIT_TYPES, UNIT_STATUSES,
   MANPOWER_TRADES, WEATHER_OPTIONS, DELAY_CAUSES, DAY_WORKER_KEY, GUARD_KEY, EQUIPMENT_SUGGESTIONS,
   SITE_EVENT_KINDS, INCIDENT_SEVERITIES, VARIATION_STATUSES,
-  BOQ_UNITS, CONTRACTOR_TRADES, INCOME_SOURCES, SALE_STATUSES, PURCHASE_KINDS,
+  BOQ_UNITS, CONTRACTOR_TRADES, INCOME_SOURCES, SALE_STATUSES, PURCHASE_KINDS, CLOSED_HOW,
 } from './config.js';
 import { generateDailyReport } from './pdfReport.js';
-import { buildProjectReport, downloadProjectReport } from './projectReport.js';
+import { buildProjectReport, downloadProjectReport, interactiveReportHtml } from './projectReport.js';
+import { buildArchive } from './archive.js';
 import {
   scheduleProgress, taskState, durationDays, completionOf, expectedPct,
   plannedSpendByMonth, actualSpendByMonth, costPosition, contractorPerformance,
   labourCosts, guardCosts, rentalCosts, rentalTotal, rentalEnd, siteCostsByMonth, materialCosts, budgetOf,
   delayIsOngoing, delayDaysLost, delayStart, delayEnd, delayCovers, causeOf, withExtensions, dueDate, planVerdict,
+  closeTasks, scheduleDay,
 } from './schedule.js';
 import { ka, roomLabel } from './bilingual.js';
 import {
@@ -42,7 +44,7 @@ const state = {
   contractorDelays: [], // delays with cause_contractor_id + days
   delayImpacts: [],     // { delay_id, task_id, delay } - work a delay held up, which extends it
   contractors: [],      // this project's contractors
-  contracts: [],        // contract_files: signed PDFs per contractor (administrator only)
+  contracts: [],        // contract_files: signed PDFs per contractor, with their acts
   siteLogs: [],         // every daily log's date, manpower and day rate (daily-worker pay)
   events: [],           // safety and quality events, newest first
   variations: [],       // change orders, newest first
@@ -269,7 +271,7 @@ function showSetupNotice() {
 async function loadProjects() {
   const { data, error } = await db
     .from('projects')
-    .select('id, name, name_ka, location, location_ka, client_name, client_name_ka, total_flats, has_rooms, day_rate, guard_rate, created_at, start_date, end_date, currency, baseline_set_on, retention_pct, income_from, price_per_m2')
+    .select('id, name, name_ka, location, location_ka, client_name, client_name_ka, total_flats, has_rooms, day_rate, guard_rate, created_at, start_date, end_date, currency, baseline_set_on, retention_pct, income_from, price_per_m2, closed_how, closed_on, closed_note')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -341,8 +343,10 @@ const currentProject = () => state.projects.find((p) => p.id === state.projectId
 // Project name/location wherever it's shown in the workspace.
 function applyProjectHeader(project) {
   $('#topbar-project-name').textContent = project?.name ?? '';
-  $('#topbar-project-location').textContent = [locationOf(project), clientOf(project) && `Client: ${clientOf(project)}`]
-    .filter(Boolean).join(' · ');
+  $('#topbar-project-location').textContent = [
+    locationOf(project), clientOf(project) && `Client: ${clientOf(project)}`,
+    project?.closed_how && `${CLOSED_HOW[project.closed_how].en}${project.closed_on ? ` ${formatDate(project.closed_on)}` : ''}`,
+  ].filter(Boolean).join(' · ');
 
   $('[data-nav="units"]').classList.toggle('hidden', !hasRooms(project));
   if (project && !hasRooms(project) && location.hash === '#units') goTo('dashboard');
@@ -380,8 +384,9 @@ async function renderProjectList() {
   if (tasks.error || delays.error || impacts.error) toast('Could not load project stats.', 'error');
 
   const tasksByProject = new Map(state.projects.map((p) => [p.id, []]));
+  const projectById = new Map(state.projects.map((p) => [p.id, p]));
   for (const t of withExtensions(tasks.data ?? [], impacts.data ?? [], todayISO())) {
-    tasksByProject.get(t.project_id)?.push(t);
+    tasksByProject.get(t.project_id)?.push(...closeTasks([t], projectById.get(t.project_id)));
   }
   const delayCount = new Map();
   for (const d of delays.data ?? []) delayCount.set(d.project_id, (delayCount.get(d.project_id) ?? 0) + 1);
@@ -389,13 +394,14 @@ async function renderProjectList() {
   const today = todayISO();
   el.className = 'projects-grid';
   el.innerHTML = state.projects.map((p) => {
-    const prog = scheduleProgress(tasksByProject.get(p.id) ?? [], today);
+    const prog = scheduleProgress(tasksByProject.get(p.id) ?? [], scheduleDay(p, today));
     const s = { units: p.total_flats ?? 0, overdue: prog.overdue.length, delays: delayCount.get(p.id) ?? 0 };
     const pct = prog.actualPct;
     return `
       <article class="project-card${p.id === state.projectId ? ' is-active' : ''}">
         <button type="button" class="project-card-open" data-open-project="${esc(p.id)}">
           <p class="pr-8 font-semibold text-white truncate">${esc(p.name)}</p>
+          ${p.closed_how ? `<p class="mt-1"><span class="status-chip ${p.closed_how === 'completed' ? 'status-done' : 'status-handed'}">${esc(CLOSED_HOW[p.closed_how].en)}${p.closed_on ? ` · ${esc(formatDate(p.closed_on))}` : ''}</span></p>` : ''}
           ${p.name_ka ? `<p class="pr-8 text-sm text-slate-400 truncate">${esc(p.name_ka)}</p>` : ''}
           <p class="text-sm text-slate-500 truncate">${esc(locationOf(p) || 'No location set')} · ${esc(p.currency ?? DEFAULT_CURRENCY)}</p>
           ${clientOf(p) ? `<p class="text-xs text-slate-400 truncate">Client: ${esc(clientOf(p))}</p>` : ''}
@@ -1204,7 +1210,9 @@ async function loadSchedule(projectId) {
     return;
   }
   // Each item's finish, pushed out by the delays that held it up.
-  state.tasks = withExtensions(tasks.data, impacts.data, todayISO());
+  // A project that has ended is read as of its last day; items not done by then are closed.
+  const project = currentProject();
+  state.tasks = closeTasks(withExtensions(tasks.data, impacts.data, scheduleDay(project, todayISO())), project);
   state.payments = payments.data;
   state.contractorDelays = delays.data;
   state.delayImpacts = impacts.data;
@@ -1242,14 +1250,19 @@ function taskStateChip(task, s) {
     return `<span class="status-chip status-blocked">! Overdue · ${s.daysLate} d · ${Math.round(completionOf(task) * 100)}%</span>`;
   }
   if (s.key === 'active') return '<span class="status-chip status-in_progress">In progress</span>';
+  if (s.key === 'closed') {
+    return `<span class="status-chip status-handed" title="Not done when the project ended">Not done · project closed · ${Math.round(completionOf(task) * 100)}%</span>`;
+  }
   return '<span class="status-chip status-pending">Upcoming</span>';
 }
 
 // Where the project stands, in words - behind also when anything is overdue
 // or the pace so far finishes late (see planVerdict).
-const PLAN_WORDS = { behind: 'Behind plan', ahead: 'Ahead of plan', on_track: 'On track' };
+const PLAN_WORDS = { behind: 'Behind plan', ahead: 'Ahead of plan', on_track: 'On track', closed: 'Project closed' };
 function projectVerdict(p) {
   const project = currentProject();
+  // An ended project is not behind or ahead of anything any more.
+  if (project?.closed_how) return { key: 'closed', gap: 0, late: false };
   return planVerdict(p, {
     tasks: state.tasks, startDate: project?.start_date, endDate: project?.end_date, todayIso: todayISO(),
   });
@@ -1275,7 +1288,7 @@ function finishCell(t) {
 }
 
 function renderSchedule() {
-  const today = todayISO();
+  const today = scheduleDay(currentProject(), todayISO());
   const p = scheduleProgress(state.tasks, today);
   state.progress = p;
   updateProgressKpi();
@@ -1302,7 +1315,7 @@ function renderSchedule() {
     // is hard to measure, and a nudge when nobody has updated it.
     const donePct = Math.round(completionOf(t) * 100);
     const plan = expectedPct(t, today);
-    const showPlan = !t.done && donePct < 100 && today >= t.planned_start;
+    const showPlan = !t.done && !t.closed && donePct < 100 && today >= t.planned_start;
     return `
       <tr class="${s.key === 'overdue' ? 'is-overdue' : ''}${t.done ? ' is-done' : ''}">
         <td class="task-pct-cell">
@@ -1984,7 +1997,10 @@ function renderTimeline() {
     bars.push(timelineBar('Planned by today', p.plannedPct, 'bg-sky-500'));
     bars.push(timelineBar('Work complete', p.actualPct, 'bg-emerald-500'));
     const verdict = projectVerdict(p);
-    chips.push(verdict.key !== 'behind'
+    const ended = currentProject()?.closed_how;
+    chips.push(ended
+      ? { cls: ended === 'completed' ? 'status-done' : 'status-handed', text: CLOSED_HOW[ended].en }
+      : verdict.key !== 'behind'
       ? { cls: 'status-done', text: `✓ ${PLAN_WORDS[verdict.key]}` }
       : { cls: verdict.gap >= -15 && !verdict.late ? 'status-in_progress' : 'status-blocked', text: `! ${PLAN_WORDS.behind}` });
     if (p.overdue.length) chips.push({ cls: 'status-blocked', text: `! ${p.overdue.length} overdue` });
@@ -2030,7 +2046,11 @@ function openEditProjectModal() {
   f.retention_pct.value = Number(project.retention_pct) || '';
   f.income_from.value = incomeFrom(project) ?? '';
   f.price_per_m2.value = project.price_per_m2 ?? '';
+  f.closed_how.value = project.closed_how ?? '';
+  f.closed_on.value = project.closed_on ?? '';
+  f.closed_note.value = project.closed_note ?? '';
   syncIncomeFields();
+  syncClosedFields();
   showFormError(form, '');
   openModal('modal-edit-project');
 }
@@ -2058,6 +2078,9 @@ async function saveEditProject(e) {
     retention_pct: Number(fd.get('retention_pct') || 0),
     income_from: fd.get('income_from') || null,
     price_per_m2: numOrNull(fd.get('price_per_m2')),
+    closed_how: fd.get('closed_how') || null,
+    closed_on: fd.get('closed_how') ? fd.get('closed_on') || todayISO() : null,
+    closed_note: fd.get('closed_how') ? fd.get('closed_note').trim() || null : null,
   };
   if (row.start_date && row.end_date && row.end_date < row.start_date) {
     showFormError(form, 'Planned completion must be on or after the start date.');
@@ -2082,6 +2105,17 @@ async function saveEditProject(e) {
   renderTimeline();
   renderScheduleViews();           // amounts in the (possibly new) currency
   renderUnits();                   // sale columns come and go with Income from
+  loadSchedule(project.id);        // an ended project reads its items as of the day it ended
+}
+
+// An ended project has the day it ended and, if wanted, a word on why.
+function syncClosedFields() {
+  const f = $('#form-edit-project').elements;
+  const ended = Boolean(f.closed_how.value);
+  $('#edit-closed-on').classList.toggle('hidden', !ended);
+  $('#edit-closed-note').classList.toggle('hidden', !ended);
+  f.closed_on.max = todayISO();
+  if (ended && !f.closed_on.value) f.closed_on.value = todayISO();
 }
 
 // A price per m² only prices rooms for sale.
@@ -3380,7 +3414,8 @@ async function deleteContractor(contractorId) {
   loadSchedule(state.projectId);
 }
 
-// ---------- Contracts (PDFs) with each contractor - the administrator's alone ----------
+// ---------- Contracts (PDFs) with each contractor ----------
+// Everyone signed in can read them; only the administrator uploads or deletes.
 const isAdmin = () => state.user?.email?.toLowerCase() === ADMIN_EMAIL;
 // Contracts only - an act is counted under its contract, not beside it.
 const contractCount = (contractorId) => state.contracts.filter((x) => x.contractor_id === contractorId && !x.contract_id).length;
@@ -3389,7 +3424,6 @@ const actsOf = (contractId) => state.contracts.filter((x) => x.contract_id === c
 let contractsFor = null; // the contractor whose Contracts popup is open
 
 async function loadContracts(projectId) {
-  if (!isAdmin()) return; // nobody else may see them; the database agrees
   try {
     const data = await fetchContracts(db, projectId);
     if (projectId !== state.projectId) return;
@@ -5557,6 +5591,70 @@ async function exportProjectReport(e) {
 
 let exporting = false;
 
+// The whole project in one ZIP, for the client and for keeping (see archive.js).
+async function exportArchive() {
+  if (exporting || !requireProject()) return;
+  const project = currentProject();
+  const btn = $('#btn-archive');
+  const label = btn.querySelector('span');
+  const progressEl = $('#archive-progress');
+  exporting = true;
+  btn.disabled = true;
+  label.textContent = 'Building…';
+  try {
+    const today = todayISO();
+    const page = await buildProjectReport(projectReportArgs(project));
+    const reportHtml = await interactiveReportHtml(page, project);
+    const cost = costPosition(state.tasks, state.payments, today, state.siteCosts);
+    let XLSX = null;
+    try { XLSX = await loadSheetJs(); } catch { /* the archive goes without its Excel file */ }
+    const blob = await buildArchive({
+      db,
+      project,
+      tasks: state.tasks,
+      payments: state.payments,
+      contractors: state.contractors,
+      units: state.flats,
+      siteCosts: state.siteCosts,
+      rentals: state.rentals,
+      materials: state.materials,
+      sitePayments: state.sitePayments,
+      work: state.work,
+      delays: state.delays,
+      events: state.events,
+      variations: state.variations,
+      contracts: state.contracts,
+      progress: state.progress ?? scheduleProgress([], today),
+      cost,
+      finance: financePosition({
+        project, tasks: state.tasks, rooms: state.flats, variations: state.variations, materials: state.materials, cost,
+      }),
+      usdRate: usdRate ? { rate: usdRate, date: usdRateDate } : null,
+      reportHtml,
+      XLSX,
+      onProgress: (text) => { progressEl.textContent = text; },
+    });
+    const name = `${(project.name || 'Project').replace(/[\\/:*?"<>|]+/g, '').trim().replace(/\s+/g, '_').slice(0, 60)}_Archive_${today}.zip`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    progressEl.textContent = `Done - ${(blob.size / 1024 / 1024).toFixed(1)} MB`;
+    toast('Archive downloaded. Unzip it and open index.html.', 'success');
+  } catch (err) {
+    progressEl.textContent = '';
+    toast(err.message || 'Could not build the archive.', 'error');
+  } finally {
+    exporting = false;
+    btn.disabled = false;
+    label.textContent = 'Download archive';
+  }
+}
+
 // The daily report of any day - a client may ask for last Tuesday's.
 function openDailyReportModal() {
   if (!requireProject()) return;
@@ -5794,12 +5892,14 @@ $('#ask-answer').addEventListener('click', onAskLangToggle);
 $('#btn-edit-project').addEventListener('click', openEditProjectModal);
 $('#form-edit-project').addEventListener('submit', saveEditProject);
 $('#edit-income-from').addEventListener('change', syncIncomeFields);
+$('#edit-closed-how').addEventListener('change', syncClosedFields);
 $('#form-delete-project').addEventListener('submit', confirmDeleteProject);
 $('#btn-report-daily').addEventListener('click', openDailyReportModal);
 $('#form-daily-report').addEventListener('submit', exportDailyReport);
 $('#form-daily-report').addEventListener('input', updateDailyReportHint);
 $('#btn-report-project').addEventListener('click', () => requireProject() && openModal('modal-project-report'));
 $('#form-project-report').addEventListener('submit', exportProjectReport);
+$('#btn-archive').addEventListener('click', exportArchive);
 
 if (db) {
   $('#form-login').addEventListener('submit', signIn);

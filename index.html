@@ -846,6 +846,32 @@
           <input name="has_rooms" type="checkbox">
           <span>This site has rooms<small>Unticking hides the Rooms page and room details in reports; rooms already added are kept.</small></span>
         </label>
+        <fieldset class="space-y-3 pt-3 border-t border-ink-700">
+          <legend class="form-label">Project status</legend>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label class="block">
+              <span class="form-label">Status</span>
+              <select id="edit-closed-how" name="closed_how" class="select-dark w-full">
+                <option value="">In progress</option>
+                <option value="completed">Finished</option>
+                <option value="stopped">Stopped by the client</option>
+                <option value="left">We left the contract</option>
+              </select>
+            </label>
+            <label id="edit-closed-on" class="block hidden">
+              <span class="form-label">Ended on</span>
+              <input name="closed_on" type="date" class="input-dark w-full">
+            </label>
+            <label id="edit-closed-note" class="block sm:col-span-2 hidden">
+              <span class="form-label">Note (optional)</span>
+              <input name="closed_note" maxlength="300" class="input-dark w-full" placeholder="e.g. Facade works cancelled by the client">
+            </label>
+          </div>
+          <p class="text-xs text-slate-500">
+            Once ended, the timetable is read as of that day: work not done by then shows as "not done - project
+            closed", never as overdue. Payments made later (final settlements, released retention) still count.
+          </p>
+        </fieldset>
         <p class="form-error hidden" data-error></p>
       </div>
       <div class="modal-footer">
@@ -957,7 +983,7 @@
     <div class="modal-header">
       <div class="min-w-0">
         <h2 id="contracts-title">Contracts</h2>
-        <p class="text-xs text-slate-500">Only you can see these - they are never in a report.</p>
+        <p class="text-xs text-slate-500">The signed contracts and their acceptance acts - never in a report.</p>
       </div>
       <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
     </div>
@@ -1386,6 +1412,18 @@
           contractors, budget &amp; cash flow, rooms (for sites that have them), recent logs and delays.
         </p>
         <p class="text-xs text-slate-500">Interactive is a single file that opens in any browser, no login - click a room on the room map to see its details and the work done in it. Word is A4, to arrange and print (and save as PDF from Word if needed).</p>
+        <div class="pt-3 border-t border-ink-700">
+          <p class="text-sm text-slate-300 font-medium">Full archive (.zip)</p>
+          <p class="text-xs text-slate-500 mt-1">
+            Everything, to hand to the client and keep after the project is deleted: a day-by-day journal of the whole
+            project, every item, contractor and payment, every photo, the contracts and acts, the project report and an
+            Excel file of all the data. Unzip it and open index.html - no login needed. A big project takes a few minutes.
+          </p>
+          <div class="flex items-center gap-3 mt-2">
+            <button type="button" id="btn-archive" class="btn btn-secondary"><span>Download archive</span></button>
+            <span id="archive-progress" class="text-xs text-slate-400"></span>
+          </div>
+        </div>
       </div>
       <div class="modal-footer">
         <button type="submit" value="word" class="btn btn-secondary"><span>Word</span></button>

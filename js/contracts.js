@@ -1,12 +1,13 @@
 // =============================================================
-// Contracts with contractors - the signed PDFs, for the administrator alone
+// Contracts with contractors - the signed PDFs
 // Each contract can carry its acceptance acts (მიღება-ჩაბარების აქტი), the
 // PDFs certifying each interim payment: rows with contract_id set.
 //
 // Kept beside the site photos in Cloudflare R2, under contracts/<project>/,
-// with a row each in contract_files saying whose contract it is. Nobody but
-// the administrator can list them (the table's policy) or open one (photo-url
-// signs no contracts/ link for anyone else). They are never in a report.
+// with a row each in contract_files saying whose contract it is. Anyone
+// signed in can read them; only the administrator can upload or delete (the
+// table's policy, and photo-url signs PUT and DELETE for them alone). They
+// are never in a report.
 // =============================================================
 import { signedUrls } from './photos.js';
 

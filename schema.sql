@@ -1006,3 +1006,34 @@ alter table public.contract_files
 create index if not exists contract_files_contract_idx on public.contract_files (contract_id);
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 34. Contracts can be read by everyone signed in
+-- As every other table: anyone signed in may read, only the administrator
+-- may upload or delete (photo-url signs PUT and DELETE for them alone).
+-- -------------------------------------------------------------
+drop policy if exists "admin_only" on public.contract_files;
+drop policy if exists "read_all" on public.contract_files;
+drop policy if exists "admin_write" on public.contract_files;
+create policy "read_all" on public.contract_files for select to authenticated using (true);
+create policy "admin_write" on public.contract_files for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 35. A project is over: finished, stopped by the client, or left by us
+-- closed_how null = still running. Once set, closed_on is the day it ended:
+-- the schedule is read as of that day, and work not done by then is "not
+-- done - project closed", never overdue. Money keeps counting after it (final
+-- payments and released retention come later).
+--   completed - the work is finished (whatever was left was waived)
+--   stopped   - the client stopped the works
+--   left      - we left the contract before the end
+-- -------------------------------------------------------------
+alter table public.projects
+  add column if not exists closed_how text check (closed_how in ('completed', 'stopped', 'left')),
+  add column if not exists closed_on  date,
+  add column if not exists closed_note text;
+
+notify pgrst, 'reload schema';

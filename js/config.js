@@ -34,6 +34,13 @@ export const UNIT_STATUSES = {
   handed_over: 'Handed over',
 };
 
+// How a project ended (projects.closed_how; null = still running), in both languages.
+export const CLOSED_HOW = {
+  completed: { en: 'Finished', ka: 'დასრულებული' },
+  stopped:   { en: 'Stopped by the client', ka: 'შეჩერებულია დამკვეთის მიერ' },
+  left:      { en: 'We left the contract', ka: 'კონტრაქტი შეწყვეტილია ჩვენ მიერ' },
+};
+
 // What a purchase is (materials.kind). Only a material can be for one job.
 export const PURCHASE_KINDS = {
   material: 'Material',

@@ -47,10 +47,7 @@ serveJson(async (payload: { paths?: string[]; method?: string }, req: Request) =
   }
 
   const method = payload.method === "PUT" || payload.method === "DELETE" ? payload.method : "GET";
-  // Contracts with contractors (contracts/...) are the administrator's alone:
-  // nobody else gets a link to read them either.
-  const contracts = (payload.paths ?? []).some((p) => typeof p === "string" && p.startsWith("contracts/"));
-  if (method !== "GET" || contracts) {
+  if (method !== "GET") {
     const { data: { user } } = await userClient(req).auth.getUser();
     if (user?.email?.toLowerCase() !== ADMIN_EMAIL) return json({ error: "This account can only view" }, 403);
   }

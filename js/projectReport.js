@@ -9,7 +9,7 @@ import {
   stalledTasks, forecastFinish, durationDays, contractorManDays, planVerdict,
 } from './schedule.js';
 import { bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
-import { MANPOWER_TRADES, REPORT_AUTHOR } from './config.js';
+import { MANPOWER_TRADES, REPORT_AUTHOR, CLOSED_HOW } from './config.js';
 import { financePosition, salesByType } from './finance.js';
 import { savePdf } from './pdfSave.js';
 import { saveDocx } from './docxSave.js';
@@ -56,6 +56,7 @@ const TASK_STATUS = {
   overdue:  { ka: 'ვადაგადაცილება',    en: 'Overdue',     tone: 'bad' },
   active:   { ka: 'მიმდინარე',         en: 'In progress', tone: 'info' },
   upcoming: { ka: 'დაგეგმილი',         en: 'Upcoming',    tone: 'muted' },
+  closed:   { ka: 'არ შესრულდა - პროექტი დაიხურა', en: 'Not done - project closed', tone: 'muted' },
 };
 
 const UNIT_STATUS = [
@@ -92,7 +93,12 @@ const currencyKa = (code) => `ყველა თანხა ${CURRENCY_KA[code
 
 // Where the project stands against its plan, in words (never colour alone).
 // Behind also when anything is overdue or the pace so far finishes late (planVerdict).
-function verdict(v, count) {
+function verdict(v, count, project = null) {
+  // An ended project says how it ended, not where it stands against a plan.
+  if (project?.closed_how) {
+    const how = CLOSED_HOW[project.closed_how];
+    return { ka: `${how.ka}${project.closed_on ? ` ${d(project.closed_on)}` : ''}`, en: `${how.en}${project.closed_on ? ` ${d(project.closed_on)}` : ''}`, tone: project.closed_how === 'completed' ? 'ok' : 'muted' };
+  }
   if (!count) return { ka: 'გრაფიკი არ არის', en: 'No timetable', tone: 'muted' };
   if (v.key === 'behind') return { ka: 'გეგმას ჩამორჩება', en: 'Behind plan', tone: 'bad' };
   if (v.key === 'ahead') return { ka: 'გეგმას უსწრებს', en: 'Ahead of plan', tone: 'ok' };
@@ -196,7 +202,7 @@ export async function buildProjectReport({
   const gap = progress.actualPct - progress.plannedPct;
   const status = verdict(planVerdict(progress, {
     tasks, startDate: project.start_date, endDate: project.end_date, todayIso: today,
-  }), progress.count);
+  }), progress.count, project);
   const spentSub = [
     cost.budget ? `${pctOf(cost.spent, cost.budget)}% ${L('ბიუჯეტის', 'of budget')}` : '',
     cost.labour || cost.guard || cost.rental
@@ -1786,6 +1792,19 @@ export async function downloadProjectReport(page, project, { printable = false, 
  * PDF, and opens in any browser.
  */
 async function saveInteractive(page, project, fileName) {
+  const doc = await interactiveReportHtml(page, project);
+  const url = URL.createObjectURL(new Blob([doc], { type: 'text/html;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** The interactive report as the text of one .html file (saved as it is, or put in the archive). */
+export async function interactiveReportHtml(page, project) {
   const css = await (await fetch(new URL('../css/styles.css', import.meta.url))).text();
   // Only what the report needs to be read: the room map's pop-up data, as JSON
   // a <script> can't be broken out of.
@@ -1856,14 +1875,7 @@ ${page.outerHTML}
 <script>(${reportViewer.toString()})(${data}, ${fx});</script>
 </body>
 </html>`;
-  const url = URL.createObjectURL(new Blob([doc], { type: 'text/html;charset=utf-8' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  return doc;
 }
 
 /**
