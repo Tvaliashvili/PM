@@ -539,7 +539,7 @@ html, body { background: var(--ink-950); color: var(--text); }
 .modal-wide { width: min(72rem, calc(100vw - 2rem)); }
 .modal::backdrop { background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(2px); }
 /* Sign-in: solid backdrop so nothing behind it shows */
-#modal-login::backdrop { background: #fafafa; backdrop-filter: none; } /* literal: older browsers don't pass CSS variables into ::backdrop */
+#modal-login::backdrop, #modal-set-password::backdrop { background: #fafafa; backdrop-filter: none; } /* literal: older browsers don't pass CSS variables into ::backdrop */
 .modal-header {
   display: flex;
   align-items: center;
