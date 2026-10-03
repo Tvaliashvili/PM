@@ -22,6 +22,12 @@ function labelTable(table) {
       for (const cell of row.cells) {
         const label = cell.colSpan > 1 ? '' : heads[col] ?? '';
         if (cell.dataset.label !== label) cell.dataset.label = label;
+        // A cell with nothing to say ("-") is left off the phone's card.
+        const empty = /^[-–]?$/.test(cell.textContent.trim()) && !cell.querySelector('button, input, select, img');
+        if (empty !== (cell.dataset.empty === '')) {
+          if (empty) cell.dataset.empty = '';
+          else delete cell.dataset.empty;
+        }
         col += cell.colSpan || 1;
       }
     }

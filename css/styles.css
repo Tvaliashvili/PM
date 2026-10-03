@@ -1381,7 +1381,7 @@ body.read-only :is(
      administrator hands it over), and Ask Gemini (each question is paid for). */
   #btn-import-template, #btn-rooms-template, #archive-block, #form-ask,
   /* Nor the help texts and notes written for whoever fills the project in. */
-  .hint, #finance-position
+  .hint, #finance-position, #cash-position
 ) { display: none !important; }
 body.read-only :is([data-task-pct], [data-task-contractor]) { pointer-events: none; opacity: 0.75; }
 
@@ -1447,7 +1447,7 @@ body.read-only :is([data-task-pct], [data-task-contractor]) { pointer-events: no
   .data-table td[data-label=""] { justify-content: flex-start; text-align: left; }
   .data-table td[data-label=""]:last-child { justify-content: flex-end; flex-wrap: wrap; }
   .data-table td.task-name { font-size: 0.95rem; }
-  .data-table td:empty { display: none; }
+  .data-table td:empty, .data-table td[data-empty] { display: none; }
   .data-table .num { white-space: normal; }
 }
 
@@ -1525,4 +1525,25 @@ body.auth-pending::after {
   .preview-title { flex: 1 1 100%; font-size: 0.9rem; }
   .preview-actions { flex: 1 1 100%; }
   .preview-actions .btn { flex: 1; justify-content: center; }
+}
+
+/* ---------- Phone: cards read as cards ---------- */
+@media (max-width: 639px) {
+  /* An item's name is its card's title, above everything else. */
+  .data-table tbody tr { display: flex; flex-direction: column; }
+  .data-table td.task-name {
+    order: -1; display: block; text-align: left; font-size: 0.95rem; font-weight: 600;
+    padding-bottom: 0.45rem; border-top: 0;
+  }
+  .data-table td.task-name::before { display: none; }
+  .data-table td.task-name + td { border-top: 1px dashed var(--ink-800); }
+  /* Big amounts stay on one line: smaller, never broken mid-number. */
+  .kpi-value-sm { font-size: 1.15rem; overflow-wrap: normal; white-space: nowrap; }
+}
+/* A client reads the figures; nothing about them should look like a field to fill in. */
+body.read-only .task-pct-input { border-color: transparent; background: transparent; padding-left: 0; padding-right: 0; }
+body.read-only .select-contractor { appearance: none; -webkit-appearance: none; border-color: transparent; background: transparent; padding-left: 0; padding-right: 0; }
+@media (max-width: 639px) {
+  /* A client's contractor reads in full, not cut to the width of a field. */
+  body.read-only .select-contractor { max-width: none; width: auto; text-align: right; text-overflow: clip; }
 }

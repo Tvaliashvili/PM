@@ -190,6 +190,10 @@ function route() {
     target = 'projects';
     history.replaceState(null, '', '#projects');
   }
+  if (target === 'finance' && state.projectId && !financeShown(currentProject())) {
+    target = 'dashboard';
+    history.replaceState(null, '', '#dashboard');
+  }
   if (target === 'units' && state.projectId && !hasRooms(currentProject())) {
     target = 'dashboard';
     history.replaceState(null, '', '#dashboard');
@@ -462,6 +466,9 @@ const locationOf = (p) => inLang(p?.location, p?.location_ka);
 const hasRooms = (p) => Boolean(p?.has_rooms);
 // Where the project's income comes from: 'sales', 'contract', or null when not chosen yet.
 const incomeFrom = (p) => p?.income_from ?? null;
+// Profit and loss is the administrator's always, and a client's only when the
+// project shows it ("Show Finance to the client" in Edit Project).
+const financeShown = (p) => !document.body.classList.contains('read-only') || p?.finance_in_report !== false;
 
 const currentProject = () => state.projects.find((p) => p.id === state.projectId);
 
@@ -474,6 +481,7 @@ function applyProjectHeader(project) {
   ].filter(Boolean).join(' · ');
 
   $('[data-nav="units"]').classList.toggle('hidden', !hasRooms(project));
+  $('[data-nav="finance"]').classList.toggle('hidden', !financeShown(project));
   if (project && !hasRooms(project) && location.hash === '#units') goTo('dashboard');
 }
 
@@ -505,7 +513,7 @@ async function renderProjectList() {
 
   const request = ++projectListRequest;
   const [tasks, delays, impacts] = await Promise.all([
-    db.from('schedule_tasks').select('id, project_id, planned_start, planned_finish, done'),
+    db.from('schedule_tasks').select('id, project_id, planned_start, planned_finish, done, progress_pct'),
     db.from('delays').select('project_id'),
     // An item a delay held up is not overdue until its extension runs out.
     db.from('delay_impacts').select('task_id, delay:delays(duration_days, created_at)'),
