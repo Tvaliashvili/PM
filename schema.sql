@@ -1127,3 +1127,43 @@ revoke all on function public.list_users() from public, anon;
 grant execute on function public.list_users() to authenticated;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 38. Names on accounts
+-- An account's name lives in its Supabase user metadata, under the keys the
+-- Supabase dashboard and the app read (full_name, name, display_name). Each
+-- account may set its own (at sign-up or when it first sets a password); the
+-- administrator may set anyone's from Users & access.
+-- -------------------------------------------------------------
+drop function if exists public.list_users();
+create or replace function public.list_users()
+  returns table (id uuid, email text, name text, created_at timestamptz, last_sign_in_at timestamptz)
+  language sql stable security definer set search_path = public, auth
+as $$
+  select u.id, u.email::text,
+         coalesce(u.raw_user_meta_data ->> 'full_name', u.raw_user_meta_data ->> 'name', u.raw_user_meta_data ->> 'display_name'),
+         u.created_at, u.last_sign_in_at
+    from auth.users u
+   where public.is_admin()
+   order by u.email
+$$;
+revoke all on function public.list_users() from public, anon;
+grant execute on function public.list_users() to authenticated;
+
+create or replace function public.set_user_name(target uuid, new_name text) returns void
+  language plpgsql security definer set search_path = public, auth
+as $$
+begin
+  if not public.is_admin() and target is distinct from auth.uid() then
+    raise exception 'Only the administrator can rename another account';
+  end if;
+  update auth.users
+     set raw_user_meta_data = coalesce(raw_user_meta_data, '{}'::jsonb)
+           || jsonb_build_object('full_name', new_name, 'name', new_name, 'display_name', new_name)
+   where id = target;
+end;
+$$;
+revoke all on function public.set_user_name(uuid, text) from public, anon;
+grant execute on function public.set_user_name(uuid, text) to authenticated;
+
+notify pgrst, 'reload schema';

@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
@@ -32,7 +32,7 @@
        VIEW 1: PROJECT LIST (full page, no sidebar)
        ===================================================== -->
   <div id="view-projects" class="min-h-screen flex flex-col">
-    <header class="sticky top-0 z-20 h-16 shrink-0 flex items-center gap-3 px-4 sm:px-8 bg-ink-900/80 backdrop-blur border-b border-ink-700">
+    <header class="sticky top-0 z-20 h-16 shrink-0 flex items-center gap-3 px-4 sm:px-8 bg-ink-900/80 backdrop-blur border-b border-ink-700" aria-label="Projects header">
       <div class="w-9 h-9 rounded-lg bg-brand-500 grid place-items-center text-ink-950 font-bold">C</div>
       <div class="leading-tight">
         <p class="font-semibold text-white">CPMG PM</p>
@@ -43,13 +43,13 @@
       </div>
     </header>
 
-    <main class="flex-1 w-full max-w-6xl mx-auto p-4 sm:p-8">
-      <div class="module-header">
+    <div class="flex-1 w-full max-w-6xl mx-auto p-4 sm:p-8">
+      <div class="module-header projects-header">
         <div>
           <h1 class="text-2xl font-semibold text-white">Projects</h1>
           <p class="text-sm text-slate-500">Select a project to open its dashboard.</p>
         </div>
-        <div class="flex items-center gap-2 shrink-0">
+        <div class="projects-actions flex items-center gap-2 shrink-0">
           <button id="btn-access" class="btn btn-secondary" title="Who can see which project">Users &amp; access</button>
           <button id="btn-new-project" class="btn btn-primary">
             <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
@@ -58,7 +58,7 @@
         </div>
       </div>
       <div id="projects-container" class="panel empty-state">Loading projects…</div>
-    </main>
+    </div>
   </div>
 
   <!-- =====================================================
@@ -138,7 +138,7 @@
     <div class="flex-1 flex flex-col min-w-0">
 
       <!-- ---------- TOP BAR ---------- -->
-      <header class="h-16 shrink-0 flex items-center gap-3 px-4 sm:px-6 bg-ink-900/80 backdrop-blur border-b border-ink-700">
+      <header class="h-16 shrink-0 flex items-center gap-3 px-4 sm:px-6 bg-ink-900/80 backdrop-blur border-b border-ink-700" aria-label="Project header">
         <button id="sidebar-toggle" class="lg:hidden p-2 -ml-2 rounded-md text-slate-400 hover:text-white hover:bg-ink-800"
                 aria-label="Open navigation">
           <svg viewBox="0 0 24 24" class="w-6 h-6 fill-current"><path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/></svg>
@@ -154,12 +154,12 @@
           <button type="button" data-show-currency="USD">$</button>
           <button type="button" data-show-currency="GEL">₾</button>
         </div>
-        <a id="fx-rate" class="fx-rate hidden" href="https://nbg.gov.ge/en/monetary-policy/currency" target="_blank" rel="noopener"
+        <a id="fx-rate" class="fx-rate hidden" aria-label="National Bank of Georgia dollar rate" href="https://nbg.gov.ge/en/monetary-policy/currency" target="_blank" rel="noopener"
            title="National Bank of Georgia official rate"></a>
       </header>
 
       <!-- ---------- MAIN CONTENT ---------- -->
-      <main id="main-content" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+      <main id="main-content" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6" aria-label="Project">
 
         <!-- DASHBOARD -->
         <section id="section-dashboard" data-section="dashboard" class="module">
@@ -569,7 +569,7 @@
       <div class="pdf-header">
         <div>
           <p class="pdf-eyebrow">ობიექტის დღიური ანგარიში · Daily Site Report</p>
-          <h1 data-field="project"></h1>
+          <h1 data-field="project">Project</h1>
           <p class="pdf-muted" data-field="location"></p>
           <p class="pdf-client" data-field="client"></p>
         </div>
@@ -592,7 +592,7 @@
       <section class="pdf-section pdf-avoid-break">
         <h2>სამუშაო ძალა <em>Manpower</em></h2>
         <table>
-          <thead><tr><th>სპეციალობა<em>Trade</em></th><th class="num">სამუშაო ძალა<em>Manpower</em></th></tr></thead>
+          <thead><tr><th scope="col">სპეციალობა<em>Trade</em></th><th scope="col" class="num">სამუშაო ძალა<em>Manpower</em></th></tr></thead>
           <tbody data-rows="manpower"></tbody>
         </table>
       </section>
@@ -602,9 +602,9 @@
         <table>
           <thead>
             <tr>
-              <th>სამუშაო<em>Work</em></th>
-              <th>კონტრაქტორი<em>Contractor</em></th>
-              <th class="num">რაოდენობა<em>Quantity</em></th>
+              <th scope="col">სამუშაო<em>Work</em></th>
+              <th scope="col">კონტრაქტორი<em>Contractor</em></th>
+              <th scope="col" class="num">რაოდენობა<em>Quantity</em></th>
             </tr>
           </thead>
           <tbody data-rows="work"></tbody>
@@ -616,9 +616,9 @@
         <table>
           <thead>
             <tr>
-              <th>ტექნიკა<em>Equipment</em></th>
-              <th>მომწოდებელი<em>Supplier</em></th>
-              <th>დღე<em>Day</em></th>
+              <th scope="col">ტექნიკა<em>Equipment</em></th>
+              <th scope="col">მომწოდებელი<em>Supplier</em></th>
+              <th scope="col">დღე<em>Day</em></th>
             </tr>
           </thead>
           <tbody data-rows="rentals"></tbody>
@@ -630,10 +630,10 @@
         <table>
           <thead>
             <tr>
-              <th>მიზეზი<em>Cause</em></th>
-              <th data-rooms-only>ადგილი<em>Location</em></th>
-              <th class="num">დღე<em>Days</em></th>
-              <th>აღწერა<em>Description</em></th>
+              <th scope="col">მიზეზი<em>Cause</em></th>
+              <th scope="col" data-rooms-only>ადგილი<em>Location</em></th>
+              <th scope="col" class="num">დღე<em>Days</em></th>
+              <th scope="col">აღწერა<em>Description</em></th>
             </tr>
           </thead>
           <tbody data-rows="delays"></tbody>
@@ -645,11 +645,11 @@
         <table>
           <thead>
             <tr>
-              <th>ტიპი<em>Type</em></th>
-              <th>რა მოხდა<em>What happened</em></th>
-              <th>კონტრაქტორი<em>Contractor</em></th>
-              <th>ზომა<em>Action</em></th>
-              <th>სტატუსი<em>Status</em></th>
+              <th scope="col">ტიპი<em>Type</em></th>
+              <th scope="col">რა მოხდა<em>What happened</em></th>
+              <th scope="col">კონტრაქტორი<em>Contractor</em></th>
+              <th scope="col">ზომა<em>Action</em></th>
+              <th scope="col">სტატუსი<em>Status</em></th>
             </tr>
           </thead>
           <tbody data-rows="events"></tbody>
@@ -661,10 +661,10 @@
         <table>
           <thead>
             <tr>
-              <th>ნომერი<em>Ref</em></th>
-              <th>რა დაევალა<em>What was instructed</em></th>
-              <th>კონტრაქტორი<em>Contractor</em></th>
-              <th>სტატუსი<em>Status</em></th>
+              <th scope="col">ნომერი<em>Ref</em></th>
+              <th scope="col">რა დაევალა<em>What was instructed</em></th>
+              <th scope="col">კონტრაქტორი<em>Contractor</em></th>
+              <th scope="col">სტატუსი<em>Status</em></th>
             </tr>
           </thead>
           <tbody data-rows="variations"></tbody>
@@ -698,21 +698,56 @@
 
   <!-- Sign in (cannot be dismissed) -->
   <dialog id="modal-login" class="modal modal-sm" data-locked aria-labelledby="login-title">
-    <form id="form-login" class="modal-body space-y-4">
+    <!-- One form, three ways in: sign in, create an account, or get a reset link. -->
+    <form id="form-login" class="modal-body space-y-4" data-mode="signin">
       <div>
         <h2 id="login-title" class="text-lg font-semibold text-white">Sign in</h2>
-        <p class="text-sm text-slate-500">Use your Supabase account to continue.</p>
+        <p id="login-sub" class="text-sm text-slate-500">Use your account to continue.</p>
       </div>
+      <label id="login-name" class="show-block hidden">
+        <span class="form-label">Your name</span>
+        <input name="name" type="text" maxlength="80" autocomplete="name" class="input-dark w-full" placeholder="e.g. Davit Kartvelishvili">
+      </label>
       <label class="block">
         <span class="form-label">Email</span>
         <input name="email" type="email" required autocomplete="email" class="input-dark w-full">
       </label>
-      <label class="block">
+      <label id="login-password" class="block">
         <span class="form-label">Password</span>
-        <input name="password" type="password" required autocomplete="current-password" class="input-dark w-full">
+        <input name="password" type="password" required minlength="6" autocomplete="current-password" class="input-dark w-full">
       </label>
       <p class="form-error hidden" data-error></p>
-      <button type="submit" class="btn btn-primary w-full justify-center">Sign in</button>
+      <p id="login-note" class="text-sm text-emerald-400 hidden"></p>
+      <button id="login-submit" type="submit" class="btn btn-primary w-full justify-center">Sign in</button>
+      <div class="flex justify-between gap-3 text-xs">
+        <button type="button" class="text-brand-400 hover:underline" data-login-mode="signup">Create account</button>
+        <button type="button" class="text-slate-400 hover:underline" data-login-mode="reset">Forgot password?</button>
+        <button type="button" class="text-brand-400 hover:underline hidden" data-login-mode="signin">Back to sign in</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Choosing a password: after an invite link, or a reset link -->
+  <dialog id="modal-set-password" class="modal modal-sm" data-locked aria-labelledby="set-password-title">
+    <form id="form-set-password" class="modal-body space-y-4">
+      <div>
+        <h2 id="set-password-title" class="text-lg font-semibold text-white">Set your password</h2>
+        <p id="set-password-sub" class="text-sm text-slate-500">Choose the password you will sign in with.</p>
+      </div>
+      <label class="block">
+        <span class="form-label">Your name - shown on the site instead of your email</span>
+        <input name="name" type="text" required maxlength="80" autocomplete="name" class="input-dark w-full" placeholder="e.g. Davit Kartvelishvili">
+      </label>
+      <label class="block">
+        <span class="form-label">New password</span>
+        <input name="password" type="password" required minlength="6" autocomplete="new-password" class="input-dark w-full">
+      </label>
+      <label class="block">
+        <span class="form-label">Repeat it</span>
+        <input name="password2" type="password" required minlength="6" autocomplete="new-password" class="input-dark w-full">
+      </label>
+      <p class="form-error hidden" data-error></p>
+      <button type="submit" class="btn btn-primary w-full justify-center">Save and continue</button>
     </form>
   </dialog>
 
@@ -744,27 +779,27 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block">
             <span class="form-label">Project name - ქართული</span>
-            <input name="name_ka" maxlength="120" class="input-dark w-full" placeholder="მაგ. რივერსაიდის ბინები">
+            <input type="text" name="name_ka" maxlength="120" class="input-dark w-full" placeholder="მაგ. რივერსაიდის ბინები">
           </label>
           <label class="block">
             <span class="form-label">Project name - English</span>
-            <input name="name" required maxlength="120" class="input-dark w-full" placeholder="e.g. Riverside Flats">
+            <input type="text" name="name" required maxlength="120" class="input-dark w-full" placeholder="e.g. Riverside Flats">
           </label>
           <label class="block">
             <span class="form-label">Location - ქართული</span>
-            <input name="location_ka" maxlength="120" class="input-dark w-full" placeholder="მაგ. ვაკე, თბილისი">
+            <input type="text" name="location_ka" maxlength="120" class="input-dark w-full" placeholder="მაგ. ვაკე, თბილისი">
           </label>
           <label class="block">
             <span class="form-label">Location - English</span>
-            <input name="location" maxlength="120" class="input-dark w-full" placeholder="e.g. Vake, Tbilisi">
+            <input type="text" name="location" maxlength="120" class="input-dark w-full" placeholder="e.g. Vake, Tbilisi">
           </label>
           <label class="block">
             <span class="form-label">Client - ქართული</span>
-            <input name="client_name_ka" maxlength="160" class="input-dark w-full" placeholder="მაგ. არქი ჯგუფი">
+            <input type="text" name="client_name_ka" maxlength="160" class="input-dark w-full" placeholder="მაგ. არქი ჯგუფი">
           </label>
           <label class="block">
             <span class="form-label">Client - English</span>
-            <input name="client_name" maxlength="160" class="input-dark w-full" placeholder="e.g. Archi Group">
+            <input type="text" name="client_name" maxlength="160" class="input-dark w-full" placeholder="e.g. Archi Group">
           </label>
         </div>
         <label class="block">
@@ -799,27 +834,27 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block">
             <span class="form-label">Project name - ქართული</span>
-            <input name="name_ka" maxlength="120" class="input-dark w-full">
+            <input type="text" name="name_ka" maxlength="120" class="input-dark w-full">
           </label>
           <label class="block">
             <span class="form-label">Project name - English</span>
-            <input name="name" required maxlength="120" class="input-dark w-full">
+            <input type="text" name="name" required maxlength="120" class="input-dark w-full">
           </label>
           <label class="block">
             <span class="form-label">Location - ქართული</span>
-            <input name="location_ka" maxlength="120" class="input-dark w-full">
+            <input type="text" name="location_ka" maxlength="120" class="input-dark w-full">
           </label>
           <label class="block">
             <span class="form-label">Location - English</span>
-            <input name="location" maxlength="120" class="input-dark w-full">
+            <input type="text" name="location" maxlength="120" class="input-dark w-full">
           </label>
           <label class="block">
             <span class="form-label">Client - ქართული</span>
-            <input name="client_name_ka" maxlength="160" class="input-dark w-full">
+            <input type="text" name="client_name_ka" maxlength="160" class="input-dark w-full">
           </label>
           <label class="block">
             <span class="form-label">Client - English</span>
-            <input name="client_name" maxlength="160" class="input-dark w-full">
+            <input type="text" name="client_name" maxlength="160" class="input-dark w-full">
           </label>
           <label class="block">
             <span class="form-label">Start date</span>
@@ -878,13 +913,13 @@
                 <option value="left">We left the contract</option>
               </select>
             </label>
-            <label id="edit-closed-on" class="block hidden">
+            <label id="edit-closed-on" class="show-block hidden">
               <span class="form-label">Ended on</span>
               <input name="closed_on" type="date" class="input-dark w-full">
             </label>
-            <label id="edit-closed-note" class="block sm:col-span-2 hidden">
+            <label id="edit-closed-note" class="show-block sm:col-span-2 hidden">
               <span class="form-label">Note (optional)</span>
-              <input name="closed_note" maxlength="300" class="input-dark w-full" placeholder="e.g. Facade works cancelled by the client">
+              <input type="text" name="closed_note" maxlength="300" class="input-dark w-full" placeholder="e.g. Facade works cancelled by the client">
             </label>
           </div>
           <p class="text-xs text-slate-500">
@@ -913,11 +948,11 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block">
             <span class="form-label">Activity - ქართული</span>
-            <input name="name_ka" maxlength="200" class="input-dark w-full" placeholder="მაგ. ფილის ჩასხმა - ბლოკი A, მე-3 სართული">
+            <input type="text" name="name_ka" maxlength="200" class="input-dark w-full" placeholder="მაგ. ფილის ჩასხმა - ბლოკი A, მე-3 სართული">
           </label>
           <label class="block">
             <span class="form-label">Activity - English</span>
-            <input name="name" maxlength="200" class="input-dark w-full" placeholder="e.g. Pouring slab - Block A, floor 3">
+            <input type="text" name="name" maxlength="200" class="input-dark w-full" placeholder="e.g. Pouring slab - Block A, floor 3">
           </label>
           <p class="text-xs text-slate-500 sm:col-span-2 -mt-1">Write one and the other is translated for you - check it and correct it if needed.</p>
           <label class="block sm:col-span-2">
@@ -1017,15 +1052,15 @@
               <option value="act">Acceptance act (მიღება-ჩაბარება)</option>
             </select>
           </label>
-          <label id="contract-parent-wrap" class="block sm:col-span-2 hidden">
+          <label id="contract-parent-wrap" class="show-block sm:col-span-2 hidden">
             <span class="form-label">Under contract</span>
             <select id="contract-parent" name="contract_id" class="select-dark w-full"></select>
           </label>
         </div>
-        <div id="contract-act-fields" class="grid grid-cols-2 gap-3 hidden">
+        <div id="contract-act-fields" class="show-grid grid-cols-2 gap-3 hidden">
           <label class="block">
             <span class="form-label">Act №</span>
-            <input name="act_no" maxlength="40" class="input-dark w-full" placeholder="e.g. 3">
+            <input type="text" name="act_no" maxlength="40" class="input-dark w-full" placeholder="e.g. 3">
           </label>
           <label class="block">
             <span class="form-label">Amount certified (optional)</span>
@@ -1043,7 +1078,7 @@
           </label>
           <label class="block sm:col-span-3">
             <span class="form-label">Title (optional)</span>
-            <input name="title" maxlength="200" class="input-dark w-full" placeholder="e.g. Plastering contract, addendum 1 - the file name if left empty">
+            <input type="text" name="title" maxlength="200" class="input-dark w-full" placeholder="e.g. Plastering contract, addendum 1 - the file name if left empty">
           </label>
         </div>
         <p class="form-error hidden" data-error></p>
@@ -1078,7 +1113,7 @@
         </label>
         <label class="block sm:col-span-2">
           <span class="form-label">Note</span>
-          <input name="note" maxlength="200" class="input-dark w-full" placeholder="e.g. Advance, invoice #12">
+          <input type="text" name="note" maxlength="200" class="input-dark w-full" placeholder="e.g. Advance, invoice #12">
         </label>
         <button type="submit" class="btn btn-primary justify-center">Add Payment</button>
         <p id="payment-net" class="text-sm text-slate-400 sm:col-span-3"></p>
@@ -1097,23 +1132,24 @@
       </div>
       <div class="modal-body space-y-4">
         <fieldset class="space-y-3">
+          <legend class="sr-only">Contractor details</legend>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label class="block">
               <span class="form-label">Company name - ქართული</span>
-              <input name="name_ka" maxlength="120" class="input-dark w-full" placeholder="მაგ. შპს ბეტონი">
+              <input type="text" name="name_ka" maxlength="120" class="input-dark w-full" placeholder="მაგ. შპს ბეტონი">
             </label>
             <label class="block">
               <span class="form-label">Company name - English</span>
-              <input name="name" required maxlength="120" class="input-dark w-full" placeholder="e.g. Betoni Ltd">
+              <input type="text" name="name" required maxlength="120" class="input-dark w-full" placeholder="e.g. Betoni Ltd">
             </label>
             <label class="block sm:col-span-2">
               <span class="form-label">Trade</span>
-              <input name="trade" list="contractor-trades" maxlength="60" class="input-dark w-full" placeholder="e.g. Concrete">
+              <input type="text" name="trade" list="contractor-trades" maxlength="60" class="input-dark w-full" placeholder="e.g. Concrete">
               <datalist id="contractor-trades"></datalist>
             </label>
             <label class="block sm:col-span-2">
               <span class="form-label">Contact person</span>
-              <input name="contact_person" maxlength="120" class="input-dark w-full">
+              <input type="text" name="contact_person" maxlength="120" class="input-dark w-full">
             </label>
             <label class="block">
               <span class="form-label">Phone</span>
@@ -1150,7 +1186,7 @@
         <div class="grid grid-cols-3 gap-3">
           <label class="block">
             <span class="form-label">Block (optional)</span>
-            <input name="block" maxlength="20" class="input-dark w-full" placeholder="Leave empty if none">
+            <input type="text" name="block" maxlength="20" class="input-dark w-full" placeholder="Leave empty if none">
           </label>
           <label class="block">
             <span class="form-label">Floor</span>
@@ -1158,7 +1194,7 @@
           </label>
           <label class="block">
             <span class="form-label">Room no.</span>
-            <input name="flat_number" required maxlength="20" class="input-dark w-full" placeholder="301">
+            <input type="text" name="flat_number" required maxlength="20" class="input-dark w-full" placeholder="301">
           </label>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1196,7 +1232,7 @@
             </label>
             <label class="block sm:col-span-2">
               <span class="form-label">Buyer</span>
-              <input name="buyer" maxlength="160" class="input-dark w-full">
+              <input type="text" name="buyer" maxlength="160" class="input-dark w-full">
             </label>
             <label class="block">
               <span class="form-label">Sold on</span>
@@ -1316,11 +1352,11 @@
         <div id="room-work-new" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block">
             <span class="form-label">New work - ქართული</span>
-            <input name="work" maxlength="300" class="input-dark w-full" placeholder="მაგ. თაბაშირ-მუყაოს მონტაჟი">
+            <input type="text" name="work" maxlength="300" class="input-dark w-full" placeholder="მაგ. თაბაშირ-მუყაოს მონტაჟი">
           </label>
           <label class="block">
             <span class="form-label">New work - English</span>
-            <input name="work_en" maxlength="300" class="input-dark w-full" placeholder="e.g. Gypsum board installation">
+            <input type="text" name="work_en" maxlength="300" class="input-dark w-full" placeholder="e.g. Gypsum board installation">
           </label>
         </div>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1332,7 +1368,7 @@
             <span class="form-label">Done by</span>
             <select id="room-work-contractor" name="contractor_id" class="select-dark w-full"></select>
           </label>
-          <label id="room-work-where-wrap" class="block col-span-2 sm:col-span-1 hidden">
+          <label id="room-work-where-wrap" class="show-block col-span-2 sm:col-span-1 hidden">
             <span class="form-label">Where</span>
             <select id="room-work-where" name="where" class="select-dark w-full"></select>
           </label>
@@ -1385,7 +1421,7 @@
           </label>
           <label class="block">
             <span class="form-label">Note (optional)</span>
-            <input name="note" maxlength="200" class="input-dark w-full" placeholder="e.g. cash, bank transfer">
+            <input type="text" name="note" maxlength="200" class="input-dark w-full" placeholder="e.g. cash, bank transfer">
           </label>
         </div>
         <p class="form-error hidden" data-error></p>
@@ -1518,11 +1554,11 @@
           </label>
           <label class="block">
             <span class="form-label">Item - ქართული</span>
-            <input name="item_ka" maxlength="160" class="input-dark w-full" placeholder="მაგ. ცემენტი M400, ლაზერული თარაზო">
+            <input type="text" name="item_ka" maxlength="160" class="input-dark w-full" placeholder="მაგ. ცემენტი M400, ლაზერული თარაზო">
           </label>
           <label class="block">
             <span class="form-label">Item - English</span>
-            <input name="item" maxlength="160" class="input-dark w-full" placeholder="e.g. Cement M400, laser level">
+            <input type="text" name="item" maxlength="160" class="input-dark w-full" placeholder="e.g. Cement M400, laser level">
           </label>
           <label id="material-task-wrap" class="block sm:col-span-2">
             <span class="form-label">For job</span>
@@ -1576,16 +1612,16 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block">
             <span class="form-label">Supplier - ქართული (optional)</span>
-            <input name="supplier_ka" maxlength="120" class="input-dark w-full" placeholder="მომწოდებელი / მაღაზია">
+            <input type="text" name="supplier_ka" maxlength="120" class="input-dark w-full" placeholder="მომწოდებელი / მაღაზია">
           </label>
           <label class="block">
             <span class="form-label">Supplier - English (optional)</span>
-            <input name="supplier" maxlength="120" class="input-dark w-full" placeholder="Supplier / shop">
+            <input type="text" name="supplier" maxlength="120" class="input-dark w-full" placeholder="Supplier / shop">
           </label>
         </div>
         <label class="block">
           <span class="form-label">Note (optional)</span>
-          <input name="note" maxlength="300" class="input-dark w-full" placeholder="e.g. invoice no., delivered to block A">
+          <input type="text" name="note" maxlength="300" class="input-dark w-full" placeholder="e.g. invoice no., delivered to block A">
         </label>
         <p class="form-error hidden" data-error></p>
       </div>
@@ -1607,23 +1643,23 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label class="block">
             <span class="form-label">Equipment - ქართული</span>
-            <input name="equipment_ka" maxlength="120" list="equipment-options-ka" class="input-dark w-full"
+            <input type="text" name="equipment_ka" maxlength="120" list="equipment-options-ka" class="input-dark w-full"
                    placeholder="მაგ. ბეტონის მიქსერი">
             <datalist id="equipment-options-ka"></datalist>
           </label>
           <label class="block">
             <span class="form-label">Equipment - English</span>
-            <input name="equipment" maxlength="120" list="equipment-options" class="input-dark w-full"
+            <input type="text" name="equipment" maxlength="120" list="equipment-options" class="input-dark w-full"
                    placeholder="e.g. Concrete mixer">
             <datalist id="equipment-options"></datalist>
           </label>
           <label class="block">
             <span class="form-label">Rented from - ქართული (optional)</span>
-            <input name="supplier_ka" maxlength="120" class="input-dark w-full" placeholder="მომწოდებელი / კომპანია">
+            <input type="text" name="supplier_ka" maxlength="120" class="input-dark w-full" placeholder="მომწოდებელი / კომპანია">
           </label>
           <label class="block">
             <span class="form-label">Rented from - English (optional)</span>
-            <input name="supplier" maxlength="120" class="input-dark w-full" placeholder="Supplier / company">
+            <input type="text" name="supplier" maxlength="120" class="input-dark w-full" placeholder="Supplier / company">
           </label>
         </div>
         <p class="text-xs text-slate-500 -mt-2">Pick a suggestion in either language and the other fills in by itself.</p>
@@ -1644,7 +1680,7 @@
         <p id="rental-total" class="text-sm text-slate-400"></p>
         <label class="block">
           <span class="form-label">Note (optional)</span>
-          <input name="note" maxlength="300" class="input-dark w-full">
+          <input type="text" name="note" maxlength="300" class="input-dark w-full">
         </label>
         <p class="form-error hidden" data-error></p>
       </div>
@@ -1782,7 +1818,7 @@
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <label class="block">
             <span class="form-label">Reference</span>
-            <input name="ref" maxlength="20" class="input-dark w-full" placeholder="e.g. VO-03">
+            <input type="text" name="ref" maxlength="20" class="input-dark w-full" placeholder="e.g. VO-03">
           </label>
           <label class="block">
             <span class="form-label">Instructed on</span>
@@ -1795,7 +1831,7 @@
         </div>
         <label class="block">
           <span class="form-label">What was instructed</span>
-          <input name="title" required maxlength="160" class="input-dark w-full"
+          <input type="text" name="title" required maxlength="160" class="input-dark w-full"
                  placeholder="e.g. Extra drainage to the east boundary">
         </label>
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1864,7 +1900,7 @@
         </div>
         <label class="block">
           <span class="form-label">What happened (one line)</span>
-          <input name="title" required maxlength="120" class="input-dark w-full"
+          <input type="text" name="title" required maxlength="120" class="input-dark w-full"
                  placeholder="e.g. Scaffold board slipped on level 4">
         </label>
         <label class="block">
@@ -1904,11 +1940,11 @@
   </dialog>
 
   <!-- Photo viewer -->
-  <dialog id="modal-photo" class="modal modal-photo" aria-label="Photo">
+  <dialog id="modal-photo" class="modal modal-photo" aria-labelledby="photo-view-note">
     <div class="photo-view">
       <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
       <button type="button" class="photo-nav photo-prev" data-photo-step="-1" aria-label="Previous">&#8249;</button>
-      <img id="photo-view-img" alt="">
+      <img id="photo-view-img" src="data:," alt="">
       <button type="button" class="photo-nav photo-next" data-photo-step="1" aria-label="Next">&#8250;</button>
       <p id="photo-view-note" class="photo-view-note"></p>
     </div>

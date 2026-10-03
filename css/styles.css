@@ -100,6 +100,13 @@ html, body { background: var(--ink-950); color: var(--text); }
   margin-bottom: 1rem;
 }
 
+/* Phones and tablets: the Projects buttons go on top, side by side across the
+   width, and the title gets the whole line under them. */
+@media (max-width: 1023px) {
+  .projects-header { flex-direction: column-reverse; align-items: stretch; }
+  .projects-actions > .btn { flex: 1; justify-content: center; }
+}
+
 .panel {
   background: var(--ink-900);
   border: 1px solid var(--ink-700);
@@ -173,6 +180,11 @@ html, body { background: var(--ink-950); color: var(--text); }
   border: 1px solid var(--ink-700); border-radius: 9999px; overflow: hidden;
 }
 .currency-switch:not(.hidden) + .fx-rate { margin-left: 0.5rem; }
+
+/* Shown and hidden by the app (it toggles .hidden): the display is set only
+   while shown, so the class list never names two displays at once. */
+.show-block:not(.hidden) { display: block; }
+.show-grid:not(.hidden) { display: grid; }
 .currency-switch button {
   padding: 0.25rem 0.7rem; font-size: 0.8125rem; font-weight: 600; color: #64748b; background: transparent;
 }

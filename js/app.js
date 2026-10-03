@@ -28,6 +28,13 @@ import {
 } from './photos.js';
 
 // ---------- Supabase ----------
+// What brought the browser here, read before the Supabase client takes the
+// link apart: an invite or a reset link means a password must be chosen; an
+// expired link says so in its error.
+const authLink = (() => {
+  const params = new URLSearchParams(location.hash.slice(1) || location.search.slice(1));
+  return { type: params.get('type'), error: params.get('error_description') };
+})();
 const isConfigured = !SUPABASE_URL.includes('YOUR-') && !SUPABASE_KEY.includes('YOUR-');
 const db = isConfigured ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
@@ -209,9 +216,31 @@ function initNavigation() {
 // Auth
 // =============================================================
 function initAuth() {
-  db.auth.onAuthStateChange((_event, session) => {
+  db.auth.onAuthStateChange((event, session) => {
     // Deferred: Supabase advises against awaiting client calls inside this callback.
-    setTimeout(() => handleSession(session), 0);
+    setTimeout(() => {
+      handleSession(session);
+      // An invite or reset link signs the person in; they still need a password.
+      if (session && (event === 'PASSWORD_RECOVERY' || ['invite', 'recovery'].includes(authLink.type))) {
+        openSetPassword(event === 'PASSWORD_RECOVERY' ? 'recovery' : authLink.type);
+        authLink.type = null;
+      }
+    }, 0);
+  });
+  if (authLink.error) {
+    setTimeout(() => showFormError($('#form-login'), `${authLink.error} - ask for a new link, or use Forgot password.`), 0);
+  }
+}
+
+// An account's name, from its user metadata.
+const userName = (user) => user?.user_metadata?.full_name || user?.user_metadata?.name || user?.user_metadata?.display_name || '';
+
+// Who is signed in, by name (the email on hover); the email while there is no name yet.
+function showSignedIn(user) {
+  const viewOnly = Boolean(user) && user.email?.toLowerCase() !== ADMIN_EMAIL;
+  $$('[data-user-email]').forEach((el) => {
+    el.textContent = user ? `${userName(user) || user.email}${viewOnly ? ' · view only' : ''}` : 'Not signed in';
+    el.title = user?.email ?? '';
   });
 }
 
@@ -224,9 +253,7 @@ function handleSession(session) {
   // without the controls that write (the database refuses them anyway).
   const viewOnly = Boolean(user) && user.email?.toLowerCase() !== ADMIN_EMAIL;
   document.body.classList.toggle('read-only', viewOnly);
-  $$('[data-user-email]').forEach((el) => {
-    el.textContent = user ? `${user.email}${viewOnly ? ' · view only' : ''}` : 'Not signed in';
-  });
+  showSignedIn(user);
   $$('[data-sign-out]').forEach((el) => el.classList.toggle('hidden', !user));
 
   if (user) {
@@ -237,22 +264,118 @@ function handleSession(session) {
   }
 }
 
+// The sign-in form's three ways in.
+const LOGIN_MODES = {
+  signin: { title: 'Sign in', sub: 'Use your account to continue.', submit: 'Sign in' },
+  signup: { title: 'Create account', sub: 'You will get an email to confirm it. Projects appear once the administrator shares them with you.', submit: 'Create account' },
+  reset:  { title: 'Forgot password', sub: 'We will email you a link to choose a new password.', submit: 'Send the link' },
+};
+
+function setLoginMode(mode) {
+  const form = $('#form-login');
+  const m = LOGIN_MODES[mode];
+  form.dataset.mode = mode;
+  $('#login-title').textContent = m.title;
+  $('#login-sub').textContent = m.sub;
+  $('#login-submit').textContent = m.submit;
+  $('#login-name').classList.toggle('hidden', mode !== 'signup');
+  $('#login-password').classList.toggle('hidden', mode === 'reset');
+  form.elements.password.required = mode !== 'reset';
+  form.elements.password.autocomplete = mode === 'signup' ? 'new-password' : 'current-password';
+  $$('[data-login-mode]', form).forEach((b) => b.classList.toggle('hidden', b.dataset.loginMode === mode
+    || (mode !== 'signin' && b.dataset.loginMode !== 'signin')));
+  $('#login-note').classList.add('hidden');
+  showFormError(form, '');
+}
+
+// Where a link in an email brings the person back to: this page.
+const appUrl = () => `${location.origin}${location.pathname}`;
+
 async function signIn(e) {
   e.preventDefault();
   const form = e.currentTarget;
-  const btn  = $('[type=submit]', form);
+  const btn  = $('#login-submit');
   const fd   = new FormData(form);
+  const mode = form.dataset.mode;
+  const email = fd.get('email').trim();
+  const note = (text) => {
+    $('#login-note').textContent = text;
+    $('#login-note').classList.remove('hidden');
+  };
 
   showFormError(form, '');
-  setBusy(btn, true, 'Signing in…');
-  const { error } = await db.auth.signInWithPassword({
-    email: fd.get('email').trim(),
+  $('#login-note').classList.add('hidden');
+  setBusy(btn, true, mode === 'signin' ? 'Signing in…' : 'Sending…');
+  let error;
+  if (mode === 'signup') {
+    const name = fd.get('name').trim();
+    if (!name) {
+      setBusy(btn, false);
+      showFormError(form, 'Enter your name.');
+      return;
+    }
+    ({ error } = await db.auth.signUp({
+      email,
+      password: fd.get('password'),
+      options: { emailRedirectTo: appUrl(), data: { full_name: name, name, display_name: name } },
+    }));
+    if (!error) note(`Check ${email} for a link to confirm your account, then sign in.`);
+  } else if (mode === 'reset') {
+    ({ error } = await db.auth.resetPasswordForEmail(email, { redirectTo: appUrl() }));
+    if (!error) note(`If ${email} has an account, a link to choose a new password is on its way.`);
+  } else {
+    ({ error } = await db.auth.signInWithPassword({ email, password: fd.get('password') }));
+    // On success, onAuthStateChange takes over.
+  }
+  setBusy(btn, false);
+  if (error) showFormError(form, error.message);
+}
+
+// After an invite or reset link: choose a password (and say who you are).
+function openSetPassword(kind) {
+  const form = $('#form-set-password');
+  form.reset();
+  form.elements.name.value = userName(state.user);
+  $('#set-password-title').textContent = kind === 'invite' ? 'Welcome - set your password' : 'Choose a new password';
+  $('#set-password-sub').textContent = kind === 'invite'
+    ? `You were invited as ${state.user?.email ?? ''}. Choose the password you will sign in with.`
+    : 'Choose the password you will sign in with from now on.';
+  showFormError(form, '');
+  closeModal('modal-login');
+  openModal('modal-set-password');
+}
+
+async function savePassword(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn = $('[type=submit]', form);
+  const fd = new FormData(form);
+  if (fd.get('password') !== fd.get('password2')) {
+    showFormError(form, 'The two passwords are not the same.');
+    return;
+  }
+  const name = fd.get('name').trim();
+  if (!name) {
+    showFormError(form, 'Enter your name - it is shown on the site instead of your email.');
+    return;
+  }
+  showFormError(form, '');
+  setBusy(btn, true);
+  const { data, error } = await db.auth.updateUser({
     password: fd.get('password'),
+    ...(name ? { data: { full_name: name, name, display_name: name } } : {}),
   });
   setBusy(btn, false);
-
-  if (error) showFormError(form, error.message);
-  // On success, onAuthStateChange takes over.
+  if (error) {
+    showFormError(form, error.message);
+    return;
+  }
+  if (data?.user) {
+    state.user = data.user;
+    showSignedIn(data.user);
+  }
+  closeModal('modal-set-password');
+  toast('Password saved. Use it to sign in from now on.', 'success');
 }
 
 async function signOut() {
@@ -542,8 +665,10 @@ function renderAccess() {
   $('#access-list').innerHTML = accessUsers.map((u) => {
     const head = `
       <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <p class="text-white font-medium">${esc(u.email)}</p>
-        <p class="text-xs text-slate-500">last signed in ${esc(when(u.last_sign_in_at))}</p>`;
+        <p class="text-white font-medium">${u.name ? esc(u.name) : '<span class="text-slate-500">No name</span>'}</p>
+        <p class="text-sm text-slate-400">${esc(u.email)}</p>
+        <p class="text-xs text-slate-500">last signed in ${esc(when(u.last_sign_in_at))}</p>
+        <button type="button" class="table-action" data-access-rename="${esc(u.id)}">${u.name ? 'Rename' : 'Add name'}</button>`;
     if (u.email?.toLowerCase() === ADMIN_EMAIL) {
       return `<div class="panel">${head}
         <span class="status-chip status-done">Administrator - sees and changes every project</span></div></div>`;
@@ -585,7 +710,30 @@ async function setAccess(userId, projectIds, give) {
   renderAccess();
 }
 
+async function renameUser(userId) {
+  const u = accessUsers.find((x) => x.id === userId);
+  if (!u) return;
+  const name = prompt(`Name for ${u.email}:`, u.name ?? '');
+  if (name === null || !name.trim() || name.trim() === u.name) return;
+  const { error } = await db.rpc('set_user_name', { target: userId, new_name: name.trim() });
+  if (error) {
+    toast(`Could not rename: ${error.message}`, 'error');
+    return;
+  }
+  u.name = name.trim();
+  if (userId === state.user?.id) {
+    const { data } = await db.auth.refreshSession();
+    if (data?.user) {
+      state.user = data.user;
+      showSignedIn(data.user);
+    }
+  }
+  renderAccess();
+}
+
 function onAccessClick(e) {
+  const rename = e.target.closest('[data-access-rename]');
+  if (rename) return renameUser(rename.dataset.accessRename);
   const all = e.target.closest('[data-access-all]');
   if (all) return setAccess(all.dataset.accessAll, state.projects.map((p) => p.id), true);
   const none = e.target.closest('[data-access-none]');
@@ -6059,6 +6207,11 @@ $('#btn-archive').addEventListener('click', exportArchive);
 
 if (db) {
   $('#form-login').addEventListener('submit', signIn);
+  $('#form-login').addEventListener('click', (e) => {
+    const mode = e.target.closest('[data-login-mode]');
+    if (mode) setLoginMode(mode.dataset.loginMode);
+  });
+  $('#form-set-password').addEventListener('submit', savePassword);
   $$('[data-sign-out]').forEach((el) => el.addEventListener('click', signOut));
   initAuth();
 } else {
