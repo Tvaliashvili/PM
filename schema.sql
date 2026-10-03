@@ -1167,3 +1167,58 @@ revoke all on function public.set_user_name(uuid, text) from public, anon;
 grant execute on function public.set_user_name(uuid, text) to authenticated;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 39. Finance in the client report, or not
+-- The report's Finance section shows only when the project has prices to
+-- show (an employer's price or a room price) and this is left on. Off keeps
+-- the section out whatever is entered - for a project whose figures are not
+-- for the client's eyes yet.
+-- -------------------------------------------------------------
+alter table public.projects
+  add column if not exists finance_in_report boolean not null default true;
+
+notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 40. Money in, and the employer's side of a variation
+-- money_in: every sum that comes in, kept apart by what it is -
+--   income : employer (a paid payment certificate) or buyer (an installment,
+--            optionally for one room)
+--   funding: loan (a draw, with its yearly interest rate), own (the
+--            client's own money) or partner
+-- Income counts toward profit; funding never does, though a loan's interest
+-- is a cost. variations.employer_amount is what the employer pays for a
+-- change (a project built for an employer), income once approved.
+-- -------------------------------------------------------------
+alter table public.variations
+  add column if not exists employer_amount numeric(14,2) check (employer_amount is null or employer_amount >= 0);
+
+create table if not exists public.money_in (
+  id              uuid primary key default gen_random_uuid(),
+  project_id      uuid not null references public.projects(id) on delete cascade,
+  kind            text not null check (kind in ('employer', 'buyer', 'loan', 'own', 'partner')),
+  received_on     date not null default current_date,
+  amount          numeric(14,2) not null check (amount > 0),
+  from_name       text,          -- the bank, the buyer, the partner
+  certificate_no  text,          -- employer: the payment certificate / act number
+  flat_id         uuid references public.flats(id) on delete set null,  -- buyer: the room
+  interest_pct    numeric(6,3) check (interest_pct is null or interest_pct >= 0),  -- loan: yearly %
+  note            text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index if not exists money_in_project_idx on public.money_in (project_id, received_on);
+
+drop trigger if exists set_updated_at on public.money_in;
+create trigger set_updated_at before update on public.money_in
+  for each row execute function public.set_updated_at();
+
+alter table public.money_in enable row level security;
+drop policy if exists "read_member" on public.money_in;
+drop policy if exists "admin_write" on public.money_in;
+create policy "read_member" on public.money_in for select to authenticated using (public.can_read(project_id));
+create policy "admin_write" on public.money_in for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+notify pgrst, 'reload schema';

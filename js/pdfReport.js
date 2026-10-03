@@ -398,11 +398,11 @@ function buildReport({ project, day, logs, delays, carriedDelays = [], rentals, 
 
 // ---------- 4. Export ----------
 /**
- * Builds the bilingual report of one day (today unless `date` is given) for `project` and downloads it as
- * Daily_Report_<name>_<YYYY-MM-DD>.pdf - or, with `word`, as a .docx to arrange
- * by hand before printing.
+ * Builds the bilingual report of one day (today unless `date` is given) for
+ * `project`: { page, name, title } - the page not yet in the document, and the
+ * file name (without extension) and title it is saved under.
  */
-export async function generateDailyReport({ db, project, date, printable = false, word = false }) {
+export async function buildDailyReport({ db, project, date }) {
   const day = dayRange(date);
   const { logs, delays, carriedDelays, rentals, work, events, variations } =
     await fetchTodayData(db, project.id, day);
@@ -413,14 +413,31 @@ export async function generateDailyReport({ db, project, date, printable = false
     project, day, logs, delays, carriedDelays, rentals, work, photoUrls,
     manpower, events, variations,
   });
-  const root = document.getElementById('pdf-export-root');
-  root.replaceChildren(page);
+  return {
+    page,
+    name: `Daily_Report_${fileSafe(project.name)}_${day.date}`,
+    title: `Daily Report - ${project.name} - ${day.date}`,
+  };
+}
 
-  const name = `Daily_Report_${fileSafe(project.name)}_${day.date}`;
+/**
+ * Saves a built daily report as <name>.pdf - or, with `word`, as a .docx to
+ * arrange by hand before printing. Drawn from a copy, so the page shown in the
+ * preview is left as it is.
+ */
+export async function saveDailyReport({ page, name, title }, { printable = false, word = false } = {}) {
+  const root = document.getElementById('pdf-export-root');
+  const copy = page.cloneNode(true);
+  root.replaceChildren(copy);
   try {
-    if (word) await saveDocx(page, `${name}.docx`, { title: `Daily Report - ${project.name} - ${day.date}` });
-    else await savePdf(page, `${name}.pdf`, { printable });
+    if (word) await saveDocx(copy, `${name}.docx`, { title });
+    else await savePdf(copy, `${name}.pdf`, { printable });
   } finally {
     root.replaceChildren();
   }
+}
+
+/** Builds the report of one day and downloads it straight away (see saveDailyReport). */
+export async function generateDailyReport({ db, project, date, printable = false, word = false }) {
+  await saveDailyReport(await buildDailyReport({ db, project, date }), { printable, word });
 }

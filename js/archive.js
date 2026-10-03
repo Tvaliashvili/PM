@@ -75,7 +75,7 @@ async function fetchRest(db, projectId) {
  */
 export async function buildArchive({
   db, project, tasks, payments, contractors, units, siteCosts, rentals, materials, sitePayments, work,
-  delays, events, variations, contracts, progress, cost, finance, usdRate, reportHtml, XLSX, onProgress = () => {},
+  delays, events, variations, contracts, progress, cost, finance, usdRate, reportHtml, XLSX, moneyIn = [], onProgress = () => {},
 }) {
   const today = new Date().toLocaleDateString('en-CA');
   const JSZip = await loadJsZip();
@@ -164,10 +164,15 @@ export async function buildArchive({
     trades,
     progress: { actual: progress.actualPct, planned: progress.plannedPct, count: progress.count },
     cost,
-    finance: finance?.source ? {
+    finance: finance?.source && finance.income > 0 && project.finance_in_report !== false ? {
       source: finance.source, income: finance.income, cost: finance.cost, profit: finance.profit,
       budget: finance.budget, variations: finance.variations, siteSoFar: finance.siteSoFar, unbudgeted: finance.unbudgeted,
     } : null,
+    // Money that came in: income (employer, buyers) and funding (loans, own money, partners).
+    moneyIn: moneyIn.map((x) => ({
+      kind: x.kind, date: x.received_on, amount: Number(x.amount), from: x.from_name, certificate_no: x.certificate_no,
+      flat: x.flat_id ? flatLabel(x.flat_id) : '', interest_pct: x.interest_pct, note: x.note,
+    })),
     contractors: contractors.map((c) => ({
       id: c.id, name: c.name, name_ka: c.name_ka, trade: c.trade, contact_person: c.contact_person, phone: c.phone, email: c.email,
     })),
@@ -290,6 +295,10 @@ function workbook(XLSX, d) {
   sheet('Rooms', d.units.map((u) => ({
     Block: u.block, Floor: u.floor, Room: u.flat_number, Type: u.unit_type, 'Area m²': u.area_m2, Status: u.status,
     Sale: u.sale_status, 'Asking price': u.asking_price, 'Sale price': u.sale_price, Buyer: u.buyer, 'Sold on': u.sold_on,
+  })));
+  sheet('Money in', (d.moneyIn ?? []).map((x) => ({
+    Date: x.date, What: x.kind, From: x.from, 'Certificate №': x.certificate_no, Room: x.flat, 'Interest % a year': x.interest_pct,
+    Amount: x.amount, Note: x.note,
   })));
   sheet('Contractors', d.contractors.map((c) => ({
     Name: c.name, 'Name (KA)': c.name_ka, Trade: c.trade, Contact: c.contact_person, Phone: c.phone, Email: c.email,
@@ -496,6 +505,10 @@ function archiveViewer(D) {
   const VAR = { instructed: ['დავალებული', 'Instructed', 'warn'], priced: ['შეფასებული', 'Priced', 'info'], approved: ['დამტკიცებული', 'Approved', 'ok'], rejected: ['უარყოფილი', 'Rejected', ''] };
   const KIND = { material: ['მასალა', 'Material'], tool: ['ხელსაწყო / ინვენტარი', 'Tool / equipment'], other: ['სხვა', 'Other'] };
   const SITE = { labour: ['დღიური მუშები', 'Daily workers'], guard: ['დარაჯები', 'Guards'], rental: ['ტექნიკის ქირა', 'Equipment hire'] };
+  const MONEY_IN = {
+    employer: ['დამკვეთის გადახდა', 'Employer payment'], buyer: ['მყიდველის გადახდა', 'Buyer payment'],
+    loan: ['სესხი', 'Loan draw'], own: ['დამკვეთის საკუთარი თანხა', "Client's own money"], partner: ['პარტნიორი', 'Partner'],
+  };
   const tradeName = (key) => bi(D.trades[key] ?? key);
   const table = (heads, rows, foot = '') => (rows.length ? `<div class="scroll"><table>
     <thead><tr>${heads.map(([k, e, cls = '']) => `<th class="${cls}">${L(k, e)}</th>`).join('')}</tr></thead>
@@ -828,6 +841,10 @@ function archiveViewer(D) {
       <div class="panel"><h3 style="margin-top:0">${L('თვეების მიხედვით', 'By month')}</h3>
         ${table([['თვე', 'Month'], ['გადახდილი', 'Paid out', 'num'], ['ჯამურად', 'Running total', 'num']],
     [...byMonth].sort().map(([ym, v]) => { running += v; return `<tr><td>${monthName(ym)}</td><td class="num">${money(v)}</td><td class="num">${money(running)}</td></tr>`; }))}</div>
+      ${(D.moneyIn ?? []).length ? `<div class="panel"><h3 style="margin-top:0">${L('შემოსული თანხები', 'Money in')} <em>${D.moneyIn.length}</em></h3>
+        ${table([['თარიღი', 'Date'], ['რა', 'What'], ['ვისგან', 'From'], ['თანხა', 'Amount', 'num']],
+    D.moneyIn.map((x) => `<tr><td>${d(x.date)}</td><td>${L(...(MONEY_IN[x.kind] ?? [x.kind, x.kind]))}</td><td>${esc([x.from, x.certificate_no ? `№ ${x.certificate_no}` : '', x.flat].filter(Boolean).join(' · ')) || '-'}</td><td class="num">${money(x.amount)}</td></tr>`),
+    `<tr><td colspan="3">${L('სულ', 'Total')}</td><td class="num">${money(sum(D.moneyIn, 'amount'))}</td></tr>`)}</div>` : ''}
       <div class="panel"><h3 style="margin-top:0">${L('ყველა გადახდა', 'Every payment')} <em>${ledger.length}</em></h3>
         ${table([['თარიღი', 'Date'], ['რისთვის', 'For'], ['ვის', 'To'], ['თანხა', 'Amount', 'num'], ['', '']],
     ledger.map((x) => `<tr><td>${d(x.date)}</td><td>${x.what}</td><td>${x.who || '-'}</td><td class="num">${money(x.amount)}</td><td>${x.extra}</td></tr>`),

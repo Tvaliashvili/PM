@@ -100,7 +100,11 @@
         </a>
         <a href="#daily-logs" data-nav="daily-logs" class="nav-link">
           <svg viewBox="0 0 24 24" class="nav-icon"><path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V10h14v10zM7 12h5v5H7v-5z"/></svg>
-          Logs &amp; Reports
+          Daily Logs
+        </a>
+        <a href="#reports" data-nav="reports" class="nav-link">
+          <svg viewBox="0 0 24 24" class="nav-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+          Reports
         </a>
         <a href="#timetable" data-nav="timetable" class="nav-link">
           <svg viewBox="0 0 24 24" class="nav-icon"><path d="M3 5h2v2H3V5zm4 0h14v2H7V5zM3 11h2v2H3v-2zm4 0h14v2H7v-2zm-4 6h2v2H3v-2zm4 0h14v2H7v-2z"/></svg>
@@ -159,9 +163,9 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V10h14v10zM7 12h5v5H7v-5z"/></svg>
         <span>Logs</span>
       </a>
-      <a href="#cash-flow" data-nav="cash-flow">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8v4h2V3h-8v2h4l-6 6-4-4-8 8 2 2z"/></svg>
-        <span>Money</span>
+      <a href="#reports" data-nav="reports">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+        <span>Reports</span>
       </a>
       <button type="button" data-open-menu>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/></svg>
@@ -248,6 +252,22 @@
             <div id="timeline-body" class="text-sm text-slate-500">No dates set.</div>
           </div>
 
+          <!-- The week at a glance: what a client opens the app for -->
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-4">
+            <div class="panel">
+              <h2 class="panel-title">This week on site</h2>
+              <div id="dash-week" class="text-sm text-slate-500">Nothing recorded.</div>
+            </div>
+            <div class="panel">
+              <h2 class="panel-title">Coming up</h2>
+              <div id="dash-next" class="text-sm text-slate-500">Nothing planned.</div>
+            </div>
+          </div>
+          <div class="panel mt-4">
+            <h2 class="panel-title">Latest photos</h2>
+            <div id="dash-photos" class="text-sm text-slate-500">No photos yet.</div>
+          </div>
+
           <!-- Dashboard panels -->
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-4">
             <div class="panel">
@@ -262,6 +282,53 @@
         </section>
 
         <!-- TIMETABLE -->
+        <section id="section-reports" data-section="reports" class="module hidden">
+          <div class="module-header">
+            <div>
+              <h1 class="text-xl font-semibold text-white">Reports</h1>
+              <p class="text-sm text-slate-500">Each report opens to read first - then print it, or download it.</p>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <form id="form-daily-report" class="panel space-y-3">
+              <h2 class="panel-title !mb-0">Daily Report</h2>
+              <p class="text-sm text-slate-400">
+                Weather, manpower, work done, delays, site notes and photos of one day, in Georgian and English.
+                Download it as a PDF or a Word file.
+              </p>
+              <label class="block sm:w-1/2">
+                <span class="form-label">Day</span>
+                <input name="date" type="date" required class="input-dark w-full">
+              </label>
+              <p id="daily-report-hint" class="text-xs text-slate-500"></p>
+              <p class="form-error hidden" data-error></p>
+              <button type="submit" class="btn btn-primary"><span>Open report</span></button>
+            </form>
+            <form id="form-project-report" class="panel space-y-3">
+              <h2 class="panel-title !mb-0">Project Report</h2>
+              <p class="text-sm text-slate-400">
+                The whole project on one designed page, in Georgian and English: key figures, progress against plan,
+                timetable, contractors, budget and cash flow, rooms, recent logs and delays. Click a room, an activity
+                or a contractor for its details. Download it as one .html file (opens in any browser, no login) or Word.
+              </p>
+              <p class="form-error hidden" data-error></p>
+              <button type="submit" class="btn btn-primary"><span>Open report</span></button>
+            </form>
+          </div>
+          <div id="archive-block" class="panel mt-4">
+            <h2 class="panel-title mb-1">Full archive (.zip)</h2>
+            <p class="text-xs text-slate-500">
+              Everything, to hand to the client and keep after the project is deleted: a day-by-day journal of the whole
+              project, every item, contractor and payment, every photo, the contracts and acts, the project report and an
+              Excel file of all the data. Unzip it and open index.html - no login needed. A big project takes a few minutes.
+            </p>
+            <div class="flex items-center gap-3 mt-3">
+              <button type="button" id="btn-archive" class="btn btn-secondary"><span>Download archive</span></button>
+              <span id="archive-progress" class="text-xs text-slate-400"></span>
+            </div>
+          </div>
+        </section>
+
         <section id="section-timetable" data-section="timetable" class="module hidden">
           <div class="module-header">
             <div>
@@ -328,18 +395,11 @@
         <section id="section-daily-logs" data-section="daily-logs" class="module hidden">
           <div class="module-header">
             <div>
-              <h1 class="text-xl font-semibold text-white">Logs &amp; Reports</h1>
+              <h1 class="text-xl font-semibold text-white">Daily Logs</h1>
               <p class="text-sm text-slate-500">Weather, manpower and site notes - and ask Gemini anything about the project.</p>
             </div>
-            <div class="grid grid-cols-2 gap-2 shrink-0 sm:flex sm:items-center">
-              <button id="btn-report-daily" class="btn btn-secondary" title="One day's log as a PDF or Word file - pick the date">
-                Daily Report
-              </button>
-              <button id="btn-report-project" class="btn btn-secondary"
-                      title="The whole project on one page, in Georgian and English - as a PDF or Word file">
-                Project Report
-              </button>
-              <button id="btn-new-log-page" class="btn btn-primary col-span-2">
+            <div class="shrink-0">
+              <button id="btn-new-log-page" class="btn btn-primary">
                 <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
                 New Daily Log
               </button>
@@ -490,6 +550,32 @@
             <div id="finance-summary" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
             <p id="finance-position" class="text-sm text-slate-400"></p>
             <div id="finance-detail"></div>
+            <div class="panel">
+              <h2 class="panel-title mb-1">Forecast of the final cost</h2>
+              <p class="text-xs text-slate-500 mb-3">
+                What the project will have cost when it is finished, from what is known today. An item counts at its budget,
+                or at what has really gone into it when that is more; daily workers, guards and rentals carry on at the rate
+                kept so far until the planned completion.
+              </p>
+              <div id="finance-forecast" class="overflow-x-auto"></div>
+            </div>
+            <div class="panel">
+              <div class="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <h2 class="panel-title mb-1">Money in</h2>
+                  <p class="text-xs text-slate-500">
+                    Every sum that came in. Income - the employer's payments, buyers' installments - counts toward profit.
+                    Funding - a loan, the client's own money, a partner's - pays for the work but is never profit; a loan's
+                    interest is a cost.
+                  </p>
+                </div>
+                <button id="btn-add-money-in" class="btn btn-primary btn-sm shrink-0">
+                  <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
+                  Add money in
+                </button>
+              </div>
+              <div id="finance-money-in" class="overflow-x-auto"></div>
+            </div>
           </div>
         </section>
 
@@ -783,6 +869,68 @@
     </form>
   </dialog>
 
+  <!-- Money in: income or funding received -->
+  <dialog id="modal-money-in" class="modal" aria-labelledby="money-in-title">
+    <form id="form-money-in">
+      <input type="text" name="id" hidden>
+      <div class="modal-header">
+        <h2 id="money-in-title">Add money in</h2>
+        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block sm:col-span-2">
+            <span class="form-label">What it is</span>
+            <select id="money-in-kind" name="kind" class="select-dark w-full">
+              <optgroup label="Income - counts toward profit">
+                <option value="employer">Payment from the employer (certificate)</option>
+                <option value="buyer">Buyer's payment for a room</option>
+              </optgroup>
+              <optgroup label="Funding - not profit">
+                <option value="loan">Loan draw</option>
+                <option value="own">The client's own money</option>
+                <option value="partner">Partner or investor</option>
+              </optgroup>
+            </select>
+          </label>
+          <label class="block">
+            <span class="form-label">Received on</span>
+            <input name="received_on" type="date" required class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span class="form-label">Amount</span>
+            <input name="amount" type="number" min="0.01" step="0.01" required class="input-dark w-full">
+          </label>
+          <label class="block">
+            <span id="money-in-from-label" class="form-label">From</span>
+            <input type="text" name="from_name" maxlength="160" class="input-dark w-full" placeholder="e.g. TBC Bank">
+          </label>
+          <label id="money-in-cert" class="show-block hidden">
+            <span class="form-label">Certificate / act №</span>
+            <input type="text" name="certificate_no" maxlength="40" class="input-dark w-full" placeholder="e.g. 4">
+          </label>
+          <label id="money-in-flat" class="show-block hidden">
+            <span class="form-label">Room</span>
+            <select id="money-in-flat-select" name="flat_id" class="select-dark w-full"></select>
+          </label>
+          <label id="money-in-rate" class="show-block hidden">
+            <span class="form-label">Interest (% a year)</span>
+            <input name="interest_pct" type="number" min="0" step="0.01" class="input-dark w-full" placeholder="e.g. 12">
+          </label>
+          <label class="block sm:col-span-2">
+            <span class="form-label">Note (optional)</span>
+            <input type="text" name="note" maxlength="300" class="input-dark w-full">
+          </label>
+        </div>
+        <p class="form-error hidden" data-error></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Users & access: which accounts may see which projects (administrator only) -->
   <dialog id="modal-access" class="modal modal-wide" aria-labelledby="access-title">
     <div class="modal-header">
@@ -921,6 +1069,10 @@
             <input name="price_per_m2" type="number" min="0" step="0.01" class="input-dark w-full" placeholder="e.g. 1200">
           </label>
         </div>
+        <label class="check-row">
+          <input name="finance_in_report" type="checkbox">
+          <span>Show Finance in the client report<small>Only once prices are entered. Untick to keep profit and loss out of the report whatever is entered.</small></span>
+        </label>
         <p class="text-xs text-slate-500">
           Changing the currency relabels existing amounts - it doesn't convert them.
           The daily worker rate fills in each new daily log; you can change it per log.
@@ -1465,63 +1617,18 @@
     </form>
   </dialog>
 
-  <!-- Daily report for a chosen day -->
-  <dialog id="modal-daily-report" class="modal modal-sm" aria-labelledby="daily-report-title">
-    <form id="form-daily-report">
-      <div class="modal-header">
-        <h2 id="daily-report-title">Daily Report</h2>
+  <!-- A report to read before it is printed or downloaded -->
+  <dialog id="modal-preview" class="modal report-preview" aria-labelledby="preview-title">
+    <div class="preview-bar">
+      <p id="preview-title" class="preview-title">Report</p>
+      <div class="preview-actions">
+        <button type="button" class="btn btn-secondary btn-sm" data-preview-action="print">Print</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-preview-action="word"><span>Word</span></button>
+        <button type="button" class="btn btn-primary btn-sm" data-preview-action="download"><span id="preview-download">Download</span></button>
         <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
       </div>
-      <div class="modal-body space-y-3">
-        <label class="block">
-          <span class="form-label">Day</span>
-          <input name="date" type="date" required class="input-dark w-full">
-        </label>
-        <p id="daily-report-hint" class="text-xs text-slate-500"></p>
-        <p class="text-xs text-slate-500">
-          Weather, manpower, delays, site notes and photos of that day, in Georgian and English. PDF is one long page
-          to read on screen; Word is A4, to arrange and print.
-        </p>
-        <p class="form-error hidden" data-error></p>
-      </div>
-      <div class="modal-footer">
-        <button type="submit" value="word" class="btn btn-secondary"><span>Word</span></button>
-        <button type="submit" value="pdf" class="btn btn-primary"><span>PDF</span></button>
-      </div>
-    </form>
-  </dialog>
-
-  <!-- Project report: PDF or Word -->
-  <dialog id="modal-project-report" class="modal" aria-labelledby="project-report-title">
-    <form id="form-project-report">
-      <div class="modal-header">
-        <h2 id="project-report-title">Project Report</h2>
-        <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
-      </div>
-      <div class="modal-body space-y-3">
-        <p class="text-sm text-slate-400">
-          The whole project on one designed page, in Georgian and English: key figures, progress vs plan, timetable,
-          contractors, budget &amp; cash flow, rooms (for sites that have them), recent logs and delays.
-        </p>
-        <p class="text-xs text-slate-500">Interactive is a single file that opens in any browser, no login - click a room on the room map to see its details and the work done in it. Word is A4, to arrange and print (and save as PDF from Word if needed).</p>
-        <div class="pt-3 border-t border-ink-700">
-          <p class="text-sm text-slate-300 font-medium">Full archive (.zip)</p>
-          <p class="text-xs text-slate-500 mt-1">
-            Everything, to hand to the client and keep after the project is deleted: a day-by-day journal of the whole
-            project, every item, contractor and payment, every photo, the contracts and acts, the project report and an
-            Excel file of all the data. Unzip it and open index.html - no login needed. A big project takes a few minutes.
-          </p>
-          <div class="flex items-center gap-3 mt-2">
-            <button type="button" id="btn-archive" class="btn btn-secondary"><span>Download archive</span></button>
-            <span id="archive-progress" class="text-xs text-slate-400"></span>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="submit" value="word" class="btn btn-secondary"><span>Word</span></button>
-        <button type="submit" value="html" class="btn btn-primary" title="One file that opens in any browser - click a room to see its details"><span>Interactive (.html)</span></button>
-      </div>
-    </form>
+    </div>
+    <iframe id="preview-frame" title="Report preview"></iframe>
   </dialog>
 
   <!-- Rooms from the Excel template -->
@@ -1878,6 +1985,10 @@
           <label class="block">
             <span class="form-label">Extra days claimed</span>
             <input name="days_claimed" type="number" min="0" step="1" class="input-dark w-full" placeholder="0">
+          </label>
+          <label id="variation-employer" class="show-block hidden">
+            <span class="form-label">Employer pays for it</span>
+            <input name="employer_amount" type="number" min="0" step="0.01" class="input-dark w-full" placeholder="0">
           </label>
         </div>
         <label class="block" id="variation-decided-field">

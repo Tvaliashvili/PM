@@ -164,7 +164,7 @@ async function fetchExtras(db, projectId, today) {
  */
 export async function buildProjectReport({
   db, project, tasks, payments, contractors, contractorDelays, units, progress, money,
-  siteCosts = [], rentals = [], siteLogs = [], materials = [], work = [], delayImpacts = [], usdRate = null,
+  siteCosts = [], rentals = [], siteLogs = [], materials = [], work = [], delayImpacts = [], usdRate = null, moneyIn = [],
 }) {
   const today = iso(new Date());
   const { logs, delays, events, variations } = await fetchExtras(db, project.id, today);
@@ -940,17 +940,19 @@ export async function buildProjectReport({
 
   // ---------- Finance: what the project earns against what it costs ----------
   // Shown once the project says where its income comes from (see finance.js).
-  const fin = financePosition({ project, tasks, rooms: units, variations, materials, cost });
+  const fin = financePosition({ project, tasks, rooms: units, variations, materials, payments, siteCosts, moneyIn, today });
   let financeSection = '';
-  if (fin.source) {
+  // Only with prices to show, and only when the project lets the client see it.
+  if (fin.source && fin.income > 0 && project.finance_in_report !== false) {
     const pct = (part, whole) => (whole ? `${(part / whole * 100).toFixed(1)}%` : '-');
     const tone = (v) => (v < 0 ? 'bad' : v > 0 ? 'ok' : '');
+    // The forecast of the final cost, against the budget.
+    const over = fin.forecast.total - fin.forecast.budget;
     const costSub = [
-      `${L('ბიუჯეტი', 'BOQ')} ${m(fin.budget)}`,
-      fin.variations ? `${L('ცვლილებები', 'variations')} ${m(fin.variations)}` : '',
-      fin.siteSoFar ? `${L('ობიექტის ხარჯი დღემდე', 'site costs so far')} ${m(fin.siteSoFar)}` : '',
-      fin.unbudgeted ? `${L('ობიექტისთვის შეძენილი', 'purchases for the site')} ${m(fin.unbudgeted)}` : '',
-    ].filter(Boolean).join(' + ');
+      `${L('ბიუჯეტი', 'budget')} ${m(fin.forecast.budget)}`,
+      Math.abs(over) >= 0.5 ? `${m(Math.abs(over))} ${over > 0 ? L('ბიუჯეტს ზემოთ', 'over budget') : L('ბიუჯეტზე ნაკლები', 'under budget')}` : '',
+      fin.interest ? `${L('სესხის პროცენტი', 'loan interest')} ${m(fin.interest)}` : '',
+    ].filter(Boolean).join(' · ');
     const sales = fin.sales;
     const incomeSub = sales
       ? `${sales.sold.count} ${L('გაყიდული', 'sold')} · ${sales.reserved.count} ${L('დაჯავშნილი', 'reserved')} · ${sales.forSale.count} ${L('იყიდება', 'for sale')}`
@@ -958,15 +960,15 @@ export async function buildProjectReport({
     const tiles = `
       <div class="rpt-tiles rpt-tiles-4 rpt-avoid">
         ${tile('შემოსავალი', 'Income', m(fin.income), incomeSub)}
-        ${tile('ხარჯი', 'Cost', m(fin.cost), costSub)}
+        ${tile('მოსალოდნელი საბოლოო ხარჯი', 'Forecast final cost', m(fin.cost), costSub, over > 0.5 ? 'bad' : '')}
         ${fin.profit < 0
     ? tile('მოსალოდნელი ზარალი', 'Expected loss', m(fin.profit), L('შემოსავალი − ხარჯი', 'Income − cost'), 'bad')
     : tile('მოსალოდნელი მოგება', 'Expected profit', m(fin.profit), L('შემოსავალი − ხარჯი', 'Income − cost'), tone(fin.profit))}
         ${tile('მარჟა', 'Margin', pct(fin.profit, fin.income), L('შემოსავლიდან', 'of income'), tone(fin.profit))}
       </div>`;
     const note = `<p class="rpt-muted">${L(
-      'ჯერ არ ითვლება: სესხის პროცენტი, ბიუჯეტს ზემოთ ნაყიდი მასალა და დარჩენილი დღიური მუშების, დარაჯებისა და ტექნიკის ხარჯი.',
-      'Not counted yet: loan interest, materials bought beyond their budgets, and daily workers, guards and rentals still to come.',
+      'საბოლოო ხარჯის პროგნოზი: სამუშაო ბიუჯეტით ან რეალური ხარჯით (თუ მეტია), დღიური მუშები, დარაჯები და ქირა - დღევანდელი ტემპით დასრულებამდე.',
+      'Forecast final cost: each item at its budget or what really went into it when more; daily workers, guards and rentals at today\'s rate to completion.',
     )}</p>`;
 
     let detail = '';
@@ -1868,6 +1870,12 @@ export async function interactiveReportHtml(page, project) {
   .rpt-cur { display: inline-flex; flex: none; border: 1px solid #cbd5e1; border-radius: 999px; overflow: hidden; background: #fff; }
   .rpt-cur button { padding: 3px 10px; border: 0; background: transparent; font: inherit; font-weight: 600; color: #64748b; cursor: pointer; }
   .rpt-cur button.is-active { background: #0f172a; color: #fff; }
+  /* Printed (or saved as PDF from the print window): the sheet alone. */
+  @media print {
+    .rpt-bar, dialog { display: none !important; }
+    body { padding: 0; background: #fff; }
+    .pdf-page.rpt { box-shadow: none; padding: 0; zoom: 1 !important; }
+  }
 </style>
 </head>
 <body>

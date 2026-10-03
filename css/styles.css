@@ -1360,7 +1360,8 @@ body.read-only :is(
   #btn-new-project, #btn-edit-project, #btn-access, .project-card-delete,
   #btn-new-log-page, #btn-new-delay, #btn-new-event, #btn-new-variation,
   #btn-add-unit, #btn-rooms-import, #btn-add-task, #btn-import-mpp, #btn-baseline,
-  #btn-add-contractor, #btn-add-rental, #btn-add-material,
+  #btn-add-contractor, #btn-add-rental, #btn-add-material, #btn-add-money-in,
+  [data-money-in-edit], [data-money-in-delete],
   [data-task-edit], [data-task-delete], [data-unit-edit], [data-unit-delete],
   [data-contractor-edit], [data-contractor-delete], [data-rental-edit], [data-rental-delete],
   [data-material-edit], [data-material-delete], [data-material-paid],
@@ -1368,7 +1369,10 @@ body.read-only :is(
   [data-event-edit], [data-event-delete], [data-variation-edit], [data-variation-delete],
   [data-site-pay], [data-site-pay-delete], [data-payment-delete],
   [data-room-work-edit], [data-room-work-delete], #form-room-work, #form-payment,
-  #form-contract, [data-contract-delete]
+  #form-contract, [data-contract-delete],
+  /* Nor tools a client has no use for: the Excel templates, the archive (the
+     administrator hands it over), and Ask Gemini (each question is paid for). */
+  #btn-import-template, #btn-rooms-template, #archive-block, #form-ask
 ) { display: none !important; }
 body.read-only :is([data-task-pct], [data-task-contractor]) { pointer-events: none; opacity: 0.75; }
 
@@ -1440,12 +1444,12 @@ body.read-only :is([data-task-pct], [data-task-contractor]) { pointer-events: no
 
 /* ---------- Pop-ups slide up from the bottom on a phone ---------- */
 @media (max-width: 639px) {
-  dialog.modal:not(.modal-photo) {
+  dialog.modal:not(.modal-photo):not(.report-preview) {
     width: 100vw; max-width: 100vw; max-height: 94vh;
     margin: auto 0 0; border-radius: 1rem 1rem 0 0; border-bottom: 0;
     padding-bottom: env(safe-area-inset-bottom);
   }
-  dialog.modal:not(.modal-photo)[open] { animation: sheet-up 0.22s ease-out; }
+  dialog.modal:not(.modal-photo):not(.report-preview)[open] { animation: sheet-up 0.22s ease-out; }
   .modal-body { max-height: calc(94vh - 8.5rem); }
   .modal-footer { border-radius: 0; flex-wrap: wrap; }
   .modal-footer .btn { flex: 1 1 auto; justify-content: center; }
@@ -1479,3 +1483,37 @@ body.auth-pending::after {
   animation: pending-pulse 1.2s ease-in-out infinite;
 }
 @keyframes pending-pulse { 50% { opacity: 0.55; } }
+
+/* ---------- The week at a glance ---------- */
+.week-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 0.75rem; }
+.week-stats div { padding: 0.6rem 0.75rem; border: 1px solid var(--ink-700); border-radius: 0.6rem; background: var(--ink-850); }
+.week-stats b { display: block; font-size: 1.3rem; color: var(--heading); }
+.week-stats span { font-size: 0.75rem; color: var(--text-muted); }
+.week-list { display: grid; gap: 0.35rem; font-size: 0.85rem; }
+.week-list li { line-height: 1.4; }
+.latest-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: 0.5rem; }
+.latest-photos button { display: block; padding: 0; border-radius: 0.5rem; overflow: hidden; background: var(--ink-850); }
+.latest-photos img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+@media (max-width: 639px) { .latest-photos { grid-template-columns: repeat(3, 1fr); } }
+
+/* ---------- Report preview: the whole screen, a bar of actions on top ---------- */
+.report-preview {
+  width: 100vw; height: 100vh; height: 100dvh; max-width: 100vw; max-height: 100vh; max-height: 100dvh;
+  margin: 0; padding: 0; border: 0; border-radius: 0; background: #eef2f6;
+}
+.report-preview[open] { display: flex; flex-direction: column; }
+.report-preview::backdrop { background: rgba(15, 23, 42, 0.5); }
+.preview-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;
+  padding: 0.6rem 1rem; padding-top: calc(0.6rem + env(safe-area-inset-top));
+  background: #fff; border-bottom: 1px solid var(--ink-700);
+}
+.preview-title { font-weight: 600; color: var(--heading); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview-actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+#preview-frame { flex: 1; width: 100%; border: 0; background: #eef2f6; }
+@media (max-width: 639px) {
+  .preview-bar { padding: 0.5rem 0.75rem; }
+  .preview-title { flex: 1 1 100%; font-size: 0.9rem; }
+  .preview-actions { flex: 1 1 100%; }
+  .preview-actions .btn { flex: 1; justify-content: center; }
+}

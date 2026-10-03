@@ -38,32 +38,103 @@ export function roomIncome(room, pricePerM2) {
   return { amount: 0, source: 'none' };
 }
 
+const DAY = 86_400_000;
+const days = (from, to) => Math.max(0, Math.round((new Date(`${to}T00:00`) - new Date(`${from}T00:00`)) / DAY));
+const sumOf = (list, key) => list.reduce((s, x) => s + Number((typeof key === 'function' ? key(x) : x[key]) || 0), 0);
+
+// What money_in kinds are: income (toward profit) or funding (never).
+export const INCOME_KINDS = ['employer', 'buyer'];
+export const FUNDING_KINDS = ['loan', 'own', 'partner'];
+
 /**
- * The project's income against its cost, as the app's Finance page and the
- * client's report both show it. `cost` is costPosition()'s result. Cost, for
- * now, is the BOQ budget (contracts + materials) plus approved variations, the
- * daily workers, guards and rentals paid so far, and what was bought for the
- * site rather than one job (tools, general stock): what is known to be spent,
- * not yet a forecast of the final cost.
+ * Interest on the loan draws in money_in, simple interest at each draw's own
+ * yearly rate, from the day it came in up to `untilIso`.
+ */
+export function loanInterest(moneyIn, untilIso) {
+  return sumOf(moneyIn.filter((m) => m.kind === 'loan' && Number(m.interest_pct) > 0 && m.received_on <= untilIso),
+    (m) => Number(m.amount) * (Number(m.interest_pct) / 100) * (days(m.received_on, untilIso) / 365));
+}
+
+/**
+ * What the project will have cost when it is finished, from what is known today:
+ *   contracts   - each item's contract budget, or what it has been paid plus
+ *                 retention held when that is more (an overpaid item costs what it cost)
+ *   materials   - each item's materials budget, or what was bought for it when more
+ *   variations  - approved changes (pending ones are a risk, apart)
+ *   siteSoFar   - daily workers, guards and rentals up to today
+ *   siteToCome  - the same, at the rate kept so far, to the planned completion
+ *   unbudgeted  - purchases for the whole site rather than one job
+ * budget is what was planned: contracts + materials budgets.
+ */
+export function forecastCost({ project, tasks, payments = [], materials = [], variations = [], siteCosts = [], today }) {
+  let contracts = 0;
+  let materialCost = 0;
+  for (const t of tasks) {
+    const own = payments.filter((p) => p.task_id === t.id);
+    contracts += Math.max(Number(t.budget || 0), sumOf(own, 'amount') + sumOf(own, 'retention'));
+    materialCost += Math.max(Number(t.material_budget || 0), sumOf(materials.filter((m) => m.task_id === t.id), 'amount'));
+  }
+  const approved = sumOf(variations.filter((v) => v.status === 'approved'), 'amount');
+  const pending = sumOf(variations.filter((v) => v.status === 'instructed' || v.status === 'priced'), 'amount');
+  const site = siteCosts.filter((e) => ['labour', 'guard', 'rental'].includes(e.kind) && e.date <= today);
+  const siteSoFar = sumOf(site, 'amount');
+  // The site's daily cost so far, carried on to the planned completion.
+  let siteToCome = 0;
+  const end = project?.closed_how ? null : project?.end_date;
+  if (site.length && end && end > today) {
+    const first = site.reduce((min, e) => (e.date < min ? e.date : min), today);
+    siteToCome = (siteSoFar / Math.max(1, days(first, today) + 1)) * days(today, end);
+  }
+  const unbudgeted = sumOf(materials.filter((m) => !m.task_id), 'amount');
+  const budget = sumOf(tasks, (t) => Number(t.budget || 0) + Number(t.material_budget || 0));
+  return {
+    contracts, materials: materialCost, variations: approved, pendingVariations: pending,
+    siteSoFar, siteToCome, unbudgeted, budget,
+    total: contracts + materialCost + approved + siteSoFar + siteToCome + unbudgeted,
+  };
+}
+
+/**
+ * The project's income against its forecast cost, as the app's Finance page
+ * and the client's report both show it.
  *   source   - 'sales', 'contract', or null when not chosen
  *   sales    - salesPosition() for a project that sells, else null
  *   items    - each item with itemMargin() for a contract, else []
  *   earned   - contract income earned by the work done so far
- *   unbudgeted - purchases for no job, which no budget covers
+ *   income   - sales, or employer's prices plus approved variations' employer amounts
+ *   forecast - forecastCost()
+ *   interest - loan interest to completion (interestSoFar: to today)
+ *   cost     - forecast + interest; profit = income − cost
+ *   received - money in so far, by kind, and in all as income / funding
  */
-export function financePosition({ project, tasks, rooms, variations, materials = [], cost }) {
-  const sum = (list, key) => list.reduce((s, x) => s + Number(x[key] || 0), 0);
+export function financePosition({
+  project, tasks, rooms, variations, materials = [], payments = [], siteCosts = [], moneyIn = [],
+  today = new Date().toLocaleDateString('en-CA'),
+}) {
   const source = project?.income_from ?? null;
-  const variationCost = sum(variations.filter((v) => v.status === 'approved'), 'amount');
-  const siteSoFar = cost.labour + cost.guard + cost.rental;
-  const unbudgeted = sum(materials.filter((m) => !m.task_id), 'amount');
-  const total = cost.budget + variationCost + siteSoFar + unbudgeted;
+  const forecast = forecastCost({ project, tasks, payments, materials, variations, siteCosts, today });
+  const end = !project?.closed_how && project?.end_date > today ? project.end_date : today;
+  const interestSoFar = loanInterest(moneyIn, today);
+  const interest = loanInterest(moneyIn, end);
   const sales = source === 'sales' ? salesPosition(rooms, project.price_per_m2) : null;
   const items = source === 'contract' ? tasks.map((task) => ({ task, ...itemMargin(task) })) : [];
-  const income = sales ? sales.income : sum(items, 'income');
+  const variationIncome = source === 'contract'
+    ? sumOf(variations.filter((v) => v.status === 'approved'), 'employer_amount') : 0;
+  const income = sales ? sales.income : sumOf(items, 'income') + variationIncome;
+  const byKind = Object.fromEntries([...INCOME_KINDS, ...FUNDING_KINDS]
+    .map((k) => [k, sumOf(moneyIn.filter((m) => m.kind === k), 'amount')]));
+  const cost = forecast.total + interest;
   return {
-    source, sales, items, income, earned: sum(items, 'earned'),
-    budget: cost.budget, variations: variationCost, siteSoFar, unbudgeted, cost: total, profit: income - total,
+    source, sales, items, income, variationIncome, earned: sumOf(items, 'earned'),
+    forecast, interest, interestSoFar, cost, profit: income - cost,
+    received: {
+      ...byKind,
+      income: sumOf(INCOME_KINDS, (k) => byKind[k]),
+      funding: sumOf(FUNDING_KINDS, (k) => byKind[k]),
+    },
+    // Kept for the report's cost line.
+    budget: forecast.budget, variations: forecast.variations, siteSoFar: forecast.siteSoFar + forecast.siteToCome,
+    unbudgeted: forecast.unbudgeted,
   };
 }
 

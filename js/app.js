@@ -8,7 +8,7 @@ import {
   SITE_EVENT_KINDS, INCIDENT_SEVERITIES, VARIATION_STATUSES,
   BOQ_UNITS, CONTRACTOR_TRADES, INCOME_SOURCES, SALE_STATUSES, PURCHASE_KINDS, CLOSED_HOW,
 } from './config.js';
-import { generateDailyReport } from './pdfReport.js';
+import { buildDailyReport, saveDailyReport } from './pdfReport.js';
 import { buildProjectReport, downloadProjectReport, interactiveReportHtml } from './projectReport.js';
 import { buildArchive } from './archive.js';
 import {
@@ -24,7 +24,7 @@ import { initMobile } from './mobile.js';
 import {
   MAX_CONTRACT_MB, fetchContracts, uploadContract, contractUrl, deleteContracts, deleteProjectContracts,
 } from './contracts.js';
-import { roomIncome, financePosition, salesByType } from './finance.js';
+import { roomIncome, financePosition, salesByType, INCOME_KINDS } from './finance.js';
 import {
   MAX_PHOTOS, uploadPhotos, fetchPhotos, signPhotos, photosBy, deletePhoto, deletePhotosFor, deleteProjectPhotos,
 } from './photos.js';
@@ -57,6 +57,7 @@ const state = {
   siteLogs: [],         // every daily log's date, manpower and day rate (daily-worker pay)
   events: [],           // safety and quality events, newest first
   variations: [],       // change orders, newest first
+  moneyIn: [],          // money_in: income and funding received, oldest first
   rentals: [],          // equipment_rentals
   materials: [],        // materials the client bought, newest first
   sitePayments: [],     // what was paid for daily workers, guards (by month) and rentals
@@ -160,7 +161,7 @@ function showFormError(form, message) {
 }
 
 function setProjectActionsEnabled(enabled) {
-  ['#btn-new-log-page', '#btn-new-delay', '#btn-report-daily', '#btn-report-project', '#btn-add-unit', '#btn-rooms-template', '#btn-rooms-import', '#btn-add-task', '#btn-import-mpp', '#btn-import-template', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental', '#btn-add-material',
+  ['#btn-new-log-page', '#btn-new-delay', '#btn-add-unit', '#btn-rooms-template', '#btn-rooms-import', '#btn-add-task', '#btn-import-mpp', '#btn-import-template', '#btn-baseline', '#btn-new-event', '#btn-new-variation', '#btn-add-contractor', '#btn-add-rental', '#btn-add-material',
     '#btn-edit-project'].forEach((sel) => { $(sel).disabled = !enabled; });
 }
 
@@ -194,6 +195,7 @@ function route() {
   $('#view-workspace').classList.toggle('hidden', onList);
 
   sections.forEach((s) => s.classList.toggle('hidden', s.dataset.section !== target));
+  if (target === 'reports' && state.projectId) prepareDailyReport();
   $$('[data-nav]').forEach((l) => l.classList.toggle('active', l.dataset.nav === target));
   window.scrollTo(0, 0);
   $('#main-content').scrollTop = 0;
@@ -383,7 +385,7 @@ function showSetupNotice() {
 async function loadProjects() {
   const { data, error } = await db
     .from('projects')
-    .select('id, name, name_ka, location, location_ka, client_name, client_name_ka, total_flats, has_rooms, day_rate, guard_rate, created_at, start_date, end_date, currency, baseline_set_on, retention_pct, income_from, price_per_m2, closed_how, closed_on, closed_note')
+    .select('id, name, name_ka, location, location_ka, client_name, client_name_ka, total_flats, has_rooms, day_rate, guard_rate, created_at, start_date, end_date, currency, baseline_set_on, retention_pct, income_from, price_per_m2, closed_how, closed_on, closed_note, finance_in_report')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -422,6 +424,7 @@ async function selectProject(projectId) {
   state.delays = [];
   state.events = [];
   state.variations = [];
+  state.moneyIn = [];
   setProjectActionsEnabled(Boolean(state.projectId));
   syncCurrencySwitch();
 
@@ -437,6 +440,7 @@ async function selectProject(projectId) {
   resetLogFilter(); // a new project starts with a clean, unfiltered log list
   await Promise.all([
     loadContracts(project.id),
+    loadMoneyIn(project.id),
     loadUnits(project.id), loadWork(project.id), loadSchedule(project.id), refreshDashboard(project.id), loadLogs(project.id),
     loadEvents(project.id), loadVariations(project.id),
   ]);
@@ -1044,6 +1048,7 @@ async function loadWork(projectId) {
   }
   state.work = data;
   renderUnits();
+  renderWeek();
   if (state.tasks.length) renderSchedule(); // each item's Work count
   // Each log card shows what was done on its day.
   $$('[data-log-work]').forEach((el) => { el.innerHTML = workList(workOn(el.dataset.logWork)); });
@@ -1518,6 +1523,8 @@ async function loadSchedule(projectId) {
 
 function renderScheduleViews() {
   renderSchedule();
+  renderWeek();
+  renderComingUp();
   renderCosts();
   renderFinance();
   renderContractors();
@@ -1979,10 +1986,105 @@ async function refreshDashboard(projectId) {
     + (stillOpen ? ` · ${stillOpen} ongoing` : '');
 
   state.delays = delays.data;
+  loadLatestPhotos(projectId);
   renderRecentLogs(logs.data);
   renderRecentDelays(delays.data.slice(0, 5));
   await loadDelayPhotos();
   renderDelays();
+}
+
+// ---------- The week at a glance (top of the dashboard) ----------
+// What a client opens the app for: what happened on site this week, what is
+// coming, and the latest photos.
+const DAY_MS_APP = 86_400_000;
+const isoMinus = (iso, days) => new Date(new Date(`${iso}T00:00`).getTime() - days * DAY_MS_APP).toLocaleDateString('en-CA');
+const isoPlus = (iso, days) => isoMinus(iso, -days);
+
+function renderWeek() {
+  const el = $('#dash-week');
+  if (!el || !state.projectId) return;
+  const end = scheduleDay(currentProject(), todayISO());
+  const from = isoMinus(end, 6);
+  const inWeek = (d) => d && d >= from && d <= end;
+  const logs = state.siteLogs.filter((l) => inWeek(l.log_date));
+  const workers = logs.map((l) => (l.crew ?? []).reduce((n, c) => n + (Number(c.workers) || 0), 0));
+  const avg = workers.length ? Math.round(workers.reduce((a, b) => a + b, 0) / workers.length) : 0;
+  const finished = state.tasks.filter((t) => t.done && inWeek(t.done_at));
+
+  // Each kind of work done this week, added up, with who did it.
+  const kinds = new Map();
+  for (const w of state.work.filter((x) => inWeek(x.work_date))) {
+    const key = workTagKey(w);
+    const k = kinds.get(key) ?? { name: w.work || w.work_en, en: w.work_en, qty: new Map(), who: new Set(), days: new Set() };
+    if (w.quantity != null) k.qty.set(w.unit ?? '', (k.qty.get(w.unit ?? '') ?? 0) + Number(w.quantity));
+    if (workBy(w)) k.who.add(workBy(w));
+    k.days.add(w.work_date);
+    kinds.set(key, k);
+  }
+  const list = [...kinds.values()].sort((a, b) => b.days.size - a.days.size).slice(0, 8);
+
+  if (!logs.length && !list.length && !finished.length) {
+    el.innerHTML = '<p class="text-slate-500">Nothing recorded this week.</p>';
+    return;
+  }
+  el.innerHTML = `
+    <div class="week-stats">
+      <div><b>${logs.length}</b><span>days logged</span></div>
+      <div><b>${avg}</b><span>workers a day</span></div>
+      <div><b>${finished.length}</b><span>items finished</span></div>
+    </div>
+    ${list.length ? `<ul class="week-list">${list.map((k) => `
+      <li><span class="text-white">${esc(k.name)}</span>${k.en && k.en !== k.name ? ` <span class="text-slate-500">${esc(k.en)}</span>` : ''}
+        <span class="text-slate-400">· ${k.qty.size ? esc([...k.qty].map(([u, q]) => `${qtyFormat.format(q)}${u ? ` ${u}` : ''}`).join(' · ')) : 'in progress'}${
+          k.who.size ? ` · ${esc([...k.who].join(', '))}` : ''}</span></li>`).join('')}</ul>` : ''}
+    ${finished.length ? `<p class="mt-2 text-xs text-slate-500">Finished: ${finished.map((t) => esc(t.name)).join(', ')}</p>` : ''}`;
+}
+
+function renderComingUp() {
+  const el = $('#dash-next');
+  if (!el || !state.projectId) return;
+  if (currentProject()?.closed_how) {
+    el.innerHTML = '<p class="text-slate-500">The project has ended.</p>';
+    return;
+  }
+  const today = todayISO();
+  const horizon = isoPlus(today, 14);
+  // Starting in the next two weeks, or due in them and not done.
+  const next = state.tasks
+    .filter((t) => !t.done && ((t.planned_start >= today && t.planned_start <= horizon) || (dueDate(t) >= today && dueDate(t) <= horizon)))
+    .sort((a, b) => (a.planned_start >= today ? a.planned_start : dueDate(a)).localeCompare(b.planned_start >= today ? b.planned_start : dueDate(b)))
+    .slice(0, 7);
+  if (!next.length) {
+    el.innerHTML = '<p class="text-slate-500">Nothing starts or is due in the next two weeks.</p>';
+    return;
+  }
+  el.innerHTML = `<ul class="week-list">${next.map((t) => {
+    const starting = t.planned_start >= today;
+    return `<li><span class="text-white">${esc(t.name)}</span>
+      <span class="text-slate-400">· ${starting ? `starts ${esc(formatDate(t.planned_start))}` : `due ${esc(formatDate(dueDate(t)))} · ${Math.round(completionOf(t) * 100)}%`}${
+        t.contractor_id ? ` · ${esc(contractorName(t.contractor_id))}` : ''}</span></li>`;
+  }).join('')}</ul>`;
+}
+
+// The newest photos on the project, tapped to see them full size.
+let latestPhotos = { thumbs: [], full: [] };
+async function loadLatestPhotos(projectId) {
+  const el = $('#dash-photos');
+  const { data, error } = await db.from('photos')
+    .select('id, daily_log_id, delay_id, path, thumb_path, created_at')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+    .limit(8);
+  if (projectId !== state.projectId || error) return;
+  if (!data.length) {
+    el.innerHTML = '<p class="text-slate-500">No photos yet.</p>';
+    return;
+  }
+  const [thumbs, full] = await Promise.all([signPhotos(db, data), signPhotos(db, data, { full: true })]);
+  if (projectId !== state.projectId) return;
+  latestPhotos = { thumbs: data.map((ph) => thumbs.get(ph.id)), full: data.map((ph) => full.get(ph.id)) };
+  el.innerHTML = `<div class="latest-photos">${data.map((ph, i) => (thumbs.get(ph.id)
+    ? `<button type="button" data-latest-photo="${i}"><img src="${esc(thumbs.get(ph.id))}" alt="" loading="lazy"></button>` : '')).join('')}</div>`;
 }
 
 // ---------- Delays page ----------
@@ -2332,6 +2434,7 @@ function openEditProjectModal() {
   f.retention_pct.value = Number(project.retention_pct) || '';
   f.income_from.value = incomeFrom(project) ?? '';
   f.price_per_m2.value = project.price_per_m2 ?? '';
+  f.finance_in_report.checked = project.finance_in_report !== false;
   f.closed_how.value = project.closed_how ?? '';
   f.closed_on.value = project.closed_on ?? '';
   f.closed_note.value = project.closed_note ?? '';
@@ -2362,6 +2465,7 @@ async function saveEditProject(e) {
     day_rate: fd.get('day_rate') === '' ? null : Number(fd.get('day_rate')),
     guard_rate: fd.get('guard_rate') === '' ? null : Number(fd.get('guard_rate')),
     retention_pct: Number(fd.get('retention_pct') || 0),
+    finance_in_report: fd.has('finance_in_report'),
     income_from: fd.get('income_from') || null,
     price_per_m2: numOrNull(fd.get('price_per_m2')),
     closed_how: fd.get('closed_how') || null,
@@ -2573,7 +2677,10 @@ function renderCosts() {
   const planned = plannedSpendByMonth(state.tasks);
   const actual = actualSpendByMonth(state.payments);
   const site = siteCostsByMonth(state.siteCosts, today);
-  const months = [...new Set([...planned.keys(), ...actual.keys(), ...site.keys()])].sort();
+  // Money in by month, for the balance.
+  const moneyIn = new Map();
+  for (const m of state.moneyIn) moneyIn.set(m.received_on.slice(0, 7), (moneyIn.get(m.received_on.slice(0, 7)) ?? 0) + Number(m.amount));
+  const months = [...new Set([...planned.keys(), ...actual.keys(), ...site.keys(), ...moneyIn.keys()])].sort();
   if (!months.length) {
     $('#cashflow-months').innerHTML = '<div class="empty-state">Add budgets, payments, daily workers, rentals or materials to see the monthly cash flow.</div>';
     return;
@@ -2583,14 +2690,19 @@ function renderCosts() {
   const cell = (v) => (v ? money.format(v) : '<span class="text-slate-500">-</span>');
   let cumPlanned = 0;
   let cumSpent = 0;
-  const totals = { p: 0, a: 0, labour: 0, guard: 0, rental: 0, material: 0 };
+  let cumIn = 0;
+  const showIn = state.moneyIn.length > 0;
+  const totals = { p: 0, a: 0, labour: 0, guard: 0, rental: 0, material: 0, in: 0 };
   const monthRows = months.map((ym) => {
     const p = planned.get(ym) ?? 0;
     const a = actual.get(ym) ?? 0;
     const { labour = 0, guard = 0, rental = 0, material = 0 } = site.get(ym) ?? {};
     const spent = a + labour + guard + rental + material;
+    const got = moneyIn.get(ym) ?? 0;
     cumPlanned += p;
     cumSpent += spent;
+    cumIn += got;
+    totals.in += got;
     totals.p += p;
     totals.a += a;
     totals.labour += labour;
@@ -2609,6 +2721,8 @@ function renderCosts() {
         <td class="num font-semibold text-white">${cell(spent)}</td>
         <td class="num">${money.format(cumPlanned)}</td>
         <td class="num">${ym <= thisMonth ? money.format(cumSpent) : '-'}</td>
+        ${showIn ? `<td class="num">${cell(got)}</td>
+        <td class="num">${ym <= thisMonth ? `<span class="${cumIn - cumSpent < 0 ? 'variance-over' : ''}">${money.format(cumIn - cumSpent)}</span>` : '-'}</td>` : ''}
       </tr>`;
   }).join('');
 
@@ -2619,6 +2733,7 @@ function renderCosts() {
           <th>Month</th><th class="num">Planned</th><th class="num">Contracts paid</th><th class="num">Daily workers</th>
           <th class="num">Guards</th><th class="num">Rentals</th><th class="num">Materials</th><th class="num">Total spent</th>
           <th class="num">Cumulative planned</th><th class="num">Cumulative spent</th>
+          ${showIn ? '<th class="num">Money in</th><th class="num">Balance</th>' : ''}
         </tr>
       </thead>
       <tbody>${monthRows}</tbody>
@@ -2633,6 +2748,7 @@ function renderCosts() {
           <td class="num">${money.format(totals.material)}</td>
           <td class="num">${money.format(totals.a + totals.labour + totals.guard + totals.rental + totals.material)}</td>
           <td colspan="2"></td>
+          ${showIn ? `<td class="num">${money.format(totals.in)}</td><td></td>` : ''}
         </tr>
       </tfoot>
     </table>`;
@@ -2640,10 +2756,10 @@ function renderCosts() {
 
 // =============================================================
 // Finance - what the project earns against what it costs
-// Income is the employer's price for each item, or the rooms' sale prices
-// (see finance.js). Cost, for now, is the BOQ budget (contracts + materials)
-// plus approved variations and the daily workers, guards and rentals paid so
-// far: what is known to be spent, not yet a forecast of the final cost.
+// Income is the employer's price for each item (plus what the employer pays
+// for approved variations), or the rooms' sale prices. Cost is the forecast
+// of the final cost plus loan interest (see finance.js). Money in - income
+// and funding - gives the cash position; funding is never profit.
 // =============================================================
 const pctFormat = (part, whole) => (whole ? `${(part / whole * 100).toFixed(1)}%` : '-');
 
@@ -2652,20 +2768,34 @@ function renderFinance() {
   if (!project) return;
   const source = incomeFrom(project);
 
+  const today = todayISO();
   const fin = financePosition({
     project, tasks: state.tasks, rooms: state.flats, variations: state.variations, materials: state.materials,
-    cost: costPosition(state.tasks, state.payments, todayISO(), state.siteCosts),
+    payments: state.payments, siteCosts: state.siteCosts, moneyIn: state.moneyIn, today,
   });
-  const { sales, items, income, cost, profit, variations, siteSoFar, unbudgeted } = fin;
-  const costMeta = [
-    `BOQ ${money.format(fin.budget)}`,
-    variations ? `variations ${money.format(variations)}` : '',
-    siteSoFar ? `site costs so far ${money.format(siteSoFar)}` : '',
-    unbudgeted ? `purchases for the site ${money.format(unbudgeted)}` : '',
-  ].filter(Boolean).join(' + ');
+  const { sales, items, income, cost, profit, forecast } = fin;
+  const spentSoFar = costPosition(state.tasks, state.payments, today, state.siteCosts).spent;
+  const received = fin.received.income + fin.received.funding;
+
+  // Always: what it will cost, the cash, and what came in.
+  renderForecast(fin);
+  renderMoneyIn();
+
+  const over = forecast.total - forecast.budget;
+  const cashTiles = [
+    statTile('Money in so far', money.format(received),
+      `income ${money.format(fin.received.income)} · funding ${money.format(fin.received.funding)}`),
+    statTile('Paid out so far', money.format(spentSoFar), 'Contracts, workers, guards, rentals, purchases'),
+    statTile('Cash balance now', money.format(received - spentSoFar), received ? 'Money in − paid out' : 'Add money in to see it',
+      received - spentSoFar < 0 ? 'negative' : ''),
+  ];
 
   if (!source) {
-    $('#finance-summary').innerHTML = '';
+    $('#finance-summary').innerHTML = [
+      statTile('Forecast final cost', money.format(forecast.total + fin.interest),
+        forecast.budget ? `${money.format(Math.abs(over))} ${over > 0 ? 'over' : 'under'} budget` : 'No budgets yet', over > 0.5 ? 'negative' : ''),
+      ...cashTiles,
+    ].join('');
     $('#finance-position').textContent = '';
     $('#finance-detail').innerHTML = `
       <div class="panel"><div class="empty-state">
@@ -2676,17 +2806,25 @@ function renderFinance() {
     return;
   }
 
-
+  // Still to come in: earned from the employer but not paid, or sold but not collected.
+  const due = sales
+    ? Math.max(0, sales.sold.amount - fin.received.buyer)
+    : Math.max(0, fin.earned + fin.variationIncome - fin.received.employer);
   const incomeMeta = sales
     ? `${sales.sold.count} sold · ${sales.reserved.count} reserved · ${sales.forSale.count} for sale`
-    : `Employer's prices · ${money.format(fin.earned)} earned by the work done`;
+    : `Employer's prices${fin.variationIncome ? ` + variations ${money.format(fin.variationIncome)}` : ''} · ${money.format(fin.earned)} earned by the work done`;
   $('#finance-summary').innerHTML = [
     statTile('Income', money.format(income), incomeMeta),
-    statTile('Cost', money.format(cost), costMeta),
-    statTile(profit < 0 ? 'Expected loss' : 'Expected profit', money.format(profit), 'Income − cost',
+    statTile('Forecast final cost', money.format(cost),
+      forecast.budget ? `${money.format(Math.abs(over))} ${over > 0 ? 'over' : 'under'} budget${fin.interest ? ` · interest ${money.format(fin.interest)}` : ''}` : 'No budgets yet',
+      over > 0.5 ? 'negative' : ''),
+    statTile(profit < 0 ? 'Expected loss' : 'Expected profit', money.format(profit), 'Income − forecast cost',
       profit < 0 ? 'negative' : profit > 0 ? 'positive' : ''),
     statTile('Margin', pctFormat(profit, income), income ? 'Of income' : 'No income entered yet',
       profit < 0 ? 'negative' : ''),
+    ...cashTiles,
+    statTile(sales ? 'Still to collect' : 'Due from the employer', money.format(due),
+      sales ? 'Sold, not yet paid by buyers' : 'Earned by the work done, not yet paid'),
   ].join('');
 
   // What the figures leave out, so the profit is read for what it is.
@@ -2700,14 +2838,190 @@ function renderFinance() {
   if (!sales) {
     const unpriced = items.filter((i) => !i.income && i.cost).length;
     const losing = items.filter((i) => i.income && i.margin < 0);
+    const unpaidChanges = state.variations.filter((v) => v.status === 'approved' && Number(v.amount) && !Number(v.employer_amount)).length;
     if (unpriced) lines.push(`${unpriced} item${unpriced === 1 ? ' has' : 's have'} a budget but no employer's price, so ${unpriced === 1 ? 'it counts' : 'they count'} as cost with no income.`);
     if (losing.length) lines.push(`${losing.length} item${losing.length === 1 ? ' loses' : 's lose'} money: ${money.format(-sumOf(losing, 'margin'))} in all.`);
-    if (variations) lines.push('Approved variations count as cost; what the employer pays for them is not in income yet.');
+    if (unpaidChanges) lines.push(`${unpaidChanges} approved variation${unpaidChanges === 1 ? ' has' : 's have'} no employer's amount - add it on the Variations page if the employer pays for it.`);
   }
-  lines.push('Not counted yet: loan interest, materials bought beyond their budgets, and daily workers, guards and rentals still to come.');
+  if (forecast.pendingVariations) lines.push(`Variations not yet decided would add ${money.format(forecast.pendingVariations)} to the cost if approved.`);
   $('#finance-position').textContent = lines.join(' ');
 
   $('#finance-detail').innerHTML = sales ? salesDetail(sales, cost) : marginDetail(items);
+}
+
+// Budget against forecast, line by line.
+function renderForecast(fin) {
+  const f = fin.forecast;
+  const contractBudget = sumOf(state.tasks, 'budget');
+  const materialBudget = sumOf(state.tasks, 'material_budget');
+  const dash = '<span class="text-slate-500">-</span>';
+  const line = (label, budget, value, note = '') => `
+    <tr>
+      <td>${esc(label)}${note ? `<span class="block text-xs text-slate-500">${esc(note)}</span>` : ''}</td>
+      <td class="num">${budget == null ? dash : money.format(budget)}</td>
+      <td class="num">${money.format(value)}</td>
+      <td class="num">${budget == null || Math.abs(value - budget) < 0.5 ? dash
+        : `<span class="${value > budget ? 'variance-over' : 'variance-under'}">${value > budget ? '+' : '−'}${money.format(Math.abs(value - budget))}</span>`}</td>
+    </tr>`;
+  const total = f.total + fin.interest;
+  $('#finance-forecast').innerHTML = `
+    <table class="data-table">
+      <thead><tr><th>Cost</th><th class="num">Budget</th><th class="num">Forecast</th><th class="num">Difference</th></tr></thead>
+      <tbody>
+        ${line('Contracts', contractBudget, f.contracts, 'Each item at its budget, or what it was paid when more')}
+        ${line('Materials', materialBudget, f.materials, 'Each item at its materials budget, or what was bought when more')}
+        ${line('Approved variations', null, f.variations)}
+        ${line('Daily workers, guards and rentals', null, f.siteSoFar + f.siteToCome,
+    f.siteToCome ? `${money.format(f.siteSoFar)} so far + ${money.format(f.siteToCome)} to completion at the same rate` : 'So far')}
+        ${line('Purchases for the site', null, f.unbudgeted)}
+        ${line('Loan interest', null, fin.interest, fin.interest ? `${money.format(fin.interestSoFar)} so far` : 'No loans with a rate')}
+      </tbody>
+      <tfoot>${line('Total', f.budget, total)}</tfoot>
+    </table>`;
+}
+
+// ---------- Money in ----------
+const MONEY_IN_KINDS = {
+  employer: 'Employer payment',
+  buyer: 'Buyer payment',
+  loan: 'Loan draw',
+  own: "Client's own money",
+  partner: 'Partner',
+};
+
+async function loadMoneyIn(projectId) {
+  const { data, error } = await db.from('money_in')
+    .select('id, kind, received_on, amount, from_name, certificate_no, flat_id, interest_pct, note')
+    .eq('project_id', projectId)
+    .order('received_on');
+  if (projectId !== state.projectId) return;
+  if (error) {
+    toast(`Could not load money in: ${error.message}`, 'error');
+    return;
+  }
+  state.moneyIn = data;
+  renderFinance();
+  renderCosts(); // the monthly cash flow's money in and balance
+}
+
+function renderMoneyIn() {
+  const el = $('#finance-money-in');
+  if (!state.moneyIn.length) {
+    el.innerHTML = '<div class="empty-state">Nothing recorded yet - click Add money in.</div>';
+    return;
+  }
+  const rows = [...state.moneyIn].reverse().map((m) => {
+    const flat = state.flats.find((u) => u.id === m.flat_id);
+    const detail = [
+      m.certificate_no ? `№ ${m.certificate_no}` : '',
+      flat ? roomLabel(flat) : '',
+      m.interest_pct != null ? `${Number(m.interest_pct)}% a year` : '',
+      m.note || '',
+    ].filter(Boolean).join(' · ');
+    return `
+      <tr>
+        <td class="whitespace-nowrap">${esc(formatDate(m.received_on))}</td>
+        <td><span class="status-chip ${INCOME_KINDS.includes(m.kind) ? 'status-done' : 'status-in_progress'}">${esc(MONEY_IN_KINDS[m.kind])}</span></td>
+        <td>${esc(m.from_name || '')}${detail ? `<span class="block text-xs text-slate-500">${esc(detail)}</span>` : ''}</td>
+        <td class="num">${money.format(m.amount)}</td>
+        <td class="text-right whitespace-nowrap">
+          <button type="button" class="table-action" data-money-in-edit="${esc(m.id)}">Edit</button>
+          <button type="button" class="table-action is-danger" data-money-in-delete="${esc(m.id)}">Delete</button>
+        </td>
+      </tr>`;
+  }).join('');
+  const income = sumOf(state.moneyIn.filter((m) => INCOME_KINDS.includes(m.kind)), 'amount');
+  const all = sumOf(state.moneyIn, 'amount');
+  el.innerHTML = `
+    <table class="data-table">
+      <thead><tr><th>Received</th><th>What</th><th>From</th><th class="num">Amount</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr><td colspan="3">Total · income ${esc(money.format(income))} · funding ${esc(money.format(all - income))}</td>
+        <td class="num">${money.format(all)}</td><td></td></tr></tfoot>
+    </table>`;
+}
+
+function syncMoneyInKind() {
+  const kind = $('#money-in-kind').value;
+  $('#money-in-cert').classList.toggle('hidden', kind !== 'employer');
+  $('#money-in-flat').classList.toggle('hidden', kind !== 'buyer' || !state.flats.length);
+  $('#money-in-rate').classList.toggle('hidden', kind !== 'loan');
+  $('#money-in-from-label').textContent = { employer: 'Employer', buyer: 'Buyer', loan: 'Bank / lender', own: 'From', partner: 'Partner' }[kind];
+}
+
+function openMoneyIn(entry = null) {
+  if (!requireProject()) return;
+  const form = $('#form-money-in');
+  const f = form.elements;
+  form.reset();
+  $('#money-in-title').textContent = entry ? 'Edit money in' : 'Add money in';
+  $('#money-in-flat-select').innerHTML = '<option value="">- Not for one room -</option>'
+    + state.flats.map((u) => `<option value="${esc(u.id)}">${esc(roomLabel(u))}${u.buyer ? ` · ${esc(u.buyer)}` : ''}</option>`).join('');
+  f.id.value = entry?.id ?? '';
+  f.kind.value = entry?.kind ?? (incomeFrom(currentProject()) === 'sales' ? 'buyer' : 'employer');
+  f.received_on.value = entry?.received_on ?? todayISO();
+  f.amount.value = entry?.amount ?? '';
+  f.from_name.value = entry?.from_name ?? '';
+  f.certificate_no.value = entry?.certificate_no ?? '';
+  f.flat_id.value = entry?.flat_id ?? '';
+  f.interest_pct.value = entry?.interest_pct ?? '';
+  f.note.value = entry?.note ?? '';
+  syncMoneyInKind();
+  showFormError(form, '');
+  openModal('modal-money-in');
+}
+
+async function saveMoneyIn(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const btn = $('[type=submit]', form);
+  const fd = new FormData(form);
+  const kind = fd.get('kind');
+  const amount = Number(fd.get('amount'));
+  if (!(amount > 0)) {
+    showFormError(form, 'Enter the amount received.');
+    return;
+  }
+  const id = fd.get('id');
+  const row = {
+    kind,
+    received_on: fd.get('received_on'),
+    amount,
+    from_name: fd.get('from_name').trim() || null,
+    certificate_no: kind === 'employer' ? fd.get('certificate_no').trim() || null : null,
+    flat_id: kind === 'buyer' ? fd.get('flat_id') || null : null,
+    interest_pct: kind === 'loan' ? numOrNull(fd.get('interest_pct')) : null,
+    note: fd.get('note').trim() || null,
+  };
+  showFormError(form, '');
+  setBusy(btn, true);
+  const { error } = id
+    ? await db.from('money_in').update(row).eq('id', id)
+    : await db.from('money_in').insert({ ...row, project_id: state.projectId });
+  setBusy(btn, false);
+  if (error) {
+    showFormError(form, error.message);
+    return;
+  }
+  closeModal('modal-money-in');
+  toast(id ? 'Money in updated.' : 'Money in recorded.', 'success');
+  loadMoneyIn(state.projectId);
+}
+
+async function onMoneyInClick(e) {
+  const edit = e.target.closest('[data-money-in-edit]');
+  if (edit) return openMoneyIn(state.moneyIn.find((m) => m.id === edit.dataset.moneyInEdit));
+  const del = e.target.closest('[data-money-in-delete]');
+  if (!del) return;
+  const m = state.moneyIn.find((x) => x.id === del.dataset.moneyInDelete);
+  if (!m || !confirm(`Delete ${MONEY_IN_KINDS[m.kind]} of ${money.format(m.amount)} (${formatDate(m.received_on)})?`)) return;
+  const { error } = await db.from('money_in').delete().eq('id', m.id);
+  if (error) {
+    toast(`Could not delete: ${error.message}`, 'error');
+    return;
+  }
+  toast('Money in deleted.', 'success');
+  loadMoneyIn(state.projectId);
 }
 
 // Contract: each item's price against its cost, the losing ones in red.
@@ -4678,7 +4992,7 @@ const variationStatus = (key) => VARIATION_STATUSES[key] ?? key;
 async function loadVariations(projectId) {
   const { data, error } = await db
     .from('variations')
-    .select('id, ref, title, description, description_en, contractor_id, instructed_on, status, amount, days_claimed, decided_on')
+    .select('id, ref, title, description, description_en, contractor_id, instructed_on, status, amount, employer_amount, days_claimed, decided_on')
     .eq('project_id', projectId)
     .order('instructed_on', { ascending: false });
   if (projectId !== state.projectId) return;
@@ -4771,6 +5085,9 @@ function openVariationModal(variation = null) {
   f.title.value = variation?.title ?? '';
   f.amount.value = Number(variation?.amount) || '';
   f.days_claimed.value = Number(variation?.days_claimed) || '';
+  f.employer_amount.value = Number(variation?.employer_amount) || '';
+  // Only a project built for an employer is paid for its changes.
+  $('#variation-employer').classList.toggle('hidden', incomeFrom(currentProject()) !== 'contract');
   f.decided_on.value = variation?.decided_on ?? '';
   f.description.value = variation?.description ?? '';
   f.description_en.value = variation?.description_en ?? '';
@@ -4808,6 +5125,7 @@ async function saveVariation(e) {
     status,
     amount:         Number(fd.get('amount') || 0),
     days_claimed:   parseInt(fd.get('days_claimed'), 10) || 0,
+    employer_amount: numOrNull(fd.get('employer_amount')),
     decided_on:     decided ? (fd.get('decided_on') || todayISO()) : null,
   };
   if (row.decided_on && row.decided_on < row.instructed_on) {
@@ -5075,7 +5393,23 @@ function loadSheetJs() {
   return sheetJs;
 }
 
-const TEMPLATE_HEADERS = ['Activity - ქართული', 'Activity - English', 'Start', 'Finish'];
+const TEMPLATE_HEADERS = ['Activity - ქართული', 'Activity - English', 'Start', 'Finish',
+  'Quantity', 'Unit', 'Rate', 'Contract budget', 'Materials budget', "Employer's price"];
+// The money columns of the timetable sheet: column heading → task field.
+// An empty cell leaves the item's value as it is.
+const MONEY_COLUMNS = [
+  { field: 'quantity', re: /quantity|რაოდ/, label: 'quantity' },
+  { field: 'unit', re: /^unit$|ერთეული$/, label: 'unit', text: true },
+  { field: 'rate', re: /^rate|ერთეულის ფასი|განფასება/, label: 'rate' },
+  { field: 'material_budget', re: /material|მასალ/, label: 'materials budget' },
+  { field: 'budget', re: /contract budget|^budget|კონტრაქტის ბიუჯეტი|^ბიუჯეტი/, label: 'contract budget' },
+  { field: 'employer_price', re: /employer|დამკვეთის ფასი/, label: "employer's price" },
+];
+// A number cell: '' when empty (leave as is), NaN when not a number.
+const cellNumber = (v) => {
+  const text = String(v ?? '').trim().replace(/\s/g, '').replace(',', '.');
+  return text === '' ? '' : Number(text);
+};
 
 /** The template, filled with the timetable as it stands, so dates can be changed there too. */
 async function downloadTemplate() {
@@ -5089,14 +5423,16 @@ async function downloadTemplate() {
   }
   // Excel counts days from 30 Dec 1899; a serial with a date format shows as a date.
   const serial = (iso) => Date.UTC(...iso.split('-').map((n, i) => Number(n) - (i === 1 ? 1 : 0))) / 86_400_000 + 25_569;
+  const num = (v) => (v == null || v === '' || Number(v) === 0 ? '' : Number(v));
   const rows = state.tasks.map((t) => [
     t.name_ka ?? '',
     t.name_ka && t.name === t.name_ka ? '' : t.name,
     { t: 'n', v: serial(t.planned_start), z: 'dd.mm.yyyy' },
     { t: 'n', v: serial(t.planned_finish), z: 'dd.mm.yyyy' },
+    num(t.quantity), t.unit ?? '', num(t.rate), num(t.budget), num(t.material_budget), num(t.employer_price),
   ]);
   const sheet = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS, ...rows]);
-  sheet['!cols'] = [{ wch: 45 }, { wch: 45 }, { wch: 12 }, { wch: 12 }];
+  sheet['!cols'] = [{ wch: 45 }, { wch: 45 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, 'Timetable');
   const project = currentProject();
@@ -5185,6 +5521,13 @@ async function parseWorkbook(buffer) {
 
   const rows = grid.slice(hasHeader ? 1 : 0);
   const order = dateOrder(rows.flatMap((row) => [row[start], row[finish]]));
+  // Money columns, found by their headings (a sheet without headings has none).
+  const used = new Set([ka, en, name, start, finish]);
+  const moneyAt = hasHeader ? MONEY_COLUMNS.map((m) => {
+    const i = heads.findIndex((h, j) => !used.has(j) && m.re.test(h));
+    if (i >= 0) used.add(i);
+    return { ...m, i };
+  }).filter((m) => m.i >= 0) : [];
   return rows.map((row) => {
     let nameKa = ka >= 0 ? String(row[ka] ?? '').trim() : '';
     let nameEn = en >= 0 ? String(row[en] ?? '').trim() : '';
@@ -5200,11 +5543,26 @@ async function parseWorkbook(buffer) {
     // A blank date is null - left as it is on the timetable - and one that
     // can't be read is ''.
     const date = (v) => (String(v ?? '').trim() ? cellDate(v, order) : null);
+    const money = {};
+    const unreadable = [];
+    for (const m of moneyAt) {
+      if (m.text) {
+        const t = String(row[m.i] ?? '').trim();
+        if (t) money[m.field] = t;
+        continue;
+      }
+      const v = cellNumber(row[m.i]);
+      if (v === '') continue;
+      if (Number.isFinite(v) && v >= 0) money[m.field] = v;
+      else unreadable.push(m.label);
+    }
     return {
       name: nameEn || nameKa,
       nameKa: georgianOnly ? nameEn : nameKa || null,
       start: date(row[start]),
       finish: date(row[finish]),
+      money,
+      unreadable,
       level: 1,
     };
   }).filter((r) => r.name);
@@ -5274,10 +5632,27 @@ async function onImportFile(e) {
     const problem = t.start === '' || t.finish === '' ? 'Dates not readable - skipped'
       : !start || !finish ? 'New activity needs both dates - skipped'
       : finish < start ? 'Finish is before start - skipped'
+      : t.unreadable?.length ? `Not a number: ${t.unreadable.join(', ')} - skipped`
       : '';
-    const same = match && match.planned_start === start && match.planned_finish === finish;
+    const money = { ...(t.money ?? {}) };
+    // Quantity × rate with no budget written: the budget is what they make.
+    if (money.budget == null && (money.quantity != null || money.rate != null)) {
+      const q = money.quantity ?? match?.quantity;
+      const r = money.rate ?? match?.rate;
+      if (q != null && r != null) money.budget = Math.round(Number(q) * Number(r) * 100) / 100;
+    }
+    // On an item already there: only what the sheet changes.
+    const changes = {};
+    if (match) {
+      if (match.planned_start !== start) changes.planned_start = start;
+      if (match.planned_finish !== finish) changes.planned_finish = finish;
+      for (const [field, v] of Object.entries(money)) {
+        if (String(v) !== String(match[field] ?? '') && !(Number(v) === Number(match[field] ?? 0) && typeof v === 'number')) changes[field] = v;
+      }
+    }
+    const same = match && !Object.keys(changes).length;
     return {
-      ...t, start, finish, match, same, problem, bad: Boolean(problem),
+      ...t, start, finish, money, changes, match, same, problem, bad: Boolean(problem),
       checked: !problem && !same && !t.summary && !t.milestone,
     };
   });
@@ -5300,14 +5675,24 @@ async function onImportFile(e) {
             <td class="whitespace-nowrap">${dateCell(r.finish)}</td>
             <td class="whitespace-nowrap text-xs">${r.bad ? `<span class="variance-over">${r.problem}</span>`
               : !r.match ? '<span class="text-emerald-400">New</span>'
-              : r.same ? '<span class="text-slate-500">Already there, same dates</span>'
-              : `<span class="text-amber-400">Dates change</span> <span class="text-slate-500">from ${esc(formatDate(r.match.planned_start))} → ${esc(formatDate(r.match.planned_finish))}</span>`}</td>
+              : r.same ? '<span class="text-slate-500">Already there, nothing to change</span>'
+              : importChangeText(r)}</td>
           </tr>`).join('')}
       </tbody>
     </table>`;
   showFormError(form, '');
   updateImportCount();
   openModal('modal-import');
+}
+
+// What an import changes on an item already on the timetable, in words.
+function importChangeText(r) {
+  const dates = 'planned_start' in r.changes || 'planned_finish' in r.changes;
+  const money = MONEY_COLUMNS.filter((m) => m.field in r.changes).map((m) => m.label);
+  return [
+    dates ? `<span class="text-amber-400">Dates change</span> <span class="text-slate-500">from ${esc(formatDate(r.match.planned_start))} → ${esc(formatDate(r.match.planned_finish))}</span>` : '',
+    money.length ? `<span class="text-amber-400">Updates ${esc(money.join(', '))}</span>` : '',
+  ].filter(Boolean).join('<br>');
 }
 
 function updateImportCount() {
@@ -5317,7 +5702,7 @@ function updateImportCount() {
   const moved = picked.length - added;
   const bad = importRows.filter((r) => r.bad).length;
   $('#import-summary').textContent = `${importRows.length} activities in the file. Ticked: ${added} new`
-    + `${moved ? `, ${moved} with new dates` : ''}.`
+    + `${moved ? `, ${moved} to update` : ''}.`
     + `${bad ? ` ${bad} skipped - see the red notes (write dates like 05.01.2026).` : ''}`;
   $('[type=submit]', $('#form-import')).disabled = !picked.length;
 }
@@ -5335,15 +5720,10 @@ async function saveImport(e) {
     name_ka: r.nameKa ?? (isGeorgian(r.name) ? r.name : null),
     planned_start: r.start,
     planned_finish: r.finish,
+    ...r.money,
   }));
-  // Every not-null column travels with an upsert, unchanged (see setBaseline).
-  const updates = picked.filter((r) => r.match).map((r) => ({
-    id: r.match.id,
-    project_id: state.projectId,
-    name: r.match.name,
-    planned_start: r.start,
-    planned_finish: r.finish,
-  }));
+  // Each item already there gets only what the sheet changed on it.
+  const updates = picked.filter((r) => r.match);
 
   showFormError(form, '');
   setBusy(btn, true, inserts.length ? 'Translating…' : 'Importing…');
@@ -5351,7 +5731,7 @@ async function saveImport(e) {
   btn.textContent = 'Importing…';
   const results = await Promise.all([
     inserts.length ? db.from('schedule_tasks').insert(inserts) : {},
-    updates.length ? db.from('schedule_tasks').upsert(updates, { onConflict: 'id' }) : {},
+    ...updates.map((r) => db.from('schedule_tasks').update(r.changes).eq('id', r.match.id)),
   ]);
   setBusy(btn, false);
   const failed = results.find((r) => r.error);
@@ -5363,7 +5743,7 @@ async function saveImport(e) {
   closeModal('modal-import');
   toast([
     inserts.length ? `${inserts.length} activit${inserts.length === 1 ? 'y' : 'ies'} added` : '',
-    updates.length ? `${updates.length} rescheduled` : '',
+    updates.length ? `${updates.length} updated` : '',
   ].filter(Boolean).join(', ') + (untranslated
     ? ` - in one language only, Gemini couldn't translate them: ${untranslated}`
     : '.'), untranslated ? 'error' : 'success');
@@ -5374,7 +5754,8 @@ async function saveImport(e) {
 // Rooms from an Excel sheet: the template comes filled with the rooms as they
 // stand, and a room already there (same block and number) is updated.
 // =============================================================
-const ROOM_HEADERS = ['Block', 'Floor', 'Room no.', 'Type', 'Area m²', 'Status', 'Notes'];
+const ROOM_HEADERS = ['Block', 'Floor', 'Room no.', 'Type', 'Area m²', 'Status', 'Notes',
+  'Sale status', 'Asking price', 'Sale price', 'Buyer', 'Sold on'];
 let roomImportRows = [];
 
 async function downloadRoomsTemplate() {
@@ -5389,9 +5770,12 @@ async function downloadRoomsTemplate() {
   const rows = state.flats.map((u) => [
     u.block || '', u.floor, u.flat_number, u.unit_type || '',
     u.area_m2 != null ? Number(u.area_m2) : '', UNIT_STATUSES[u.status] ?? '', u.notes || '',
+    SALE_STATUSES[u.sale_status ?? 'for_sale'] ?? '', u.asking_price != null ? Number(u.asking_price) : '',
+    u.sale_price != null ? Number(u.sale_price) : '', u.buyer || '', u.sold_on ? formatDate(u.sold_on) : '',
   ]);
   const sheet = XLSX.utils.aoa_to_sheet([ROOM_HEADERS, ...rows]);
-  sheet['!cols'] = [{ wch: 8 }, { wch: 7 }, { wch: 10 }, { wch: 14 }, { wch: 10 }, { wch: 13 }, { wch: 40 }];
+  sheet['!cols'] = [{ wch: 8 }, { wch: 7 }, { wch: 10 }, { wch: 14 }, { wch: 10 }, { wch: 13 }, { wch: 40 },
+    { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 24 }, { wch: 12 }];
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, 'Rooms');
   const project = currentProject();
@@ -5413,13 +5797,17 @@ async function parseRoomsWorkbook(buffer) {
   const col = (re) => heads.findIndex((h) => re.test(h));
   const at = {
     block: col(/block|ბლოკ/), floor: col(/floor|სართ/), number: col(/room|no\b|number|ოთახ|ნომ/),
-    type: col(/type|ტიპ/), area: col(/area|m²|m2|ფართ/), status: col(/status|სტატ/), notes: col(/note|შენიშ/),
+    type: col(/type|ტიპ/), area: col(/area|m²|m2|ფართ/), status: heads.findIndex((h) => /status|სტატ/.test(h) && !/sale|გაყიდ/.test(h)),
+    notes: col(/note|შენიშ/), sale: col(/sale status|გაყიდვის სტატ/), asking: col(/asking|მოთხოვნ/),
+    price: col(/^sale price|გაყიდვის ფასი/), buyer: col(/buyer|მყიდველ/), sold: col(/sold|გაყიდვის თარ/),
   };
   const hasHeader = at.floor >= 0 && at.number >= 0;
   if (!hasHeader) Object.assign(at, { block: 0, floor: 1, number: 2, type: 3, area: 4, status: 5, notes: 6 });
   const cell = (row, i) => (i >= 0 ? String(row[i] ?? '').trim() : '');
   const types = UNIT_TYPES.map((t) => ({ value: t, label: t }));
   const statuses = Object.entries(UNIT_STATUSES).map(([value, label]) => ({ value, label }));
+  const saleStatuses = Object.entries(SALE_STATUSES).map(([value, label]) => ({ value, label }));
+  const order = dateOrder(grid.slice(1).map((row) => row[at.sold]));
 
   return grid.slice(hasHeader ? 1 : 0).map((row) => {
     const number = cell(row, at.number);
@@ -5436,6 +5824,20 @@ async function parseRoomsWorkbook(buffer) {
     const areaText = cell(row, at.area).replace(',', '.');
     const area = areaText === '' ? null : Number(areaText);
     if (areaText !== '' && !(area >= 0)) problems.push('area is not a number');
+    // The sale: an empty cell leaves that detail of the room as it is.
+    const saleText = cell(row, at.sale);
+    const saleStatus = pickFrom(saleText, saleStatuses);
+    const money = (i, what) => {
+      const v = cellNumber(i >= 0 ? row[i] : '');
+      if (v === '') return null;
+      if (!(v >= 0)) { problems.push(`${what} is not a number`); return null; }
+      return v;
+    };
+    const asking = money(at.asking, 'asking price');
+    const price = money(at.price, 'sale price');
+    const soldText = cell(row, at.sold);
+    const soldOn = soldText ? cellDate(at.sold >= 0 ? row[at.sold] : '', order) : null;
+    if (soldText && !soldOn) problems.push('sold on is not a date');
     return {
       block: cell(row, at.block),
       floor,
@@ -5445,7 +5847,13 @@ async function parseRoomsWorkbook(buffer) {
       area_m2: areaText === '' ? null : area,
       status: statusText ? status ?? undefined : null,
       notes: cell(row, at.notes) || null,
-      notes_ignored: [typeText && !unitType ? `type "${typeText}"` : '', statusText && !status ? `status "${statusText}"` : '']
+      sale_status: saleText ? saleStatus ?? undefined : null,
+      asking_price: asking,
+      sale_price: price,
+      buyer: cell(row, at.buyer) || null,
+      sold_on: soldOn || null,
+      notes_ignored: [typeText && !unitType ? `type "${typeText}"` : '', statusText && !status ? `status "${statusText}"` : '',
+        saleText && !saleStatus ? `sale status "${saleText}"` : '']
         .filter(Boolean),
       problems,
     };
@@ -5481,9 +5889,9 @@ async function onRoomsImportFile(e) {
     const changes = {};
     if (match) {
       if (r.floor !== match.floor && Number.isInteger(r.floor)) changes.floor = r.floor;
-      for (const field of ['unit_type', 'area_m2', 'status', 'notes']) {
+      for (const field of ['unit_type', 'area_m2', 'status', 'notes', 'sale_status', 'asking_price', 'sale_price', 'buyer', 'sold_on']) {
         const v = r[field];
-        if (v != null && String(v) !== String(match[field] ?? '')) changes[field] = v;
+        if (v != null && String(v) !== String(match[field] ?? '') && !(typeof v === 'number' && Number(match[field]) === v)) changes[field] = v;
       }
     }
     const bad = r.problems.length > 0;
@@ -5491,7 +5899,10 @@ async function onRoomsImportFile(e) {
     return { ...r, match, changes, bad, same, checked: !bad && !same };
   });
 
-  const label = { floor: 'floor', unit_type: 'type', area_m2: 'area', status: 'status', notes: 'notes' };
+  const label = {
+    floor: 'floor', unit_type: 'type', area_m2: 'area', status: 'status', notes: 'notes',
+    sale_status: 'sale', asking_price: 'asking price', sale_price: 'sale price', buyer: 'buyer', sold_on: 'sold on',
+  };
   $('#rooms-import-title').textContent = `Import rooms - ${file.name}`;
   $('#rooms-import-list').innerHTML = `
     <table class="data-table">
@@ -5546,6 +5957,11 @@ async function saveRoomsImport(e) {
     area_m2: r.area_m2,
     status: r.status ?? 'not_started',
     notes: r.notes,
+    sale_status: r.sale_status ?? 'for_sale',
+    asking_price: r.asking_price,
+    sale_price: r.sale_price,
+    buyer: r.buyer,
+    sold_on: r.sold_on,
     stage_status: {},
   }));
   const updates = picked.filter((r) => r.match);
@@ -5838,6 +6254,7 @@ function projectReportArgs(project) {
     materials: state.materials,
     work: state.work,
     progress: state.progress ?? scheduleProgress([], todayISO()),
+    moneyIn: state.moneyIn,
     // The report is in the project's own currency; the interactive one can
     // switch, at the National Bank rate given here.
     money: moneyOwn,
@@ -5845,36 +6262,33 @@ function projectReportArgs(project) {
   };
 }
 
-/**
- * Builds the project report and saves it as the PDF or Word file picked in its
- * popup, without opening a preview.
- */
+/** Builds the project report and opens it to read; downloading is done from there. */
 async function exportProjectReport(e) {
   e.preventDefault();
   if (exporting || !requireProject()) return;
   const form = e.currentTarget;
-  const btn = e.submitter ?? $('[value=html]', form); // Enter: the interactive report
-  // Word: its pages are Word's to lay out, and can be moved by hand.
-  const word = btn.value === 'word';
-  const html = btn.value === 'html'; // one web page, with a pop-up for each room
+  const btn = $('[type=submit]', form);
   const label = btn.querySelector('span') ?? btn;
   const original = label.textContent;
-
   exporting = true;
-  $$('[type=submit]', form).forEach((b) => { b.disabled = true; });
+  btn.disabled = true;
   label.textContent = 'Building…';
-  toast('Building the project report…');
-
+  showFormError(form, '');
   try {
     const project = currentProject();
     const page = await buildProjectReport(projectReportArgs(project));
-    await downloadProjectReport(page, project, { word, html });
-    closeModal('modal-project-report');
+    const html = await interactiveReportHtml(page, project);
+    openPreview({
+      title: `Project Report - ${project.name}`,
+      html,
+      download: { label: 'Download .html', run: () => downloadProjectReport(page, project, { html: true }) },
+      word: () => downloadProjectReport(page, project, { word: true }),
+    });
   } catch (err) {
-    toast(err.message || 'Could not build the report.', 'error');
+    showFormError(form, err.message || 'Could not build the report.');
   } finally {
     exporting = false;
-    $$('[type=submit]', form).forEach((b) => { b.disabled = false; });
+    btn.disabled = false;
     label.textContent = original;
   }
 }
@@ -5917,8 +6331,10 @@ async function exportArchive() {
       progress: state.progress ?? scheduleProgress([], today),
       cost,
       finance: financePosition({
-        project, tasks: state.tasks, rooms: state.flats, variations: state.variations, materials: state.materials, cost,
+        project, tasks: state.tasks, rooms: state.flats, variations: state.variations, materials: state.materials,
+        payments: state.payments, siteCosts: state.siteCosts, moneyIn: state.moneyIn, today,
       }),
+      moneyIn: state.moneyIn,
       usdRate: usdRate ? { rate: usdRate, date: usdRateDate } : null,
       reportHtml,
       XLSX,
@@ -5945,15 +6361,15 @@ async function exportArchive() {
   }
 }
 
-// The daily report of any day - a client may ask for last Tuesday's.
-function openDailyReportModal() {
-  if (!requireProject()) return;
+// The daily report of any day - a client may ask for last Tuesday's. The day
+// starts at today whenever the Reports page opens on a new project.
+function prepareDailyReport() {
   const form = $('#form-daily-report');
-  form.elements.date.value = todayISO();
   form.elements.date.max = todayISO();
+  if (!form.elements.date.value || form.dataset.project !== state.projectId) form.elements.date.value = todayISO();
+  form.dataset.project = state.projectId ?? '';
   showFormError(form, '');
   updateDailyReportHint();
-  openModal('modal-daily-report');
 }
 
 function updateDailyReportHint() {
@@ -5972,30 +6388,91 @@ async function exportDailyReport(e) {
     showFormError(form, 'Pick the day.');
     return;
   }
-  const btn = e.submitter ?? $('[value=pdf]', form);
-  const word = btn.value === 'word';
+  const btn = $('[type=submit]', form);
   const label = btn.querySelector('span') ?? btn;
   const original = label.textContent;
-  const project = state.projects.find((p) => p.id === state.projectId);
+  const project = currentProject();
   exporting = true;
-  $$('[type=submit]', form).forEach((b) => { b.disabled = true; });
+  btn.disabled = true;
   label.textContent = 'Generating…';
-  toast(`Building the report of ${formatDate(date)}…`);
-
+  showFormError(form, '');
   try {
-    await generateDailyReport({ db, project, date, word });
-    closeModal('modal-daily-report');
-    toast('Daily report downloaded.', 'success');
+    const built = await buildDailyReport({ db, project, date });
+    openPreview({
+      title: `Daily Report - ${project.name} - ${formatDate(date)}`,
+      html: await pagePreviewHtml(built.page),
+      download: { label: 'Download PDF', run: () => saveDailyReport(built) },
+      word: () => saveDailyReport(built, { word: true }),
+    });
   } catch (err) {
     showFormError(form, err.message || 'Could not generate the report.');
   } finally {
     exporting = false;
-    $$('[type=submit]', form).forEach((b) => { b.disabled = false; });
+    btn.disabled = false;
+    label.textContent = original;
+  }
+}
+
+// ---------- Report preview ----------
+// A report opens full screen to be read first; from its bar it is printed
+// (or saved as PDF from the print window), or downloaded as a file.
+let previewing = null; // { download: { label, run }, word }
+
+/** A built report page as a page of its own, styled as in the app, fitted to a phone. */
+async function pagePreviewHtml(page) {
+  const css = await (await fetch('css/styles.css')).text();
+  return `<!doctype html>
+<html lang="ka"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Georgian:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>${css}</style>
+<style>
+  body { margin: 0; padding: 24px 12px; background: #eef2f6; font-family: Inter, 'Noto Sans Georgian', system-ui, sans-serif; }
+  .pdf-page { margin: 0 auto; box-shadow: 0 2px 12px rgba(15, 23, 42, 0.12); }
+  @media print { body { padding: 0; background: #fff; } .pdf-page { box-shadow: none; } }
+</style></head>
+<body>${page.outerHTML}
+<script>
+  // A phone is narrower than the sheet: shrink it to fit rather than scroll sideways.
+  const sheet = document.querySelector('.pdf-page');
+  const fit = () => { sheet.style.zoom = ''; const w = sheet.offsetWidth, room = document.documentElement.clientWidth - 24; if (w > room) sheet.style.zoom = String(room / w); };
+  addEventListener('resize', fit); addEventListener('load', fit); fit();
+<\/script>
+</body></html>`;
+}
+
+function openPreview({ title, html, download, word }) {
+  previewing = { download, word };
+  $('#preview-title').textContent = title;
+  $('#preview-download').textContent = download.label;
+  $('#preview-frame').srcdoc = html;
+  openModal('modal-preview');
+}
+
+async function onPreviewAction(e) {
+  const btn = e.target.closest('[data-preview-action]');
+  if (!btn || !previewing) return;
+  const action = btn.dataset.previewAction;
+  if (action === 'print') {
+    $('#preview-frame').contentWindow?.print();
+    return;
+  }
+  const label = btn.querySelector('span') ?? btn;
+  const original = label.textContent;
+  btn.disabled = true;
+  label.textContent = action === 'word' ? 'Making Word…' : 'Downloading…';
+  try {
+    await (action === 'word' ? previewing.word() : previewing.download.run());
+    toast('Downloaded.', 'success');
+  } catch (err) {
+    toast(err.message || 'Could not download the report.', 'error');
+  } finally {
+    btn.disabled = false;
     label.textContent = original;
   }
 }
 
 // =============================================================
+// Today's dollar rate// =============================================================
 // Today's dollar rate - the National Bank of Georgia's official USD → GEL
 // rate, shown in the top bar. Read straight from the bank (it allows
 // browsers to), once a day: the day's answer is kept in this browser, so
@@ -6196,12 +6673,21 @@ $('#form-edit-project').addEventListener('submit', saveEditProject);
 $('#edit-income-from').addEventListener('change', syncIncomeFields);
 $('#edit-closed-how').addEventListener('change', syncClosedFields);
 $('#form-delete-project').addEventListener('submit', confirmDeleteProject);
-$('#btn-report-daily').addEventListener('click', openDailyReportModal);
 $('#form-daily-report').addEventListener('submit', exportDailyReport);
 $('#form-daily-report').addEventListener('input', updateDailyReportHint);
-$('#btn-report-project').addEventListener('click', () => requireProject() && openModal('modal-project-report'));
 $('#form-project-report').addEventListener('submit', exportProjectReport);
+$('#modal-preview').addEventListener('click', onPreviewAction);
+// The preview is left empty once closed, so a big report is not kept in memory.
+$('#modal-preview').addEventListener('close', () => { $('#preview-frame').srcdoc = ''; previewing = null; });
 $('#btn-archive').addEventListener('click', exportArchive);
+$('#btn-add-money-in').addEventListener('click', () => openMoneyIn());
+$('#form-money-in').addEventListener('submit', saveMoneyIn);
+$('#money-in-kind').addEventListener('change', syncMoneyInKind);
+$('#finance-money-in').addEventListener('click', onMoneyInClick);
+$('#dash-photos').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-latest-photo]');
+  if (b) openPhotoViewer(latestPhotos.full.filter(Boolean), Number(b.dataset.latestPhoto));
+});
 
 if (db) {
   $('#form-login').addEventListener('submit', signIn);
