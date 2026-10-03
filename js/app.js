@@ -19,6 +19,8 @@ import {
   closeTasks, scheduleDay,
 } from './schedule.js';
 import { ka, roomLabel } from './bilingual.js';
+import { isKa, setLang, startTranslating, dateLocale } from './i18n.js';
+import { initMobile } from './mobile.js';
 import {
   MAX_CONTRACT_MB, fetchContracts, uploadContract, contractUrl, deleteContracts, deleteProjectContracts,
 } from './contracts.js';
@@ -117,7 +119,7 @@ const moneyOwn = { format: (n) => formatIn(projectCurrency()).format(Number(n)) 
 
 const todayISO = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD, local time
 
-const formatDate = (iso) => new Date(`${iso}T00:00`).toLocaleDateString(undefined, {
+const formatDate = (iso) => new Date(`${iso}T00:00`).toLocaleDateString(dateLocale, {
   day: 'numeric', month: 'short', year: 'numeric',
 });
 
@@ -245,6 +247,9 @@ function showSignedIn(user) {
 }
 
 function handleSession(session) {
+  // Sign-in is known now: show the page (hidden until then, so nobody sees
+  // the dashboard for a moment before the sign-in box covers it).
+  document.body.classList.remove('auth-pending');
   const user = session?.user ?? null;
   if (user && user.id === state.user?.id) return; // token refresh, same user
 
@@ -264,10 +269,9 @@ function handleSession(session) {
   }
 }
 
-// The sign-in form's three ways in.
+// The sign-in form's two ways in. Accounts are made only by invitation.
 const LOGIN_MODES = {
   signin: { title: 'Sign in', sub: 'Use your account to continue.', submit: 'Sign in' },
-  signup: { title: 'Create account', sub: 'You will get an email to confirm it. Projects appear once the administrator shares them with you.', submit: 'Create account' },
   reset:  { title: 'Forgot password', sub: 'We will email you a link to choose a new password.', submit: 'Send the link' },
 };
 
@@ -278,12 +282,9 @@ function setLoginMode(mode) {
   $('#login-title').textContent = m.title;
   $('#login-sub').textContent = m.sub;
   $('#login-submit').textContent = m.submit;
-  $('#login-name').classList.toggle('hidden', mode !== 'signup');
   $('#login-password').classList.toggle('hidden', mode === 'reset');
   form.elements.password.required = mode !== 'reset';
-  form.elements.password.autocomplete = mode === 'signup' ? 'new-password' : 'current-password';
-  $$('[data-login-mode]', form).forEach((b) => b.classList.toggle('hidden', b.dataset.loginMode === mode
-    || (mode !== 'signin' && b.dataset.loginMode !== 'signin')));
+  $$('[data-login-mode]', form).forEach((b) => b.classList.toggle('hidden', b.dataset.loginMode === mode));
   $('#login-note').classList.add('hidden');
   showFormError(form, '');
 }
@@ -307,20 +308,7 @@ async function signIn(e) {
   $('#login-note').classList.add('hidden');
   setBusy(btn, true, mode === 'signin' ? 'Signing in…' : 'Sending…');
   let error;
-  if (mode === 'signup') {
-    const name = fd.get('name').trim();
-    if (!name) {
-      setBusy(btn, false);
-      showFormError(form, 'Enter your name.');
-      return;
-    }
-    ({ error } = await db.auth.signUp({
-      email,
-      password: fd.get('password'),
-      options: { emailRedirectTo: appUrl(), data: { full_name: name, name, display_name: name } },
-    }));
-    if (!error) note(`Check ${email} for a link to confirm your account, then sign in.`);
-  } else if (mode === 'reset') {
+  if (mode === 'reset') {
     ({ error } = await db.auth.resetPasswordForEmail(email, { redirectTo: appUrl() }));
     if (!error) note(`If ${email} has an account, a link to choose a new password is on its way.`);
   } else {
@@ -384,6 +372,7 @@ async function signOut() {
 }
 
 function showSetupNotice() {
+  document.body.classList.remove('auth-pending');
   $('#btn-new-project').disabled = true;
   $('#projects-container').textContent = 'Add your Supabase URL and anon key in js/config.js to get started.';
 }
@@ -2438,7 +2427,7 @@ function syncRoomsTick(form) {
 // =============================================================
 const qtyFormat = spaced(new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }));
 const sumOf = (items, key) => items.reduce((sum, i) => sum + Number(i[key] || 0), 0);
-const monthLabel = (ym) => new Date(`${ym}-01T00:00`).toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+const monthLabel = (ym) => new Date(`${ym}-01T00:00`).toLocaleDateString(dateLocale, { month: 'short', year: 'numeric' });
 
 function statTile(label, value, meta, tone = '') {
   return `
@@ -6082,6 +6071,15 @@ async function loadDollarRate() {
 // =============================================================
 // Boot
 // =============================================================
+// ქართ / ENG: each button offers the other language.
+$$('[data-lang-toggle]').forEach((b) => {
+  b.textContent = isKa ? 'ENG' : 'ქართ';
+  b.title = isKa ? 'Switch to English' : 'ქართულ ენაზე გადართვა';
+  b.addEventListener('click', () => setLang(isKa ? 'en' : 'ka'));
+});
+startTranslating();
+initMobile({ openMenu: () => setSidebar(true) });
+
 loadDollarRate();
 $('#currency-switch').addEventListener('click', onCurrencySwitch);
 $('#form-contract').addEventListener('submit', saveContract);

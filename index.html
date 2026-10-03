@@ -2,8 +2,18 @@
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>CPMG PM</title>
+
+  <!-- Installable on a phone's home screen: opens full screen like an app -->
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#2563eb" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="CPMG PM" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -26,7 +36,7 @@
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 
-<body class="bg-ink-950 text-slate-200 font-sans antialiased">
+<body class="auth-pending bg-ink-950 text-slate-200 font-sans antialiased">
 
   <!-- =====================================================
        VIEW 1: PROJECT LIST (full page, no sidebar)
@@ -38,6 +48,7 @@
         <p class="font-semibold text-white">CPMG PM</p>
       </div>
       <div class="ml-auto flex items-center gap-4 text-xs text-slate-500 min-w-0">
+        <button type="button" class="lang-toggle" data-lang-toggle data-no-i18n>ქართ</button>
         <span data-user-email class="hidden sm:block truncate">Not signed in</span>
         <button data-sign-out class="hidden shrink-0 text-slate-400 hover:text-white">Sign out</button>
       </div>
@@ -134,6 +145,30 @@
     <!-- Mobile overlay -->
     <div id="sidebar-overlay" class="fixed inset-0 z-30 bg-black/60 hidden lg:hidden"></div>
 
+    <!-- Phones and portrait tablets: the main pages one thumb away; More opens the full menu -->
+    <nav class="bottom-nav" aria-label="Main pages">
+      <a href="#dashboard" data-nav="dashboard">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
+        <span>Overview</span>
+      </a>
+      <a href="#timetable" data-nav="timetable">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h2v2H3V5zm4 0h14v2H7V5zM3 11h2v2H3v-2zm4 0h14v2H7v-2zm-4 6h2v2H3v-2zm4 0h14v2H7v-2z"/></svg>
+        <span>Timetable</span>
+      </a>
+      <a href="#daily-logs" data-nav="daily-logs">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V10h14v10zM7 12h5v5H7v-5z"/></svg>
+        <span>Logs</span>
+      </a>
+      <a href="#cash-flow" data-nav="cash-flow">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8v4h2V3h-8v2h4l-6 6-4-4-8 8 2 2z"/></svg>
+        <span>Money</span>
+      </a>
+      <button type="button" data-open-menu>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/></svg>
+        <span>More</span>
+      </button>
+    </nav>
+
     <!-- ===================== MAIN COLUMN ===================== -->
     <div class="flex-1 flex flex-col min-w-0">
 
@@ -154,6 +189,7 @@
           <button type="button" data-show-currency="USD">$</button>
           <button type="button" data-show-currency="GEL">₾</button>
         </div>
+        <button type="button" class="lang-toggle" data-lang-toggle data-no-i18n>ქართ</button>
         <a id="fx-rate" class="fx-rate hidden" aria-label="National Bank of Georgia dollar rate" href="https://nbg.gov.ge/en/monetary-policy/currency" target="_blank" rel="noopener"
            title="National Bank of Georgia official rate"></a>
       </header>
@@ -698,16 +734,13 @@
 
   <!-- Sign in (cannot be dismissed) -->
   <dialog id="modal-login" class="modal modal-sm" data-locked aria-labelledby="login-title">
-    <!-- One form, three ways in: sign in, create an account, or get a reset link. -->
+    <!-- One form, two ways in: sign in, or get a link to choose a new password.
+         Accounts are made only by invitation (sign-up is off in Supabase). -->
     <form id="form-login" class="modal-body space-y-4" data-mode="signin">
       <div>
         <h2 id="login-title" class="text-lg font-semibold text-white">Sign in</h2>
         <p id="login-sub" class="text-sm text-slate-500">Use your account to continue.</p>
       </div>
-      <label id="login-name" class="show-block hidden">
-        <span class="form-label">Your name</span>
-        <input name="name" type="text" maxlength="80" autocomplete="name" class="input-dark w-full" placeholder="e.g. Davit Kartvelishvili">
-      </label>
       <label class="block">
         <span class="form-label">Email</span>
         <input name="email" type="email" required autocomplete="email" class="input-dark w-full">
@@ -719,8 +752,7 @@
       <p class="form-error hidden" data-error></p>
       <p id="login-note" class="text-sm text-emerald-400 hidden"></p>
       <button id="login-submit" type="submit" class="btn btn-primary w-full justify-center">Sign in</button>
-      <div class="flex justify-between gap-3 text-xs">
-        <button type="button" class="text-brand-400 hover:underline" data-login-mode="signup">Create account</button>
+      <div class="flex justify-end gap-3 text-xs">
         <button type="button" class="text-slate-400 hover:underline" data-login-mode="reset">Forgot password?</button>
         <button type="button" class="text-brand-400 hover:underline hidden" data-login-mode="signin">Back to sign in</button>
       </div>
