@@ -40,6 +40,8 @@ const PICTURE = [
   '.rpt-chart', '.rpt-activity', '.rpt-card', '.rpt-segbar', '.rpt-room-floor', '.rpt-type-chips',
 ].join(',');
 const HEADING = 'h1, h2, h3, .rpt-h, .rpt-sub-h';
+// Side by side on purpose (the two languages of the site notes): always a table.
+const COLUMNS = '.pdf-summary-cols';
 
 // Pictures are cut from renders of the page this tall at most. A browser hands
 // back a blank canvas past about 16 000 px, and at twice actual size that is
@@ -637,7 +639,10 @@ async function convert(el, ctx) {
     // many lines that text runs to - is one paragraph. In cells of their own
     // the badge lost its colour and the text its place beside it.
     const marked = kids.length === 2 && isMarker(kids[0]);
-    if (kids.every(textOnly) && (marked || el.getBoundingClientRect().height <= ONE_LINE_PX)) {
+    // Columns meant to stay columns - Georgian on the left, English on the
+    // right - are a table however short their text is.
+    const columns = el.matches(COLUMNS);
+    if (!columns && kids.every(textOnly) && (marked || el.getBoundingClientRect().height <= ONE_LINE_PX)) {
       return [joined(el, kids, ctx)];
     }
     return layout(el, kids, ctx);

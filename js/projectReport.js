@@ -1839,7 +1839,7 @@ export async function interactiveReportHtml(page, project) {
   .rpt .rpt-g-row[data-pop]:hover, .rpt tr[data-pop]:hover td { background: #eff6ff; }
   .rpt .rpt-col[data-pop]:hover .rpt-col-bar { background: #2563eb; }
   /* Contents, fixed above the sheet */
-  .rpt-bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+  .rpt-bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 14px;
     max-width: 798px; margin: -24px auto 16px; padding: 10px 12px; background: rgba(238, 242, 246, 0.95);
     backdrop-filter: blur(4px); border-bottom: 1px solid #e2e8f0; font-size: 12px; }
   .rpt-bar nav { display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
@@ -1879,9 +1879,7 @@ export async function interactiveReportHtml(page, project) {
 </style>
 </head>
 <body>
-<div class="rpt-bar"><nav id="rpt-nav"></nav>
-${page.fx ? '<div class="rpt-cur" id="rpt-cur" role="group" aria-label="Currency"><button type="button" data-cur="USD">$</button><button type="button" data-cur="GEL">₾</button></div>' : ''}
-</div>
+${page.fx ? '<div class="rpt-bar"><div class="rpt-cur" id="rpt-cur" role="group" aria-label="Currency"><button type="button" data-cur="USD">$</button><button type="button" data-cur="GEL">₾</button></div></div>' : ''}
 ${page.outerHTML}
 <dialog class="rpt-pop" id="room-pop"><button class="rpt-pop-close" aria-label="Close">&times;</button><div class="rpt-pop-body pdf-page rpt"></div></dialog>
 <script>(${reportViewer.toString()})(${data}, ${fx});</script>
@@ -1953,23 +1951,6 @@ function reportViewer(POPUPS, FX) {
   // Every click-able part gets a tooltip saying so.
   document.querySelectorAll('[data-pop]').forEach((el) => {
     if (!el.title) el.title = 'დაჭერით ნახავთ დეტალებს · Click for details';
-  });
-  // Contents: one link per section heading, Georgian with the English beside it.
-  const nav = document.getElementById('rpt-nav');
-  document.querySelectorAll('body > .pdf-page.rpt .rpt-h h2').forEach((h, i) => {
-    if (h.closest('.rpt-print-only')) return;
-    h.id = `s${i}`;
-    const a = document.createElement('a');
-    a.href = `#s${i}`;
-    const en = h.querySelector('em');
-    a.textContent = h.firstChild.textContent.trim();
-    if (en) {
-      const em = document.createElement('span');
-      em.className = 'le';
-      em.textContent = en.textContent;
-      a.append(em);
-    }
-    nav.append(a);
   });
   pop.querySelector('.rpt-pop-close').addEventListener('click', () => pop.close());
   pop.addEventListener('click', (e) => { if (e.target === pop) pop.close(); });

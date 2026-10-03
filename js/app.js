@@ -6443,8 +6443,11 @@ async function pagePreviewHtml(page) {
 <style>${css}</style>
 <style>
   body { margin: 0; padding: 24px 12px; background: #eef2f6; font-family: Inter, 'Noto Sans Georgian', system-ui, sans-serif; }
-  .pdf-page { margin: 0 auto; box-shadow: 0 2px 12px rgba(15, 23, 42, 0.12); }
-  @media print { body { padding: 0; background: #fff; } .pdf-page { box-shadow: none; } }
+  /* The sheet with its own margins: the PDF adds them when it saves, a browser does not. */
+  .pdf-page { box-sizing: content-box; margin: 0 auto; padding: 36px 40px 44px; border-radius: 6px;
+    box-shadow: 0 2px 12px rgba(15, 23, 42, 0.12); }
+  @media (max-width: 820px) { body { padding: 0; } .pdf-page { padding: 20px 16px 28px; border-radius: 0; } }
+  @media print { body { padding: 0; background: #fff; } .pdf-page { box-shadow: none; padding: 0; } }
 </style></head>
 <body>${page.outerHTML}
 <script>
