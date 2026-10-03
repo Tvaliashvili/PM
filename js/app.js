@@ -6,7 +6,7 @@ import {
   UNIT_TYPES, UNIT_STATUSES,
   MANPOWER_TRADES, WEATHER_OPTIONS, DELAY_CAUSES, DAY_WORKER_KEY, GUARD_KEY, EQUIPMENT_SUGGESTIONS,
   SITE_EVENT_KINDS, INCIDENT_SEVERITIES, VARIATION_STATUSES,
-  BOQ_UNITS, CONTRACTOR_TRADES,
+  BOQ_UNITS, CONTRACTOR_TRADES, INCOME_SOURCES, SALE_STATUSES,
 } from './config.js';
 import { generateDailyReport } from './pdfReport.js';
 import { buildProjectReport, downloadProjectReport } from './projectReport.js';
@@ -17,6 +17,7 @@ import {
   delayIsOngoing, delayDaysLost, delayStart, delayEnd, delayCovers, causeOf, withExtensions, dueDate, planVerdict,
 } from './schedule.js';
 import { ka, roomLabel } from './bilingual.js';
+import { itemMargin, roomIncome, salesPosition } from './finance.js';
 import {
   MAX_PHOTOS, uploadPhotos, fetchPhotos, signPhotos, photosBy, deletePhoto, deletePhotosFor, deleteProjectPhotos,
 } from './photos.js';
@@ -246,7 +247,7 @@ function showSetupNotice() {
 async function loadProjects() {
   const { data, error } = await db
     .from('projects')
-    .select('id, name, name_ka, location, location_ka, client_name, client_name_ka, total_flats, has_rooms, day_rate, guard_rate, created_at, start_date, end_date, currency, baseline_set_on, retention_pct')
+    .select('id, name, name_ka, location, location_ka, client_name, client_name_ka, total_flats, has_rooms, day_rate, guard_rate, created_at, start_date, end_date, currency, baseline_set_on, retention_pct, income_from, price_per_m2')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -307,6 +308,8 @@ const clientOf = (p) => p?.client_name || p?.client_name_ka || '';
 const locationOf = (p) => p?.location || p?.location_ka || '';
 // Sites without rooms (e.g. a stadium) hide the Rooms page and every room field.
 const hasRooms = (p) => Boolean(p?.has_rooms);
+// Where the project's income comes from: 'sales', 'contract', or null when not chosen yet.
+const incomeFrom = (p) => p?.income_from ?? null;
 
 const currentProject = () => state.projects.find((p) => p.id === state.projectId);
 
@@ -503,6 +506,7 @@ async function saveProject(e) {
       client_name_ka: fd.get('client_name_ka').trim() || null,
       currency: fd.get('currency') || DEFAULT_CURRENCY,
       has_rooms: fd.has('has_rooms'),
+      income_from: fd.get('income_from') || null,
     })
     .select('id')
     .single();
@@ -531,13 +535,19 @@ const UNIT_STATUS_CHIP = {
   finished:    'status-done',
   handed_over: 'status-handed',
 };
+const SALE_STATUS_CHIP = {
+  for_sale:     'status-pending',
+  reserved:     'status-in_progress',
+  sold:         'status-done',
+  not_for_sale: 'status-handed',
+};
 const areaFormat = spaced(new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }));
 const numOrNull = (v) => (v === '' || v == null ? null : Number(v));
 
 async function loadUnits(projectId) {
   const { data, error } = await db
     .from('flats')
-    .select('id, block, floor, flat_number, unit_type, area_m2, rooms, status, notes')
+    .select('id, block, floor, flat_number, unit_type, area_m2, rooms, status, notes, sale_status, asking_price, sale_price, buyer, sold_on')
     .eq('project_id', projectId)
     .order('block')
     .order('floor')
@@ -553,6 +563,7 @@ async function loadUnits(projectId) {
   state.flats = data.sort((a, b) => byNumber(a.block, b.block)
     || byNumber(a.floor, b.floor) || byNumber(a.flat_number, b.flat_number));
   renderUnits();
+  renderFinance(); // room prices are income
 }
 
 function renderUnits() {
@@ -604,6 +615,22 @@ function renderUnits() {
     </div>` : '';
   const totals = `<p class="floor-totals"><b>${shown.length}</b> rooms · <b>${areaFormat.format(shownArea)}</b> m²</p>`;
 
+  // A project that sells its rooms shows each one's sale and the price it counts at.
+  const selling = incomeFrom(currentProject()) === 'sales';
+  const pricePerM2 = currentProject()?.price_per_m2;
+  const saleCells = (u) => {
+    const { amount, source } = roomIncome(u, pricePerM2);
+    const status = u.sale_status ?? 'for_sale';
+    const price = source === 'kept' ? '<span class="text-slate-500">-</span>'
+      : source === 'none' ? '<span class="text-slate-500">no price</span>'
+      : source === 'sale' ? money.format(amount)
+      : `<span class="text-slate-400" title="${source === 'per_m2' ? 'Area × the project\'s price per m²' : 'Asking price'}">${money.format(amount)}</span>`;
+    return `
+      <td><span class="status-chip ${SALE_STATUS_CHIP[status]}">${esc(SALE_STATUSES[status])}</span>${
+        u.buyer ? `<span class="block text-xs text-slate-500">${esc(u.buyer)}</span>` : ''}</td>
+      <td class="num">${price}</td>`;
+  };
+
   const rows = shown.map((u) => `
     <tr>
       <td class="font-medium text-white whitespace-nowrap">${esc(u.flat_number)}</td>
@@ -612,6 +639,7 @@ function renderUnits() {
       <td>${u.unit_type ? esc(u.unit_type) : '<span class="text-slate-500">-</span>'}</td>
       <td class="num">${u.area_m2 != null ? areaFormat.format(u.area_m2) : '-'}</td>
       <td><span class="status-chip ${UNIT_STATUS_CHIP[u.status] ?? 'status-pending'}">${esc(UNIT_STATUSES[u.status] ?? u.status)}</span></td>
+      ${selling ? saleCells(u) : ''}
       <td class="max-w-[16rem] truncate text-slate-400" title="${esc(u.notes ?? '')}">${esc(u.notes ?? '')}</td>
       <td class="text-right whitespace-nowrap">
         <button type="button" class="table-action" data-unit-work="${esc(u.id)}">Work${
@@ -626,7 +654,7 @@ function renderUnits() {
       <thead>
         <tr>
           <th>Room</th>${anyBlock ? '<th>Block</th>' : ''}<th>Floor</th><th>Type</th><th class="num">Area m²</th>
-          <th>Status</th><th>Notes</th><th></th>
+          <th>Status</th>${selling ? '<th>Sale</th><th class="num">Price</th>' : ''}<th>Notes</th><th></th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -650,13 +678,45 @@ function openUnitModal(unit) {
     f.area_m2.value = unit.area_m2 ?? '';
     f.status.value = unit.status ?? 'not_started';
     f.notes.value = unit.notes ?? '';
+    f.sale_status.value = unit.sale_status ?? 'for_sale';
+    f.asking_price.value = unit.asking_price ?? '';
+    f.sale_price.value = unit.sale_price ?? '';
+    f.buyer.value = unit.buyer ?? '';
+    f.sold_on.value = unit.sold_on ?? '';
   } else {
     const last = state.flats.at(-1); // continue where the list ends
     f.block.value = last?.block ?? '';
     f.floor.value = last?.floor ?? 1;
     f.status.value = 'not_started';
+    f.sale_status.value = 'for_sale';
   }
+  // Only a project that sells what it builds has sales.
+  $('#unit-sale').classList.toggle('hidden', incomeFrom(currentProject()) !== 'sales');
+  updateUnitPriceHint();
   openModal('modal-unit');
+}
+
+// What the room counts for in the project's income, as its sale is filled in.
+function updateUnitPriceHint() {
+  const f = $('#form-unit').elements;
+  const pricePerM2 = currentProject()?.price_per_m2;
+  const room = {
+    sale_status: f.sale_status.value,
+    area_m2: numOrNull(f.area_m2.value),
+    asking_price: numOrNull(f.asking_price.value),
+    sale_price: numOrNull(f.sale_price.value),
+  };
+  const { amount, source } = roomIncome(room, pricePerM2);
+  const perM2 = room.area_m2 ? ` - ${money.format(amount / room.area_m2)} per m²` : '';
+  $('#unit-price-hint').textContent = {
+    kept: 'Not for sale: kept or given away, it adds nothing to income.',
+    sale: `Counts in income at its sale price, ${money.format(amount)}${perM2}.`,
+    asking: room.sale_status === 'sold'
+      ? `Sold with no sale price yet: counts at its asking price, ${money.format(amount)}${perM2}.`
+      : `Counts in income at its asking price, ${money.format(amount)}${perM2}.`,
+    per_m2: `No asking price: counts at area × the project's ${money.format(pricePerM2)} per m², ${money.format(amount)}.`,
+    none: 'No price yet: give it an asking price (or set a price per m² in Edit Project) for it to count in income.',
+  }[source];
 }
 
 async function saveUnit(e) {
@@ -675,6 +735,11 @@ async function saveUnit(e) {
     area_m2:     numOrNull(fd.get('area_m2')),
     status:      fd.get('status'),
     notes:       fd.get('notes').trim() || null,
+    sale_status:  fd.get('sale_status') || 'for_sale',
+    asking_price: numOrNull(fd.get('asking_price')),
+    sale_price:   numOrNull(fd.get('sale_price')),
+    buyer:        fd.get('buyer').trim() || null,
+    sold_on:      fd.get('sold_on') || null,
   };
 
   showFormError(form, '');
@@ -1004,7 +1069,7 @@ const materialsOn = (taskId) => sumOf(state.materials.filter((m) => m.task_id ==
 async function loadSchedule(projectId) {
   const [tasks, payments, delays, impacts, contractors, siteLogs, rentals, materials, sitePayments] = await Promise.all([
     db.from('schedule_tasks')
-      .select('id, name, name_ka, planned_start, planned_finish, baseline_start, baseline_finish, done, done_at, progress_pct, contractor_id, quantity, unit, rate, budget, material_budget')
+      .select('id, name, name_ka, planned_start, planned_finish, baseline_start, baseline_finish, done, done_at, progress_pct, contractor_id, quantity, unit, rate, budget, material_budget, employer_price')
       .eq('project_id', projectId)
       .order('planned_start')
       .order('planned_finish'),
@@ -1071,6 +1136,7 @@ async function loadSchedule(projectId) {
 function renderScheduleViews() {
   renderSchedule();
   renderCosts();
+  renderFinance();
   renderContractors();
   renderDelays(); // contractor names are known now
   if (!$('#modal-payments').open) return;
@@ -1262,6 +1328,7 @@ function openTaskModal(task) {
     f.rate.value = task.rate ?? '';
     f.budget.value = Number(task.budget) ? task.budget : '';
     f.material_budget.value = Number(task.material_budget) ? task.material_budget : '';
+    f.employer_price.value = Number(task.employer_price) ? task.employer_price : '';
   } else {
     // Start the day after the last item, else at the project start, else today.
     const last = state.tasks.reduce((max, t) => (t.planned_finish > max ? t.planned_finish : max), '');
@@ -1270,6 +1337,9 @@ function openTaskModal(task) {
     f.planned_finish.value = addDays(start, 6);
   }
   updateTaskDuration();
+  // Only a project built for an employer is paid by the item.
+  $('#task-income').classList.toggle('hidden', incomeFrom(currentProject()) !== 'contract');
+  updateTaskMargin();
   openModal('modal-task');
   f.name_ka.focus();
 }
@@ -1305,11 +1375,27 @@ async function onTaskNameChange(e) {
 // Dates → duration hint; quantity × rate → budget.
 function onTaskInput(e) {
   updateTaskDuration();
+  updateTaskMargin();
   if (!['quantity', 'rate'].includes(e.target.name)) return;
   const f = e.currentTarget.elements;
   const qty = parseFloat(f.quantity.value);
   const rate = parseFloat(f.rate.value);
   if (qty >= 0 && rate >= 0) f.budget.value = (Math.round(qty * rate * 100) / 100).toFixed(2);
+}
+
+// The item's margin as its prices are typed: the employer's price less its budgets.
+function updateTaskMargin() {
+  const f = $('#form-task').elements;
+  const price = Number(f.employer_price.value || 0);
+  const cost = Number(f.budget.value || 0) + Number(f.material_budget.value || 0);
+  const el = $('#task-margin');
+  if (!price) {
+    el.textContent = 'What the employer pays your client for this item. Less the contract and materials budgets, it is the item\'s margin.';
+    return;
+  }
+  const margin = price - cost;
+  el.innerHTML = `Margin: <span class="${margin < 0 ? 'variance-over' : 'variance-under'}">${esc(money.format(margin))}</span>`
+    + ` (${(margin / price * 100).toFixed(1)}% of the price)${margin < 0 ? ' - this item loses money' : ''}.`;
 }
 
 async function saveTask(e) {
@@ -1345,6 +1431,7 @@ async function saveTask(e) {
     rate:           numOrNull(fd.get('rate')),
     budget:         Number(fd.get('budget') || 0),
     material_budget: Number(fd.get('material_budget') || 0),
+    employer_price: Number(fd.get('employer_price') || 0),
   };
   if (row.planned_finish < row.planned_start) {
     showFormError(form, 'Planned finish must be on or after the planned start.');
@@ -1847,6 +1934,9 @@ function openEditProjectModal() {
   f.day_rate.value = project.day_rate ?? '';
   f.guard_rate.value = project.guard_rate ?? '';
   f.retention_pct.value = Number(project.retention_pct) || '';
+  f.income_from.value = incomeFrom(project) ?? '';
+  f.price_per_m2.value = project.price_per_m2 ?? '';
+  syncIncomeFields();
   showFormError(form, '');
   openModal('modal-edit-project');
 }
@@ -1872,6 +1962,8 @@ async function saveEditProject(e) {
     day_rate: fd.get('day_rate') === '' ? null : Number(fd.get('day_rate')),
     guard_rate: fd.get('guard_rate') === '' ? null : Number(fd.get('guard_rate')),
     retention_pct: Number(fd.get('retention_pct') || 0),
+    income_from: fd.get('income_from') || null,
+    price_per_m2: numOrNull(fd.get('price_per_m2')),
   };
   if (row.start_date && row.end_date && row.end_date < row.start_date) {
     showFormError(form, 'Planned completion must be on or after the start date.');
@@ -1894,6 +1986,13 @@ async function saveEditProject(e) {
   applyProjectHeader(project);
   renderTimeline();
   renderScheduleViews();           // amounts in the (possibly new) currency
+  renderUnits();                   // sale columns come and go with Income from
+}
+
+// A price per m² only prices rooms for sale.
+function syncIncomeFields() {
+  const f = $('#form-edit-project').elements;
+  $('#edit-price-m2').classList.toggle('hidden', f.income_from.value !== 'sales');
 }
 
 // =============================================================
@@ -2110,6 +2209,219 @@ function renderCosts() {
         </tr>
       </tfoot>
     </table>`;
+}
+
+// =============================================================
+// Finance - what the project earns against what it costs
+// Income is the employer's price for each item, or the rooms' sale prices
+// (see finance.js). Cost, for now, is the BOQ budget (contracts + materials)
+// plus approved variations and the daily workers, guards and rentals paid so
+// far: what is known to be spent, not yet a forecast of the final cost.
+// =============================================================
+const pctFormat = (part, whole) => (whole ? `${(part / whole * 100).toFixed(1)}%` : '-');
+
+function renderFinance() {
+  const project = currentProject();
+  if (!project) return;
+  const source = incomeFrom(project);
+
+  const c = costPosition(state.tasks, state.payments, todayISO(), state.siteCosts);
+  const variations = sumOf(state.variations.filter((v) => v.status === 'approved'), 'amount');
+  const siteSoFar = c.labour + c.guard + c.rental;
+  const cost = c.budget + variations + siteSoFar;
+  const costMeta = [
+    `BOQ ${money.format(c.budget)}`,
+    variations ? `variations ${money.format(variations)}` : '',
+    siteSoFar ? `site costs so far ${money.format(siteSoFar)}` : '',
+  ].filter(Boolean).join(' + ');
+
+  if (!source) {
+    $('#finance-summary').innerHTML = '';
+    $('#finance-position').textContent = '';
+    $('#finance-detail').innerHTML = `
+      <div class="panel"><div class="empty-state">
+        Choose where this project's income comes from - Edit Project → Income from. A project that sells its flats
+        earns their sale prices; one built for an employer (the government, or a general contractor) earns what the
+        employer pays for each item.
+      </div></div>`;
+    return;
+  }
+
+  const sales = source === 'sales' ? salesPosition(state.flats, project.price_per_m2) : null;
+  const items = source === 'contract' ? state.tasks.map((t) => ({ task: t, ...itemMargin(t) })) : [];
+  const income = sales ? sales.income : sumOf(items, 'income');
+  const profit = income - cost;
+
+  const incomeMeta = sales
+    ? `${sales.sold.count} sold · ${sales.reserved.count} reserved · ${sales.forSale.count} for sale`
+    : `Employer's prices · ${money.format(sumOf(items, 'earned'))} earned by the work done`;
+  $('#finance-summary').innerHTML = [
+    statTile('Income', money.format(income), incomeMeta),
+    statTile('Cost', money.format(cost), costMeta),
+    statTile(profit < 0 ? 'Expected loss' : 'Expected profit', money.format(profit), 'Income − cost',
+      profit < 0 ? 'negative' : profit > 0 ? 'positive' : ''),
+    statTile('Margin', pctFormat(profit, income), income ? 'Of income' : 'No income entered yet',
+      profit < 0 ? 'negative' : ''),
+  ].join('');
+
+  // What the figures leave out, so the profit is read for what it is.
+  const lines = [];
+  if (sales && sales.unpriced) {
+    lines.push(`${sales.unpriced} room${sales.unpriced === 1 ? ' has' : 's have'} no price, so ${sales.unpriced === 1 ? 'it adds' : 'they add'} nothing to income - give ${sales.unpriced === 1 ? 'it' : 'them'} an asking price or set a price per m² in Edit Project.`);
+  }
+  if (sales && sales.forSale.amount + sales.reserved.amount > 0.5) {
+    lines.push(`${money.format(sales.forSale.amount + sales.reserved.amount)} of the income is rooms not sold yet, at their asking prices.`);
+  }
+  if (!sales) {
+    const unpriced = items.filter((i) => !i.income && i.cost).length;
+    const losing = items.filter((i) => i.income && i.margin < 0);
+    if (unpriced) lines.push(`${unpriced} item${unpriced === 1 ? ' has' : 's have'} a budget but no employer's price, so ${unpriced === 1 ? 'it counts' : 'they count'} as cost with no income.`);
+    if (losing.length) lines.push(`${losing.length} item${losing.length === 1 ? ' loses' : 's lose'} money: ${money.format(-sumOf(losing, 'margin'))} in all.`);
+    if (variations) lines.push('Approved variations count as cost; what the employer pays for them is not in income yet.');
+  }
+  lines.push('Not counted yet: loan interest, materials bought beyond their budgets, and daily workers, guards and rentals still to come.');
+  $('#finance-position').textContent = lines.join(' ');
+
+  $('#finance-detail').innerHTML = sales ? salesDetail(sales, cost) : marginDetail(items);
+}
+
+// Contract: each item's price against its cost, the losing ones in red.
+function marginDetail(items) {
+  if (!items.length) {
+    return '<div class="panel"><div class="empty-state">No items yet - add them on the Timetable, each with its budget and the employer\'s price.</div></div>';
+  }
+  const dash = '<span class="text-slate-500">-</span>';
+  const rows = items.map(({ task: t, income, cost, margin, earned }) => `
+    <tr>
+      <td class="task-name">${esc(t.name)}${t.name_ka && t.name_ka !== t.name ? `<span class="block text-xs text-slate-500">${esc(t.name_ka)}</span>` : ''}</td>
+      <td>${t.contractor_id ? esc(contractorName(t.contractor_id)) : dash}</td>
+      <td class="num">${income ? money.format(income) : '<span class="text-slate-500">no price</span>'}</td>
+      <td class="num">${cost ? money.format(cost) : dash}</td>
+      <td class="num">${!income && !cost ? dash
+        : `<span class="${margin < 0 ? 'variance-over' : 'variance-under'}">${money.format(margin)}</span>`}</td>
+      <td class="num">${income ? pctFormat(margin, income) : dash}</td>
+      <td class="num">${earned ? money.format(earned) : dash}</td>
+      <td class="text-right whitespace-nowrap">
+        <button type="button" class="table-action" data-task-edit="${esc(t.id)}">Edit</button>
+      </td>
+    </tr>`).join('');
+  const income = sumOf(items, 'income');
+  const margin = sumOf(items, 'margin');
+  return `
+    <div class="panel">
+      <h2 class="panel-title mb-1">Margin by item</h2>
+      <p class="text-xs text-slate-500 mb-3">
+        Employer's price less the item's budget (contract + materials). Earned = the employer's price × the item's % complete.
+      </p>
+      <div class="overflow-x-auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Work item</th><th>Contractor</th><th class="num">Employer's price</th><th class="num">Cost</th>
+              <th class="num">Margin</th><th class="num">Margin %</th><th class="num">Earned</th><th></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2">Total</td>
+              <td class="num">${money.format(income)}</td>
+              <td class="num">${money.format(sumOf(items, 'cost'))}</td>
+              <td class="num"><span class="${margin < 0 ? 'variance-over' : 'variance-under'}">${money.format(margin)}</span></td>
+              <td class="num">${pctFormat(margin, income)}</td>
+              <td class="num">${money.format(sumOf(items, 'earned'))}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>`;
+}
+
+// Sales: where the rooms stand, and cost against price per m² of what is sold.
+function salesDetail(sales, cost) {
+  if (!state.flats.length) {
+    return `<div class="panel"><div class="empty-state">No rooms yet - ${hasRooms(currentProject())
+      ? 'add the flats on the Rooms page, with their areas and prices.'
+      : 'tick "This site has rooms" in Edit Project, then add the flats with their areas and prices.'}</div></div>`;
+  }
+  const perM2 = (amount, area) => (area ? money.format(amount / area) : '-');
+  const row = (label, b) => `
+    <tr>
+      <td>${esc(label)}</td>
+      <td class="num">${b.count}</td>
+      <td class="num">${areaFormat.format(b.area)} m²</td>
+      <td class="num">${money.format(b.amount)}</td>
+      <td class="num">${perM2(b.amount, b.area)}</td>
+    </tr>`;
+  const all = {
+    count: sales.sold.count + sales.reserved.count + sales.forSale.count,
+    area: sales.sellable,
+    amount: sales.income,
+  };
+
+  // Rooms by type: what sells for what.
+  const types = new Map();
+  for (const u of state.flats) {
+    if ((u.sale_status ?? 'for_sale') === 'not_for_sale') continue;
+    const key = u.unit_type || 'No type';
+    const t = types.get(key) ?? { count: 0, sold: 0, area: 0, amount: 0 };
+    t.count += 1;
+    if (u.sale_status === 'sold') t.sold += 1;
+    t.area += Number(u.area_m2 || 0);
+    t.amount += roomIncome(u, currentProject()?.price_per_m2).amount;
+    types.set(key, t);
+  }
+  const typeRows = [...types].sort((a, b) => b[1].amount - a[1].amount).map(([type, t]) => `
+    <tr>
+      <td>${esc(type)}</td>
+      <td class="num">${t.count}</td>
+      <td class="num">${t.sold}</td>
+      <td class="num">${areaFormat.format(t.area)} m²</td>
+      <td class="num">${money.format(t.amount)}</td>
+      <td class="num">${perM2(t.amount, t.area)}</td>
+    </tr>`).join('');
+
+  const costPerM2 = sales.sellable ? cost / sales.sellable : 0;
+  const pricePerM2 = sales.sellable ? sales.income / sales.sellable : 0;
+  const soldPerM2 = sales.sold.area ? sales.sold.amount / sales.sold.area : 0;
+  return `
+    <div class="space-y-4">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        ${statTile('Cost per m²', sales.sellable ? money.format(costPerM2) : '-',
+          sales.sellable ? `Cost ÷ ${areaFormat.format(sales.sellable)} m² for sale` : 'No areas entered')}
+        ${statTile('Price per m²', sales.sellable ? money.format(pricePerM2) : '-',
+          soldPerM2 ? `Sold so far at ${money.format(soldPerM2)}` : 'Nothing sold yet')}
+        ${statTile('Profit per m²', sales.sellable ? money.format(pricePerM2 - costPerM2) : '-', 'Price − cost',
+          pricePerM2 < costPerM2 ? 'negative' : '')}
+      </div>
+      <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div class="panel">
+          <h2 class="panel-title">Sales</h2>
+          <div class="overflow-x-auto">
+            <table class="data-table">
+              <thead><tr><th></th><th class="num">Rooms</th><th class="num">Area</th><th class="num">Income</th><th class="num">Per m²</th></tr></thead>
+              <tbody>
+                ${row('Sold', sales.sold)}
+                ${row('Reserved', sales.reserved)}
+                ${row('For sale', sales.forSale)}
+              </tbody>
+              <tfoot>${row('Total', all)}</tfoot>
+            </table>
+          </div>
+          ${sales.kept ? `<p class="mt-3 text-xs text-slate-500">${sales.kept} room${sales.kept === 1 ? '' : 's'} not for sale, left out.</p>` : ''}
+        </div>
+        <div class="panel">
+          <h2 class="panel-title">By type</h2>
+          <div class="overflow-x-auto">
+            <table class="data-table">
+              <thead><tr><th>Type</th><th class="num">Rooms</th><th class="num">Sold</th><th class="num">Area</th><th class="num">Income</th><th class="num">Per m²</th></tr></thead>
+              <tbody>${typeRows}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>`;
 }
 
 // ---------- Daily workers and guards (from daily logs), paid by the month ----------
@@ -3341,6 +3653,12 @@ function initModals() {
   $('#unit-type').innerHTML = typeOptions;
   $('#unit-status').innerHTML = Object.entries(UNIT_STATUSES)
     .map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join('');
+  $('#unit-sale-status').innerHTML = Object.entries(SALE_STATUSES)
+    .map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join('');
+
+  const incomeOptions = '<option value="">Not chosen yet</option>'
+    + Object.entries(INCOME_SOURCES).map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join('');
+  $$('[data-income-options]').forEach((sel) => { sel.innerHTML = incomeOptions; });
 }
 
 function requireProject() {
@@ -3732,6 +4050,7 @@ async function loadVariations(projectId) {
   }
   state.variations = data;
   renderVariations();
+  renderFinance(); // approved variations are cost
 }
 
 function renderVariations() {
@@ -5012,6 +5331,7 @@ $('#input-rooms-import').addEventListener('change', onRoomsImportFile);
 $('#form-rooms-import').addEventListener('submit', saveRoomsImport);
 $('#form-rooms-import').addEventListener('change', updateRoomsImportCount);
 $('#form-unit').addEventListener('submit', saveUnit);
+$('#form-unit').addEventListener('input', updateUnitPriceHint);
 $('#btn-add-task').addEventListener('click', () => openTaskModal(null));
 $('#btn-baseline').addEventListener('click', setBaseline);
 $('#btn-import-mpp').addEventListener('click', () => requireProject() && $('#input-import-mpp').click());
@@ -5037,6 +5357,7 @@ $('#btn-room-work-cancel').addEventListener('click', () => resetRoomWorkForm());
 $('#schedule-table').addEventListener('change', onScheduleChange);
 $('#schedule-table').addEventListener('click', onTaskTableClick);
 $('#boq-table').addEventListener('click', onTaskTableClick);
+$('#finance-detail').addEventListener('click', onTaskTableClick);
 $('#form-payment').addEventListener('submit', savePayment);
 $('#form-payment').addEventListener('input', updatePaymentNet);
 $('#payments-list').addEventListener('click', onPaymentsClick);
@@ -5069,6 +5390,7 @@ $('#form-ask').addEventListener('click', onAskSuggestion);
 $('#ask-answer').addEventListener('click', onAskLangToggle);
 $('#btn-edit-project').addEventListener('click', openEditProjectModal);
 $('#form-edit-project').addEventListener('submit', saveEditProject);
+$('#edit-income-from').addEventListener('change', syncIncomeFields);
 $('#form-delete-project').addEventListener('submit', confirmDeleteProject);
 $('#btn-report-daily').addEventListener('click', openDailyReportModal);
 $('#form-daily-report').addEventListener('submit', exportDailyReport);

@@ -104,6 +104,10 @@
           <svg viewBox="0 0 24 24" class="nav-icon"><path d="M3 17l6-6 4 4 8-8v4h2V3h-8v2h4l-6 6-4-4-8 8 2 2z"/></svg>
           BOQ &amp; Cash Flow
         </a>
+        <a href="#finance" data-nav="finance" class="nav-link">
+          <svg viewBox="0 0 24 24" class="nav-icon"><path d="M4 10v7h3v-7H4zm6 0v7h3v-7h-3zM2 22h19v-3H2v3zm14-12v7h3v-7h-3zm-4.5-9L2 6v2h19V6l-9.5-5z"/></svg>
+          Finance
+        </a>
         <a href="#delays" data-nav="delays" class="nav-link">
           <svg viewBox="0 0 24 24" class="nav-icon"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 11h-2V7h2v6zm0 4h-2v-2h2v2z"/></svg>
           Delays
@@ -431,6 +435,22 @@
         </section>
 
         <!-- CONTRACTORS -->
+        <section id="section-finance" data-section="finance" class="module hidden">
+          <div class="module-header">
+            <div>
+              <h1 class="text-xl font-semibold text-white">Finance</h1>
+              <p class="text-sm text-slate-500">
+                What the project earns against what it costs. A loan or the client's own money is funding, not income.
+              </p>
+            </div>
+          </div>
+          <div class="space-y-4">
+            <div id="finance-summary" class="grid grid-cols-2 lg:grid-cols-4 gap-4"></div>
+            <p id="finance-position" class="text-sm text-slate-400"></p>
+            <div id="finance-detail"></div>
+          </div>
+        </section>
+
         <section id="section-contractors" data-section="contractors" class="module hidden">
           <div class="module-header">
             <div>
@@ -728,6 +748,10 @@
           <span class="form-label">Currency</span>
           <select name="currency" class="select-dark w-full" data-currency-options></select>
         </label>
+        <label class="block">
+          <span class="form-label">Income from</span>
+          <select name="income_from" class="select-dark w-full" data-income-options></select>
+        </label>
         <label class="check-row">
           <input name="has_rooms" type="checkbox">
           <span>This site has rooms<small>Tick for flats, offices, hotels… Leave off for sites like a stadium.</small></span>
@@ -798,11 +822,22 @@
             <span class="form-label">Retention held (%)</span>
             <input name="retention_pct" type="number" min="0" max="100" step="0.01" class="input-dark w-full" placeholder="e.g. 5">
           </label>
+          <label class="block">
+            <span class="form-label">Income from</span>
+            <select id="edit-income-from" name="income_from" class="select-dark w-full" data-income-options></select>
+          </label>
+          <label id="edit-price-m2" class="block">
+            <span class="form-label">Asking price per m²</span>
+            <input name="price_per_m2" type="number" min="0" step="0.01" class="input-dark w-full" placeholder="e.g. 1200">
+          </label>
         </div>
         <p class="text-xs text-slate-500">
           Changing the currency relabels existing amounts - it doesn't convert them.
           The daily worker rate fills in each new daily log; you can change it per log.
           Retention is withheld from each certified payment and shown as money owed back to the contractor.
+          Income from: a project that sells its flats earns their sale prices; one built for an employer earns what
+          the employer pays for each item - money from a general contractor is income, not funding.
+          The price per m² prices any room that has no asking price of its own.
         </p>
         <label class="check-row">
           <input name="has_rooms" type="checkbox">
@@ -879,6 +914,14 @@
             <input name="material_budget" type="number" min="0" step="0.01" class="input-dark w-full" placeholder="0">
           </label>
           <p class="text-xs text-slate-500">When the contractor prices only the work, put what you expect to spend on the materials here. Purchases go in Materials on the BOQ &amp; Cash Flow page.</p>
+        </fieldset>
+        <fieldset id="task-income" class="space-y-3 pt-3 border-t border-ink-700">
+          <legend class="form-label">Income</legend>
+          <label class="block sm:w-1/2">
+            <span class="form-label">Employer's price</span>
+            <input name="employer_price" type="number" min="0" step="0.01" class="input-dark w-full" placeholder="0">
+          </label>
+          <p id="task-margin" class="text-xs text-slate-500"></p>
         </fieldset>
         <p class="form-error hidden" data-error></p>
       </div>
@@ -1028,8 +1071,34 @@
         </div>
         <label class="block">
           <span class="form-label">Notes</span>
-          <textarea name="notes" rows="2" class="input-dark w-full" placeholder="Buyer, finishes, snags…"></textarea>
+          <textarea name="notes" rows="2" class="input-dark w-full" placeholder="Finishes, snags…"></textarea>
         </label>
+        <fieldset id="unit-sale" class="space-y-3 pt-3 border-t border-ink-700">
+          <legend class="form-label">Sale</legend>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <label class="block">
+              <span class="form-label">Sale status</span>
+              <select id="unit-sale-status" name="sale_status" class="select-dark w-full"></select>
+            </label>
+            <label class="block">
+              <span class="form-label">Asking price</span>
+              <input name="asking_price" type="number" min="0" step="0.01" class="input-dark w-full">
+            </label>
+            <label class="block">
+              <span class="form-label">Sale price</span>
+              <input name="sale_price" type="number" min="0" step="0.01" class="input-dark w-full">
+            </label>
+            <label class="block sm:col-span-2">
+              <span class="form-label">Buyer</span>
+              <input name="buyer" maxlength="160" class="input-dark w-full">
+            </label>
+            <label class="block">
+              <span class="form-label">Sold on</span>
+              <input name="sold_on" type="date" class="input-dark w-full">
+            </label>
+          </div>
+          <p id="unit-price-hint" class="text-xs text-slate-500"></p>
+        </fieldset>
         <p class="form-error hidden" data-error></p>
       </div>
       <div class="modal-footer">

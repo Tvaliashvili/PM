@@ -34,6 +34,22 @@ export const UNIT_STATUSES = {
   handed_over: 'Handed over',
 };
 
+// Where a project's income comes from (projects.income_from; null = not chosen).
+// Money from an employer is income - only a loan or own money is funding.
+export const INCOME_SOURCES = {
+  sales:    'Sells what it builds (flats)',
+  contract: 'Built for an employer (government or general contractor)',
+};
+
+// Where a room's sale has got to (flats.sale_status). A room not for sale is
+// kept or given away, and earns nothing.
+export const SALE_STATUSES = {
+  for_sale:     'For sale',
+  reserved:     'Reserved',
+  sold:         'Sold',
+  not_for_sale: 'Not for sale',
+};
+
 // Where a variation has got to (variations.status). Only an approved one
 // changes the contract sum; the rest are money still being argued about.
 export const VARIATION_STATUSES = {

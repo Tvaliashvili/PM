@@ -901,3 +901,37 @@ alter table public.work_done
   add constraint work_done_flat_id_fkey foreign key (flat_id) references public.flats(id) on delete cascade;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 29. What the project earns
+-- Profit is what the project earns less what it costs, so each project says
+-- where its income comes from:
+--   sales    - it sells what it builds; income = the flats' sale prices
+--   contract - it is built for an employer (the government, or the general
+--              contractor our client works under); income = what the employer
+--              pays for each item
+-- null = not chosen yet. Money from the employer is income, not funding: only
+-- a loan or the client's own money is funding.
+-- price_per_m2 is the asking price for any room without one of its own.
+-- -------------------------------------------------------------
+alter table public.projects
+  add column if not exists income_from text check (income_from in ('sales', 'contract')),
+  add column if not exists price_per_m2 numeric(14,2) check (price_per_m2 is null or price_per_m2 >= 0);
+
+-- What the employer pays for the item, beside budget (what it costs us).
+alter table public.schedule_tasks
+  add column if not exists employer_price numeric(14,2) not null default 0
+  check (employer_price >= 0);
+
+-- Each room's sale. Income counts a sold room at sale_price and one still on
+-- offer at asking_price (else area × the project's price per m²); a room kept
+-- or given away is not_for_sale and counts nothing.
+alter table public.flats
+  add column if not exists sale_status text not null default 'for_sale'
+    check (sale_status in ('for_sale', 'reserved', 'sold', 'not_for_sale')),
+  add column if not exists asking_price numeric(14,2) check (asking_price is null or asking_price >= 0),
+  add column if not exists sale_price   numeric(14,2) check (sale_price is null or sale_price >= 0),
+  add column if not exists buyer        text,
+  add column if not exists sold_on      date;
+
+notify pgrst, 'reload schema';
