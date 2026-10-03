@@ -106,6 +106,9 @@ html, body { background: var(--ink-950); color: var(--text); }
   .projects-header { flex-direction: column-reverse; align-items: stretch; }
   .projects-actions > .btn { flex: 1; justify-content: center; }
 }
+@media (max-width: 479px) {
+  .projects-actions { flex-direction: column; align-items: stretch; }
+}
 
 .panel {
   background: var(--ink-900);
@@ -183,10 +186,14 @@ html, body { background: var(--ink-950); color: var(--text); }
 
 /* ქართ / ENG: the language the app is shown in */
 .lang-toggle {
-  flex-shrink: 0; padding: 0.25rem 0.7rem; font-size: 0.8125rem; font-weight: 600; color: #334155;
-  border: 1px solid var(--ink-700); border-radius: 9999px; background: transparent;
+  display: inline-flex; flex-shrink: 0; overflow: hidden;
+  border: 1px solid var(--ink-700); border-radius: 9999px;
 }
-.lang-toggle:hover { border-color: #94a3b8; color: #0f172a; }
+.lang-toggle button {
+  padding: 0.25rem 0.65rem; font-size: 0.8125rem; font-weight: 600; color: #64748b; background: transparent;
+}
+.lang-toggle button:hover { color: #0f172a; }
+.lang-toggle button.is-active { background: #0f172a; color: #fff; cursor: default; }
 /* In the project top bar it sits at the right, before the dollar rate. */
 .currency-switch.hidden + .lang-toggle { margin-left: auto; }
 .currency-switch:not(.hidden) + .lang-toggle { margin-left: 0.5rem; }
@@ -1372,7 +1379,9 @@ body.read-only :is(
   #form-contract, [data-contract-delete],
   /* Nor tools a client has no use for: the Excel templates, the archive (the
      administrator hands it over), and Ask Gemini (each question is paid for). */
-  #btn-import-template, #btn-rooms-template, #archive-block, #form-ask
+  #btn-import-template, #btn-rooms-template, #archive-block, #form-ask,
+  /* Nor the help texts and notes written for whoever fills the project in. */
+  .hint, #finance-position
 ) { display: none !important; }
 body.read-only :is([data-task-pct], [data-task-contractor]) { pointer-events: none; opacity: 0.75; }
 
@@ -1408,7 +1417,7 @@ body.read-only :is([data-task-pct], [data-task-contractor]) { pointer-events: no
   #topbar-project-location { display: none; }
   .fx-rate { display: none; }
   .currency-switch button { padding: 0.25rem 0.55rem; }
-  .lang-toggle { padding: 0.25rem 0.55rem; }
+  .lang-toggle button { padding: 0.25rem 0.5rem; }
   .module-header { flex-wrap: wrap; align-items: flex-start; }
   .module-header > :first-child { flex: 1 1 100%; }
 }

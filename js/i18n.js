@@ -733,6 +733,52 @@ const KA_UI = {
   'Downloaded.': 'ჩამოიტვირთა.',
   'Could not download the report.': 'ანგარიში ვერ ჩამოიტვირთა.',
 
+  // Empty places, said plainly
+  'No contractors yet.': 'კონტრაქტორები ჯერ არ არის.',
+  'No contracts yet.': 'ხელშეკრულებები ჯერ არ არის.',
+  'No daily logs yet.': 'დღიური ჩანაწერები ჯერ არ არის.',
+  'No delays yet.': 'შეფერხებები ჯერ არ არის.',
+  'No items yet.': 'სამუშაოები ჯერ არ არის.',
+  'No rentals yet.': 'ქირა ჯერ არ არის.',
+  'No rooms yet.': 'ოთახები ჯერ არ არის.',
+  'No timetable items yet.': 'გრაფიკის სამუშაოები ჯერ არ არის.',
+  'No variations yet.': 'ცვლილებები ჯერ არ არის.',
+  'No work recorded yet.': 'სამუშაო ჯერ არ არის ჩაწერილი.',
+  'Nothing bought yet.': 'ჯერ არაფერია ნაყიდი.',
+  'Nothing recorded yet.': 'ჯერ არაფერია ჩაწერილი.',
+  'No daily workers logged yet.': 'დღიური მუშები ჯერ არ არის ჩაწერილი.',
+  'No guards logged yet.': 'დარაჯები ჯერ არ არის ჩაწერილი.',
+  'No income source chosen yet.': 'შემოსავლის წყარო ჯერ არ არის არჩეული.',
+  'Biggest risk': 'ყველაზე დიდი რისკი',
+
+  // Leftovers found by walking every page
+  '✓ On track': '✓ გეგმის მიხედვით',
+  '✓ Ahead of plan': '✓ გეგმას უსწრებს',
+  '! Behind plan': '! გეგმას ჩამორჩება',
+  'finishing late at this pace': 'ამ ტემპით დაგვიანდება',
+  'rooms ·': 'ოთახი ·',
+  'None recorded': 'არაფერია ჩაწერილი',
+  'no incident recorded': 'შემთხვევა არ დაფიქსირებულა',
+  'none serious': 'მძიმე არ არის',
+  'all closed': 'ყველა დახურულია',
+  'ongoing': 'მიმდინარე',
+  '· this month': '· ეს თვე',
+  'Overdue now': 'ახლა ვადაგადაცილებული',
+  'Delay days': 'შეფერხების დღეები',
+  'Excused': 'გამართლებული',
+  'Performance': 'შეფასება',
+  'Items ': 'სამუშაოები',
+  "From this item's start and finish dates": 'ამ სამუშაოს დაწყებისა და დასრულების თარიღებიდან',
+  "Area × the project's price per m²": 'ფართი × პროექტის ფასი 1 მ²-ზე',
+  'A project that sells its flats always has rooms': 'ბინების გამყიდველ პროექტს ყოველთვის აქვს ოთახები',
+  'No daily workers of the client’s own entered.': 'დამკვეთის დღიური მუშები არ არის შეყვანილი.',
+  'No guards of the client’s own entered.': 'დამკვეთის დარაჯები არ არის შეყვანილი.',
+  'Work done on this item - for work in no room, like a pour or the facade': 'ამ სამუშაოზე შესრულებული - ოთახის გარეთ, მაგ. ბეტონის ჩასხმა ან ფასადი',
+  'Not for sale: kept or given away, it adds nothing to income.': 'არ იყიდება: რჩება ან გაიცემა, შემოსავალს არ ზრდის.',
+  'No price yet: give it an asking price (or set a price per m² in Edit Project) for it to count in income.': 'ფასი ჯერ არ აქვს: მიუთითეთ მოთხოვნილი ფასი (ან ფასი 1 მ²-ზე პროექტის რედაქტირებაში), რომ შემოსავალში ჩაითვალოს.',
+  'Schedule: work done is on or ahead of plan.': 'გრაფიკი: შესრულებული სამუშაო გეგმის მიხედვითაა ან უსწრებს.',
+  'NBG': 'ეროვნული ბანკი',
+
   // The week at a glance
   'This week on site': 'ეს კვირა ობიექტზე',
   'Coming up': 'მომავალი სამუშაოები',
@@ -824,9 +870,42 @@ const PATTERNS = [
   [/^income (.+) · funding (.+)$/, 'შემოსავალი $1 · დაფინანსება $2'],
   [/^Total · income (.+) · funding (.+)$/, 'სულ · შემოსავალი $1 · დაფინანსება $2'],
   [/^(.+) so far \+ (.+) to completion at the same rate$/, '$1 დღემდე + $2 დასრულებამდე იგივე ტემპით'],
-  [/^(.+) so far$/, '$1 დღემდე'],
+  [/^(?!\d+ days? so far$)(.+) so far$/, '$1 დღემდე'],
   [/^Variations not yet decided would add (.+) to the cost if approved\.$/, 'გადაწყვეტილების მოლოდინში მყოფი ცვლილებები დამტკიცების შემთხვევაში ხარჯს $1-ით გაზრდის.'],
   [/^Employer's prices \+ variations (.+) · (.+) earned by the work done$/, 'დამკვეთის ფასები + ცვლილებები $1 · $2 გამომუშავებულია'],
+  [/^· (\d+) days?$/, '· $1 დღე'],
+  [/^Day (\d+) of (\d+) · (\d+) days? remaining$/, 'დღე $1 / $2 · დარჩა $3 დღე'],
+  [/^(\d+) in progress$/, '$1 მიმდინარე'],
+  [/^(\d+) not started$/, '$1 არ დაწყებულა'],
+  [/^(\d+) ongoing$/, '$1 მიმდინარე'],
+  [/^(\d+) priced items?$/, '$1 შეფასებული სამუშაო'],
+  [/^(\d+) variations?$/, '$1 ცვლილება'],
+  [/^Contracts (.+)$/, 'კონტრაქტები $1'],
+  [/^(daily workers|guards|rentals|materials) (.+)$/, (m, w, a) => `${{ 'daily workers': 'დღიური მუშები', guards: 'დარაჯები', rentals: 'ქირა', materials: 'მასალა' }[w]} ${a}`],
+  [/^of (.+) budget$/, '$1 ბიუჯეტიდან'],
+  [/^work done worth (.+)$/, 'შესრულებულია $1-ის სამუშაო'],
+  [/^Extended by delays: (.+)$/, (m, c) => `გაგრძელდა შეფერხებებით: ${c.split(', ').map((x) => KA[x] ?? x).join(', ')}`],
+  [/^(\d+) × ([^·]+)$/, (m, n, t) => `${n} × ${KA[t] ?? t}`],
+  [/^Average (.+) m²$/, 'საშუალოდ $1 მ²'],
+  [/^(\d+) timetable item\(s\) have no contractor yet - pick one in the Contractor column on the Timetable\.$/, '$1 სამუშაოს ჯერ არ ჰყავს კონტრაქტორი.'],
+  [/^Schedule: work worth (.+) is behind plan\.$/, 'გრაფიკი: $1-ის სამუშაო გეგმას ჩამორჩება.'],
+  [/^Cost: (.+) more has been paid to contractors than the value of work done \(advances or overspend\)\.$/, 'ხარჯი: კონტრაქტორებს $1-ით მეტი აქვთ მიღებული, ვიდრე შესრულებული სამუშაოს ღირებულება (ავანსი ან გადახარჯვა).'],
+  [/^Cost: contract payments are (.+) below the value of work done\.$/, 'ხარჯი: კონტრაქტორებზე გადახდები $1-ით ნაკლებია შესრულებული სამუშაოს ღირებულებაზე.'],
+  [/^On top of contracts: (.+) so far\.$/, 'კონტრაქტების გარდა დღემდე: $1.'],
+  [/^Still owed: (.+)$/, 'ჯერ გადასახდელი: $1'],
+  [/^Cost ÷ (.+) m² for sale$/, 'ხარჯი ÷ $1 მ² გასაყიდი'],
+  [/^(\d+) days? lost this month$/, 'ამ თვეში დაიკარგა $1 დღე'],
+  [/^incl\. (\d+) still counting$/, 'მათ შორის $1 კვლავ ითვლება'],
+  [/^(\d+) days? so far$/, '$1 დღე დღემდე'],
+  [/^(\d+) delays? \((\d+) days?\) with no contractor at fault\.$/, '$1 შეფერხება ($2 დღე) კონტრაქტორის ბრალის გარეშე.'],
+  [/^Client: (.+)$/, 'დამკვეთი: $1'],
+  [/^Counts in income at its sale price, (.+)\.$/, 'შემოსავალში ითვლება გაყიდვის ფასით, $1.'],
+  [/^Counts in income at its asking price, (.+)\.$/, 'შემოსავალში ითვლება მოთხოვნილი ფასით, $1.'],
+  [/^Sold with no sale price yet: counts at its asking price, (.+)\.$/, 'გაყიდულია, ფასი ჯერ არ არის: ითვლება მოთხოვნილი ფასით, $1.'],
+  [/^No asking price: counts at area × the project's (.+) per m², (.+)\.$/, 'მოთხოვნილი ფასი არ აქვს: ითვლება ფართი × $1 1 მ²-ზე, $2.'],
+  [/^(.+) days past its finish date$/, '$1 დღით გადაცილებული'],
+  [/^(.+) of the income is rooms not sold yet, at their asking prices\.$/, 'შემოსავლიდან $1 ჯერ გაუყიდავი ოთახებია, მოთხოვნილი ფასებით.'],
+  [/^(\d+) rooms? (has|have) no price, so (it adds|they add) nothing to income - give (it|them) an asking price or set a price per m² in Edit Project\.$/, '$1 ოთახს ფასი არ აქვს და შემოსავალში არ ითვლება.'],
   [/^· starts (.+)$/, '· იწყება $1'],
   [/^· due (.+?) · (\d+)%(.*)$/, '· ვადა $1 · $2%$3'],
   [/^· in progress(.*)$/, '· მიმდინარეობს$1'],
@@ -860,8 +939,18 @@ export function translate(text) {
   const hit = DICT.get(key);
   if (hit != null) return hit;
   if (key.length > 400) return null;
+  const joined = key.includes(' · ');
   for (const [re, to] of PATTERNS) {
+    // A line of "A · B" pieces is taken whole only by a pattern written for one.
+    if (joined && !re.source.includes('·')) continue;
     if (re.test(key)) return key.replace(re, to);
+  }
+  // "A · B · C" or several sentences: each piece on its own, as far as it is known.
+  const pieces = key.includes(' · ') ? key.split(' · ')
+    : /[.!?] [A-Z]/.test(key) ? key.split(/(?<=[.!?]) (?=[A-Z])/) : null;
+  if (pieces && pieces.length > 1) {
+    const done = pieces.map((p) => translate(p) ?? p);
+    if (done.some((p, i) => p !== pieces[i])) return done.join(key.includes(' · ') ? ' · ' : ' ');
   }
   return null;
 }

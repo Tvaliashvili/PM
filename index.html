@@ -48,7 +48,9 @@
         <p class="font-semibold text-white">CPMG PM</p>
       </div>
       <div class="ml-auto flex items-center gap-4 text-xs text-slate-500 min-w-0">
-        <button type="button" class="lang-toggle" data-lang-toggle data-no-i18n>ქართ</button>
+        <div class="lang-toggle" role="group" aria-label="Language · ენა" data-no-i18n>
+          <button type="button" data-lang="en" title="English">ENG</button><button type="button" data-lang="ka" title="ქართული">ქარ</button>
+        </div>
         <span data-user-email class="hidden sm:block truncate">Not signed in</span>
         <button data-sign-out class="hidden shrink-0 text-slate-400 hover:text-white">Sign out</button>
       </div>
@@ -193,7 +195,9 @@
           <button type="button" data-show-currency="USD">$</button>
           <button type="button" data-show-currency="GEL">₾</button>
         </div>
-        <button type="button" class="lang-toggle" data-lang-toggle data-no-i18n>ქართ</button>
+        <div class="lang-toggle" role="group" aria-label="Language · ენა" data-no-i18n>
+          <button type="button" data-lang="en" title="English">ENG</button><button type="button" data-lang="ka" title="ქართული">ქარ</button>
+        </div>
         <a id="fx-rate" class="fx-rate hidden" aria-label="National Bank of Georgia dollar rate" href="https://nbg.gov.ge/en/monetary-policy/currency" target="_blank" rel="noopener"
            title="National Bank of Georgia official rate"></a>
       </header>
@@ -286,7 +290,7 @@
           <div class="module-header">
             <div>
               <h1 class="text-xl font-semibold text-white">Reports</h1>
-              <p class="text-sm text-slate-500">Each report opens to read first - then print it, or download it.</p>
+              <p class="hint text-sm text-slate-500">Each report opens to read first - then print it, or download it.</p>
             </div>
           </div>
           <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -317,7 +321,7 @@
           </div>
           <div id="archive-block" class="panel mt-4">
             <h2 class="panel-title mb-1">Full archive (.zip)</h2>
-            <p class="text-xs text-slate-500">
+            <p class="hint text-xs text-slate-500">
               Everything, to hand to the client and keep after the project is deleted: a day-by-day journal of the whole
               project, every item, contractor and payment, every photo, the contracts and acts, the project report and an
               Excel file of all the data. Unzip it and open index.html - no login needed. A big project takes a few minutes.
@@ -333,7 +337,7 @@
           <div class="module-header">
             <div>
               <h1 class="text-xl font-semibold text-white">Timetable</h1>
-              <p class="text-sm text-slate-500">
+              <p class="hint text-sm text-slate-500">
                 Set each item's % complete - 100% means finished. Progress is weighted by planned duration; items below 100% after their finish date are overdue.
               </p>
             </div>
@@ -367,7 +371,7 @@
           <div class="module-header">
             <div>
               <h1 class="text-xl font-semibold text-white">Rooms</h1>
-              <p class="text-sm text-slate-500">Each room with its number, type, area and status.</p>
+              <p class="hint text-sm text-slate-500">Each room with its number, type, area and status.</p>
             </div>
             <div class="grid grid-cols-2 gap-2 shrink-0 sm:flex sm:items-center">
               <button id="btn-rooms-template" class="btn btn-secondary" title="Excel sheet with the rooms in it - fill it in, then Import">
@@ -396,7 +400,7 @@
           <div class="module-header">
             <div>
               <h1 class="text-xl font-semibold text-white">Daily Logs</h1>
-              <p class="text-sm text-slate-500">Weather, manpower and site notes - and ask Gemini anything about the project.</p>
+              <p class="hint text-sm text-slate-500">Weather, manpower and site notes - and ask Gemini anything about the project.</p>
             </div>
             <div class="shrink-0">
               <button id="btn-new-log-page" class="btn btn-primary">
@@ -412,7 +416,7 @@
               <span class="ask-badge">✦</span>
               <h2 class="panel-title !mb-0">Ask Gemini about this project</h2>
             </div>
-            <p class="text-xs text-slate-500">
+            <p class="hint text-xs text-slate-500">
               Gemini reads all of this project's daily logs, timetable, contractors, delays and payments, and answers in the
               language you ask in.
             </p>
@@ -424,7 +428,7 @@
               <button type="button" class="ask-suggestion" data-ask="Summarise the last 7 days on site.">Last 7 days</button>
               <button type="button" class="ask-suggestion" data-ask="Which contractor has caused the most delays, and why?">Worst contractor delays</button>
               <button type="button" class="ask-suggestion" data-ask="How many workers were on site on average per day this month, by trade?">Average manpower</button>
-              <button type="button" class="ask-suggestion" data-ask="რა არის ყველაზე დიდი რისკი პროექტის ვადებისთვის?">ყველაზე დიდი რისკი</button>
+              <button type="button" class="ask-suggestion" data-ask="What is the biggest risk to the project's dates?">Biggest risk</button>
             </div>
             <div id="ask-answer" class="ask-answer hidden"></div>
           </form>
@@ -458,7 +462,7 @@
           <div class="module-header">
             <div>
               <h1 class="text-xl font-semibold text-white">BOQ &amp; Cash Flow</h1>
-              <p class="text-sm text-slate-500">
+              <p class="hint text-sm text-slate-500">
                 Budgets and payments for the Timetable's items. New items are added on the Timetable page.
               </p>
             </div>
@@ -475,7 +479,7 @@
                 <div class="flex items-start justify-between gap-3 mb-3">
                   <div>
                     <h2 class="panel-title mb-1">Daily Workers</h2>
-                    <p class="text-xs text-slate-500">
+                    <p class="hint text-xs text-slate-500">
                       From each daily log: daily workers × that day's rate. Paid by the month - Pay records what was paid.
                     </p>
                   </div>
@@ -486,7 +490,7 @@
                 <div class="flex items-start justify-between gap-3 mb-3">
                   <div>
                     <h2 class="panel-title mb-1">Guards</h2>
-                    <p class="text-xs text-slate-500">
+                    <p class="hint text-xs text-slate-500">
                       From each daily log: guards × that day's guard rate. Paid by the month - Pay records what was paid.
                     </p>
                   </div>
@@ -498,7 +502,7 @@
                 <div class="flex items-start justify-between gap-3 mb-3">
                   <div>
                     <h2 class="panel-title mb-1">Equipment Rentals</h2>
-                    <p class="text-xs text-slate-500">Daily price × days. The cost counts day by day from the start date; Pay records what was paid to the supplier.</p>
+                    <p class="hint text-xs text-slate-500">Daily price × days. The cost counts day by day from the start date; Pay records what was paid to the supplier.</p>
                   </div>
                   <button id="btn-add-rental" class="btn btn-primary btn-sm shrink-0">
                     <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
@@ -511,7 +515,7 @@
               <div class="flex items-start justify-between gap-3 mb-3">
                 <div>
                   <h2 class="panel-title mb-1">Materials &amp; Purchases</h2>
-                  <p class="text-xs text-slate-500">
+                  <p class="hint text-xs text-slate-500">
                     Everything the client buys for the site. A material can name its job, so it counts against that
                     job's materials budget and shows who it was supplied to. Tools and equipment the site keeps (a laser
                     level, a measuring tape) and other purchases are for the whole site.
@@ -526,7 +530,7 @@
             </div>
             <div class="panel">
               <h2 class="panel-title">Monthly Cash Flow</h2>
-              <p class="text-xs text-slate-500 mb-3">
+              <p class="hint text-xs text-slate-500 mb-3">
                 Planned = each item's budget (contract + materials) spread evenly over its planned dates. Spent = contract
                 payments, daily workers, guards, equipment rentals and materials bought that month. The cumulative columns are running totals - compare them to see if
                 spending is ahead of or behind plan.
@@ -541,7 +545,7 @@
           <div class="module-header">
             <div>
               <h1 class="text-xl font-semibold text-white">Finance</h1>
-              <p class="text-sm text-slate-500">
+              <p class="hint text-sm text-slate-500">
                 What the project earns against what it costs. A loan or the client's own money is funding, not income.
               </p>
             </div>
@@ -552,7 +556,7 @@
             <div id="finance-detail"></div>
             <div class="panel">
               <h2 class="panel-title mb-1">Forecast of the final cost</h2>
-              <p class="text-xs text-slate-500 mb-3">
+              <p class="hint text-xs text-slate-500 mb-3">
                 What the project will have cost when it is finished, from what is known today. An item counts at its budget,
                 or at what has really gone into it when that is more; daily workers, guards and rentals carry on at the rate
                 kept so far until the planned completion.
@@ -563,7 +567,7 @@
               <div class="flex items-start justify-between gap-3 mb-3">
                 <div>
                   <h2 class="panel-title mb-1">Money in</h2>
-                  <p class="text-xs text-slate-500">
+                  <p class="hint text-xs text-slate-500">
                     Every sum that came in. Income - the employer's payments, buyers' installments - counts toward profit.
                     Funding - a loan, the client's own money, a partner's - pays for the work but is never profit; a loan's
                     interest is a cost.
@@ -583,7 +587,7 @@
           <div class="module-header">
             <div>
               <h1 class="text-xl font-semibold text-white">Contractors</h1>
-              <p class="text-sm text-slate-500">
+              <p class="hint text-sm text-slate-500">
                 This project's contractors and how each one performs.
                 Assign them to jobs with the Contractor column on the Timetable.
               </p>
@@ -603,7 +607,7 @@
           <div class="module-header">
             <div>
               <h1 class="text-xl font-semibold text-white">Delays</h1>
-              <p class="text-sm text-slate-500">Every delay on this project - what caused it, who, and how many days were lost.</p>
+              <p class="hint text-sm text-slate-500">Every delay on this project - what caused it, who, and how many days were lost.</p>
             </div>
             <button id="btn-new-delay" class="btn btn-primary">
               <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
@@ -634,7 +638,7 @@
           <div class="module-header">
             <div>
               <h1 class="text-xl font-semibold text-white">Safety &amp; Quality</h1>
-              <p class="text-sm text-slate-500">
+              <p class="hint text-sm text-slate-500">
                 Incidents, inspections and toolbox talks, with what was done about each one.
               </p>
             </div>
@@ -657,7 +661,7 @@
           <div class="module-header">
             <div>
               <h1 class="text-xl font-semibold text-white">Variations</h1>
-              <p class="text-sm text-slate-500">
+              <p class="hint text-sm text-slate-500">
                 Work instructed after the contract was signed. Only approved variations change the contract sum - the rest is money still being argued about.
               </p>
             </div>

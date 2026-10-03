@@ -120,9 +120,14 @@ const moneyOwn = { format: (n) => formatIn(projectCurrency()).format(Number(n)) 
 
 const todayISO = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD, local time
 
-const formatDate = (iso) => new Date(`${iso}T00:00`).toLocaleDateString(dateLocale, {
-  day: 'numeric', month: 'short', year: 'numeric',
-});
+const MONTHS_KA = ['იან', 'თებ', 'მარ', 'აპრ', 'მაი', 'ივნ', 'ივლ', 'აგვ', 'სექ', 'ოქტ', 'ნოე', 'დეკ'];
+const formatDate = (iso) => {
+  if (isKa && iso) {
+    const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+    return `${d} ${MONTHS_KA[m - 1]} ${y}`;
+  }
+  return new Date(`${iso}T00:00`).toLocaleDateString(dateLocale, { day: 'numeric', month: 'short', year: 'numeric' });
+};
 
 const floorLabel = (floor) => {
   if (floor === 0) return 'Ground';
@@ -447,8 +452,12 @@ async function selectProject(projectId) {
 }
 
 // The UI is English: show the English client name, else the Georgian one.
-const clientOf = (p) => p?.client_name || p?.client_name_ka || '';
-const locationOf = (p) => p?.location || p?.location_ka || '';
+// A project's name, location and client in the language the app is shown in -
+// the other language when that one was not written.
+const inLang = (en, ka) => (isKa ? ka || en : en || ka) || '';
+const projectNameOf = (p) => inLang(p?.name, p?.name_ka);
+const clientOf = (p) => inLang(p?.client_name, p?.client_name_ka);
+const locationOf = (p) => inLang(p?.location, p?.location_ka);
 // Sites without rooms (e.g. a stadium) hide the Rooms page and every room field.
 const hasRooms = (p) => Boolean(p?.has_rooms);
 // Where the project's income comes from: 'sales', 'contract', or null when not chosen yet.
@@ -458,7 +467,7 @@ const currentProject = () => state.projects.find((p) => p.id === state.projectId
 
 // Project name/location wherever it's shown in the workspace.
 function applyProjectHeader(project) {
-  $('#topbar-project-name').textContent = project?.name ?? '';
+  $('#topbar-project-name').textContent = projectNameOf(project);
   $('#topbar-project-location').textContent = [
     locationOf(project), clientOf(project) && `Client: ${clientOf(project)}`,
     project?.closed_how && `${CLOSED_HOW[project.closed_how].en}${project.closed_on ? ` ${formatDate(project.closed_on)}` : ''}`,
@@ -521,9 +530,8 @@ async function renderProjectList() {
     return `
       <article class="project-card${p.id === state.projectId ? ' is-active' : ''}">
         <button type="button" class="project-card-open" data-open-project="${esc(p.id)}">
-          <p class="pr-8 font-semibold text-white truncate">${esc(p.name)}</p>
+          <p class="pr-8 font-semibold text-white truncate">${esc(projectNameOf(p))}</p>
           ${p.closed_how ? `<p class="mt-1"><span class="status-chip ${p.closed_how === 'completed' ? 'status-done' : 'status-handed'}">${esc(CLOSED_HOW[p.closed_how].en)}${p.closed_on ? ` · ${esc(formatDate(p.closed_on))}` : ''}</span></p>` : ''}
-          ${p.name_ka ? `<p class="pr-8 text-sm text-slate-400 truncate">${esc(p.name_ka)}</p>` : ''}
           <p class="text-sm text-slate-500 truncate">${esc(locationOf(p) || 'No location set')} · ${esc(p.currency ?? DEFAULT_CURRENCY)}</p>
           ${clientOf(p) ? `<p class="text-xs text-slate-400 truncate">Client: ${esc(clientOf(p))}</p>` : ''}
           <p class="text-xs text-slate-500 mt-1">${p.start_date && p.end_date
@@ -849,7 +857,7 @@ function renderUnits() {
   ].join('');
 
   if (!units.length) {
-    $('#units-table').innerHTML = '<div class="empty-state">No rooms yet - click Add Room.</div>';
+    $('#units-table').innerHTML = '<div class="empty-state">No rooms yet.</div>';
     return;
   }
 
@@ -1217,7 +1225,7 @@ function renderRoomWork() {
   const work = workOfTarget()
     .sort((a, b) => b.work_date.localeCompare(a.work_date) || String(b.created_at).localeCompare(String(a.created_at)));
   if (!work.length) {
-    list.innerHTML = `<div class="empty-state">No work recorded ${dayMode ? 'for the daily workers that day' : workTarget.taskId ? 'on this item' : 'in this room'} yet.</div>`;
+    list.innerHTML = `<div class="empty-state">No work recorded yet.</div>`;
     return;
   }
   list.innerHTML = `
@@ -1447,7 +1455,17 @@ const addDays = (iso, n) => {
   return d.toLocaleDateString('en-CA');
 };
 
-const contractorName = (id) => state.contractors.find((c) => c.id === id)?.name ?? '';
+const contractorName = (id) => {
+  const c = state.contractors.find((x) => x.id === id);
+  return c ? inLang(c.name, c.name_ka) : '';
+};
+const taskName = (t) => inLang(t?.name, t?.name_ka);
+// An item's name for a table cell: in the app's language, the other one small beneath.
+function taskNameHtml(t) {
+  const main = taskName(t);
+  const other = inLang(t.name_ka, t.name);
+  return `${esc(main)}${other && other !== main ? `<span class="block text-xs text-slate-500">${esc(other)}</span>` : ''}`;
+}
 const paidOn = (taskId) => sumOf(state.payments.filter((p) => p.task_id === taskId), 'amount');
 const materialsOn = (taskId) => sumOf(state.materials.filter((m) => m.task_id === taskId), 'amount');
 
@@ -1598,7 +1616,7 @@ function renderSchedule() {
   ].join('');
 
   if (!state.tasks.length) {
-    $('#schedule-table').innerHTML = '<div class="empty-state">No items yet - click Add Item to build the timetable. Progress, the BOQ and cash flow are all calculated from it.</div>';
+    $('#schedule-table').innerHTML = '<div class="empty-state">No items yet.</div>';
     return;
   }
 
@@ -1625,7 +1643,7 @@ function renderSchedule() {
     ? `<span class="task-pct-hint${plan - donePct > 10 ? ' is-behind' : ''}" title="From this item's start and finish dates">plan ${plan}%</span>`
     : ''}
         </td>
-        <td class="task-name">${esc(t.name)}${t.name_ka && t.name_ka !== t.name ? `<span class="block text-xs text-slate-500">${esc(t.name_ka)}</span>` : ''}</td>
+        <td class="task-name">${taskNameHtml(t)}</td>
         <td>
           <select class="select-dark select-inline select-contractor" data-task-contractor="${esc(t.id)}"
                   title="${esc(contractorName(t.contractor_id) || 'No contractor')}"
@@ -1688,7 +1706,7 @@ function contractorOptions(selectedId) {
   return '<option value="">- None -</option>'
     + state.contractors.map((c) => `
       <option value="${esc(c.id)}"${c.id === selectedId ? ' selected' : ''}>
-        ${esc(c.name)}${c.trade ? ` · ${esc(c.trade)}` : ''}
+        ${esc(inLang(c.name, c.name_ka))}${c.trade ? ` · ${esc(c.trade)}` : ''}
       </option>`).join('');
 }
 
@@ -2034,10 +2052,10 @@ function renderWeek() {
       <div><b>${finished.length}</b><span>items finished</span></div>
     </div>
     ${list.length ? `<ul class="week-list">${list.map((k) => `
-      <li><span class="text-white">${esc(k.name)}</span>${k.en && k.en !== k.name ? ` <span class="text-slate-500">${esc(k.en)}</span>` : ''}
+      <li><span class="text-white">${esc(inLang(k.en, k.name))}</span>${k.en && k.en !== k.name ? ` <span class="text-slate-500">${esc(inLang(k.name, k.en))}</span>` : ''}
         <span class="text-slate-400">· ${k.qty.size ? esc([...k.qty].map(([u, q]) => `${qtyFormat.format(q)}${u ? ` ${u}` : ''}`).join(' · ')) : 'in progress'}${
           k.who.size ? ` · ${esc([...k.who].join(', '))}` : ''}</span></li>`).join('')}</ul>` : ''}
-    ${finished.length ? `<p class="mt-2 text-xs text-slate-500">Finished: ${finished.map((t) => esc(t.name)).join(', ')}</p>` : ''}`;
+    ${finished.length ? `<p class="mt-2 text-xs text-slate-500">Finished: ${finished.map((t) => esc(taskName(t))).join(', ')}</p>` : ''}`;
 }
 
 function renderComingUp() {
@@ -2060,7 +2078,7 @@ function renderComingUp() {
   }
   el.innerHTML = `<ul class="week-list">${next.map((t) => {
     const starting = t.planned_start >= today;
-    return `<li><span class="text-white">${esc(t.name)}</span>
+    return `<li><span class="text-white">${esc(taskName(t))}</span>
       <span class="text-slate-400">· ${starting ? `starts ${esc(formatDate(t.planned_start))}` : `due ${esc(formatDate(dueDate(t)))} · ${Math.round(completionOf(t) * 100)}%`}${
         t.contractor_id ? ` · ${esc(contractorName(t.contractor_id))}` : ''}</span></li>`;
   }).join('')}</ul>`;
@@ -2145,7 +2163,7 @@ function knockOnCell(delay) {
     const task = state.tasks.find((t) => t.id === i.task_id);
     const who = task?.contractor_id ? contractorName(task.contractor_id) : 'No contractor';
     if (!byContractor.has(who)) byContractor.set(who, []);
-    byContractor.get(who).push(task ? task.name : 'Item removed');
+    byContractor.get(who).push(task ? taskName(task) : 'Item removed');
   }
   return [...byContractor].map(([who, items]) => `
     <p class="text-xs"><span class="text-white">${esc(who)}</span>
@@ -2207,7 +2225,7 @@ function renderDelays() {
     : '<div class="empty-state">No delay has been blamed on a contractor.</div>') + unattributed;
 
   if (!delays.length) {
-    $('#delays-table').innerHTML = '<div class="empty-state">No delays yet - click Log Delay.</div>';
+    $('#delays-table').innerHTML = '<div class="empty-state">No delays yet.</div>';
     return;
   }
   // Delays still running come first - they are the ones that need a decision.
@@ -2227,8 +2245,8 @@ function renderDelays() {
             : delayDaysLost(d)}
         </td>
         <td class="max-w-md">
-          ${d.description_en ? `<p>${esc(d.description_en)}</p>` : ''}
-          ${d.description ? `<p class="text-slate-500">${esc(d.description)}</p>` : ''}
+          ${inLang(d.description_en, d.description) ? `<p>${esc(inLang(d.description_en, d.description))}</p>` : ''}
+          ${inLang(d.description, d.description_en) !== inLang(d.description_en, d.description) ? `<p class="text-slate-500">${esc(inLang(d.description, d.description_en))}</p>` : ''}
           ${!d.description && !d.description_en ? '<span class="text-slate-500">-</span>' : ''}
           ${photoStrip(delayPhotos.get(d.id), d.id)}
         </td>
@@ -2316,7 +2334,7 @@ function renderRecentDelays(delays) {
   const rooms = hasRooms(currentProject());
   el.innerHTML = delays.map((d) => {
     const where = rooms ? roomLabel(d.flats) : '';
-    const text = [where, d.description_en || d.description].filter(Boolean).join(' - ');
+    const text = [where, inLang(d.description_en, d.description)].filter(Boolean).join(' - ');
     return `
       <div class="py-2.5 flex items-start justify-between gap-3 text-sm">
         <div class="min-w-0">
@@ -2397,7 +2415,7 @@ function renderTimeline() {
   const overdueList = p.overdue.length ? `
     <ul class="mt-3 space-y-1 text-xs">
       ${p.overdue.slice(0, 3).map((t) => `
-        <li class="text-rose-300">! ${esc(t.name)} - ${t.daysLate} days past its finish date</li>`).join('')}
+        <li class="text-rose-300">! ${esc(taskName(t))} - ${t.daysLate} days past its finish date</li>`).join('')}
       ${p.overdue.length > 3 ? `<li class="text-slate-500">and ${p.overdue.length - 3} more on the Timetable page</li>` : ''}
     </ul>` : '';
 
@@ -2531,7 +2549,9 @@ function syncRoomsTick(form) {
 // =============================================================
 const qtyFormat = spaced(new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }));
 const sumOf = (items, key) => items.reduce((sum, i) => sum + Number(i[key] || 0), 0);
-const monthLabel = (ym) => new Date(`${ym}-01T00:00`).toLocaleDateString(dateLocale, { month: 'short', year: 'numeric' });
+const monthLabel = (ym) => (isKa
+  ? `${MONTHS_KA[Number(ym.slice(5, 7)) - 1]} ${ym.slice(0, 4)}`
+  : new Date(`${ym}-01T00:00`).toLocaleDateString(dateLocale, { month: 'short', year: 'numeric' }));
 
 function statTile(label, value, meta, tone = '') {
   return `
@@ -2549,7 +2569,7 @@ function updateCostKpi(c) {
   el.classList.toggle('negative', c.spent > c.budget && c.budget > 0);
   $('#kpi-cashflow-meta').textContent = c.budget
     ? `of ${money.format(c.budget)} budget · work done worth ${money.format(c.earned)}`
-    : 'Add budgets to timetable items';
+    : 'No budgets yet';
 }
 
 function renderCosts() {
@@ -2618,7 +2638,7 @@ function renderCosts() {
 
   // ---- BOQ table ----
   if (!state.tasks.length) {
-    $('#boq-table').innerHTML = '<div class="empty-state">No items yet - add them on the Timetable. Each timetable item can carry a budget and payments.</div>';
+    $('#boq-table').innerHTML = '<div class="empty-state">No items yet.</div>';
   } else {
     const rows = state.tasks.map((t) => {
       const budget = Number(t.budget || 0);
@@ -2633,7 +2653,7 @@ function renderCosts() {
         : '<span class="text-slate-500">-</span>';
       return `
         <tr>
-          <td class="task-name">${esc(t.name)}${t.name_ka && t.name_ka !== t.name ? `<span class="block text-xs text-slate-500">${esc(t.name_ka)}</span>` : ''}</td>
+          <td class="task-name">${taskNameHtml(t)}</td>
           <td>${t.contractor_id ? esc(contractorName(t.contractor_id)) : '<span class="text-slate-500">-</span>'}</td>
           <td class="num">${qty}</td>
           <td class="num">${budget ? money.format(budget) : '-'}</td>
@@ -2682,7 +2702,7 @@ function renderCosts() {
   for (const m of state.moneyIn) moneyIn.set(m.received_on.slice(0, 7), (moneyIn.get(m.received_on.slice(0, 7)) ?? 0) + Number(m.amount));
   const months = [...new Set([...planned.keys(), ...actual.keys(), ...site.keys(), ...moneyIn.keys()])].sort();
   if (!months.length) {
-    $('#cashflow-months').innerHTML = '<div class="empty-state">Add budgets, payments, daily workers, rentals or materials to see the monthly cash flow.</div>';
+    $('#cashflow-months').innerHTML = '<div class="empty-state">Nothing recorded yet.</div>';
     return;
   }
 
@@ -2799,9 +2819,7 @@ function renderFinance() {
     $('#finance-position').textContent = '';
     $('#finance-detail').innerHTML = `
       <div class="panel"><div class="empty-state">
-        Choose where this project's income comes from - Edit Project → Income from. A project that sells its flats
-        earns their sale prices; one built for an employer (the government, or a general contractor) earns what the
-        employer pays for each item.
+        No income source chosen yet.
       </div></div>`;
     return;
   }
@@ -2907,7 +2925,7 @@ async function loadMoneyIn(projectId) {
 function renderMoneyIn() {
   const el = $('#finance-money-in');
   if (!state.moneyIn.length) {
-    el.innerHTML = '<div class="empty-state">Nothing recorded yet - click Add money in.</div>';
+    el.innerHTML = '<div class="empty-state">Nothing recorded yet.</div>';
     return;
   }
   const rows = [...state.moneyIn].reverse().map((m) => {
@@ -3027,12 +3045,12 @@ async function onMoneyInClick(e) {
 // Contract: each item's price against its cost, the losing ones in red.
 function marginDetail(items) {
   if (!items.length) {
-    return '<div class="panel"><div class="empty-state">No items yet - add them on the Timetable, each with its budget and the employer\'s price.</div></div>';
+    return '<div class="panel"><div class="empty-state">No items yet.</div></div>';
   }
   const dash = '<span class="text-slate-500">-</span>';
   const rows = items.map(({ task: t, income, cost, margin, earned }) => `
     <tr>
-      <td class="task-name">${esc(t.name)}${t.name_ka && t.name_ka !== t.name ? `<span class="block text-xs text-slate-500">${esc(t.name_ka)}</span>` : ''}</td>
+      <td class="task-name">${taskNameHtml(t)}</td>
       <td>${t.contractor_id ? esc(contractorName(t.contractor_id)) : dash}</td>
       <td class="num">${income ? money.format(income) : '<span class="text-slate-500">no price</span>'}</td>
       <td class="num">${cost ? money.format(cost) : dash}</td>
@@ -3049,7 +3067,7 @@ function marginDetail(items) {
   return `
     <div class="panel">
       <h2 class="panel-title mb-1">Margin by item</h2>
-      <p class="text-xs text-slate-500 mb-3">
+      <p class="hint text-xs text-slate-500 mb-3">
         Employer's price less the item's budget (contract + materials). Earned = the employer's price × the item's % complete.
       </p>
       <div class="overflow-x-auto">
@@ -3080,9 +3098,7 @@ function marginDetail(items) {
 // Sales: where the rooms stand, and cost against price per m² of what is sold.
 function salesDetail(sales, cost) {
   if (!state.flats.length) {
-    return `<div class="panel"><div class="empty-state">No rooms yet - ${hasRooms(currentProject())
-      ? 'add the flats on the Rooms page, with their areas and prices.'
-      : 'tick "This site has rooms" in Edit Project, then add the flats with their areas and prices.'}</div></div>`;
+    return `<div class="panel"><div class="empty-state">No rooms yet.</div></div>`;
   }
   const perM2 = (amount, area) => (area ? money.format(amount / area) : '-');
   const row = (label, b) => `
@@ -3216,9 +3232,9 @@ function renderDayPay(kind, el, emptyText) {
 }
 
 const renderLabour = () => renderDayPay('labour', $('#labour-table'),
-  'No daily workers logged yet - add them in a daily log’s crew lines.');
+  'No daily workers logged yet.');
 const renderGuards = () => renderDayPay('guard', $('#guards-table'),
-  'No guards logged yet - add them in a daily log’s crew lines.');
+  'No guards logged yet.');
 
 /** Everything still owed now: by kind, and in all. */
 function owedNow() {
@@ -3352,7 +3368,7 @@ function onSitePayClick(e) {
 function renderRentals() {
   const el = $('#rentals-table');
   if (!state.rentals.length) {
-    el.innerHTML = '<div class="empty-state">No rentals yet - click Add Rental.</div>';
+    el.innerHTML = '<div class="empty-state">No rentals yet.</div>';
     return;
   }
   const today = todayISO();
@@ -3530,7 +3546,7 @@ function materialPayment(m) {
 function renderMaterials() {
   const el = $('#materials-table');
   if (!state.materials.length) {
-    el.innerHTML = '<div class="empty-state">Nothing bought yet - click Add Purchase.</div>';
+    el.innerHTML = '<div class="empty-state">Nothing bought yet.</div>';
     return;
   }
   const rows = state.materials.map((m) => {
@@ -3539,7 +3555,7 @@ function renderMaterials() {
     const job = kind !== 'material'
       ? `<span class="status-chip status-handed">${esc(PURCHASE_KINDS[kind])}</span>`
       : task
-        ? `${esc(task.name)}${task.contractor_id ? `<span class="block text-xs text-slate-500">${esc(contractorName(task.contractor_id))}</span>` : ''}`
+        ? `${esc(taskName(task))}${task.contractor_id ? `<span class="block text-xs text-slate-500">${esc(contractorName(task.contractor_id))}</span>` : ''}`
         : '<span class="text-slate-500">General</span>';
     const qty = m.quantity != null
       ? `${qtyFormat.format(m.quantity)} ${esc(m.unit || '')}${m.unit_price != null ? ` × ${money2.format(m.unit_price)}` : ''}`
@@ -3604,7 +3620,7 @@ function openMaterialModal(material = null) {
   $('#material-task').innerHTML = '<option value="">General - not for one job</option>'
     + state.tasks.map((t) => `
       <option value="${esc(t.id)}"${t.id === taskId ? ' selected' : ''}>
-        ${esc(t.name)}${t.contractor_id ? ` · ${esc(contractorName(t.contractor_id))}` : ''}
+        ${esc(taskName(t))}${t.contractor_id ? ` · ${esc(contractorName(t.contractor_id))}` : ''}
       </option>`).join('');
   f.id.value = material?.id ?? '';
   f.kind.value = material?.kind ?? 'material';
@@ -3901,7 +3917,7 @@ function renderContractors() {
     (perf.get(b.id)?.items ?? 0) - (perf.get(a.id)?.items ?? 0) || a.name.localeCompare(b.name));
 
   if (!list.length) {
-    el.innerHTML = '<div class="empty-state">No contractors on this project yet - click Add Contractor.</div>';
+    el.innerHTML = '<div class="empty-state">No contractors yet.</div>';
     return;
   }
 
@@ -3911,7 +3927,7 @@ function renderContractors() {
     return `
       <tr>
         <td>
-          <p class="text-white font-medium">${esc(c.name)}${c.name_ka ? ` <span class="text-slate-400 font-normal">· ${esc(c.name_ka)}</span>` : ''}</p>
+          <p class="text-white font-medium">${esc(inLang(c.name, c.name_ka))}${inLang(c.name_ka, c.name) !== inLang(c.name, c.name_ka) ? ` <span class="text-slate-400 font-normal">· ${esc(inLang(c.name_ka, c.name))}</span>` : ''}</p>
           <p class="text-xs text-slate-500">${contact(c)}</p>
         </td>
         <td class="num">${s?.items ?? 0}</td>
@@ -4070,7 +4086,7 @@ function renderContracts() {
       <button type="button" class="table-action is-danger" data-contract-delete="${esc(x.id)}">Delete</button>
     </td>`;
   $('#contracts-list').innerHTML = !contracts.length
-    ? '<div class="empty-state">No contracts uploaded for this contractor yet.</div>'
+    ? '<div class="empty-state">No contracts yet.</div>'
     : `
       <table class="data-table">
         <thead><tr><th>Document</th><th>Date</th><th class="num">Amount</th><th>File</th><th></th></tr></thead>
@@ -4226,7 +4242,7 @@ function openContractorJobs(contractorId) {
           const pct = Math.round(completionOf(t) * 100);
           return `
             <tr>
-              <td class="task-name">${esc(t.name)}${t.name_ka && t.name_ka !== t.name ? `<span class="block text-xs text-slate-500">${esc(t.name_ka)}</span>` : ''}</td>
+              <td class="task-name">${taskNameHtml(t)}</td>
               <td class="whitespace-nowrap">${esc(formatDate(t.planned_start))} → ${finishCell(t)}</td>
               <td class="num">
                 ${pct}%
@@ -4240,7 +4256,7 @@ function openContractorJobs(contractorId) {
         }).join('')}
       </tbody>
     </table>`
-    : '<div class="empty-state">No jobs assigned yet - pick this contractor in the Contractor column on the Timetable.</div>';
+    : '<div class="empty-state">No jobs yet</div>';
   openModal('modal-contractor-jobs');
 }
 
@@ -4396,7 +4412,7 @@ async function loadLogs(projectId, { more = false } = {}) {
   if (!shownLogs.length) {
     el.innerHTML = filtered
       ? '<div class="panel empty-state">No logs match - widen the dates or clear the search.</div>'
-      : "<div class=\"panel empty-state\">No daily logs yet - click New Daily Log and paste today's WhatsApp log.</div>";
+      : "<div class=\"panel empty-state\">No daily logs yet.</div>";
     return;
   }
 
@@ -4626,7 +4642,7 @@ function crewContractorOptions(selected) {
   const chosen = selected ?? '';
   const direct = `<option value=""${chosen === '' ? ' selected' : ''}>Hired by the client</option>`;
   return direct + state.contractors.map((c) => (
-    `<option value="${esc(c.id)}"${c.id === chosen ? ' selected' : ''}>${esc(c.name)}</option>`
+    `<option value="${esc(c.id)}"${c.id === chosen ? ' selected' : ''}>${esc(inLang(c.name, c.name_ka))}</option>`
   )).join('');
 }
 
@@ -5028,7 +5044,7 @@ function renderVariations() {
   ].join('');
 
   if (!variations.length) {
-    $('#variations-table').innerHTML = '<div class="empty-state">No variations yet - record work instructed after the contract was signed.</div>';
+    $('#variations-table').innerHTML = '<div class="empty-state">No variations yet.</div>';
     return;
   }
 
@@ -5218,7 +5234,7 @@ function renderEvents() {
   ].join('');
 
   if (!events.length) {
-    $('#events-table').innerHTML = '<div class="empty-state">Nothing recorded yet - log incidents, inspections and toolbox talks here.</div>';
+    $('#events-table').innerHTML = '<div class="empty-state">Nothing recorded yet.</div>';
     return;
   }
 
@@ -6085,7 +6101,7 @@ function renderImpactPicker(delay) {
   const el = $('#delay-impacts');
   const already = new Set((delay?.impacts ?? []).map((i) => i.task_id));
   if (!state.tasks.length) {
-    el.innerHTML = '<div class="empty-state">No timetable items yet - add them on the Timetable first.</div>';
+    el.innerHTML = '<div class="empty-state">No timetable items yet.</div>';
     return;
   }
   el.innerHTML = state.tasks.map((t) => {
@@ -6093,7 +6109,7 @@ function renderImpactPicker(delay) {
     return `
       <label class="impact-row">
         <input type="checkbox" data-impact-task="${esc(t.id)}"${already.has(t.id) ? ' checked' : ''}>
-        <span class="impact-row-name">${esc(t.name)}
+        <span class="impact-row-name">${esc(taskName(t))}
           <span class="impact-row-who">${esc(who)} · ${esc(formatDate(t.planned_start))} → ${esc(formatDate(t.planned_finish))}</span>
         </span>
       </label>`;
@@ -6548,11 +6564,12 @@ async function loadDollarRate() {
 // =============================================================
 // Boot
 // =============================================================
-// ქართ / ENG: each button offers the other language.
-$$('[data-lang-toggle]').forEach((b) => {
-  b.textContent = isKa ? 'ENG' : 'ქართ';
-  b.title = isKa ? 'Switch to English' : 'ქართულ ენაზე გადართვა';
-  b.addEventListener('click', () => setLang(isKa ? 'en' : 'ka'));
+// ENG | ქარ: both languages on the switch, the one in use highlighted.
+$$('[data-lang]').forEach((b) => {
+  const active = b.dataset.lang === (isKa ? 'ka' : 'en');
+  b.classList.toggle('is-active', active);
+  b.setAttribute('aria-pressed', String(active));
+  b.addEventListener('click', () => { if (!active) setLang(b.dataset.lang); });
 });
 startTranslating();
 initMobile({ openMenu: () => setSidebar(true) });
