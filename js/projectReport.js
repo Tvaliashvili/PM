@@ -10,6 +10,7 @@ import {
 } from './schedule.js';
 import { bi, biName, dateKa, dateEn, signatureHtml } from './bilingual.js';
 import { MANPOWER_TRADES, REPORT_AUTHOR } from './config.js';
+import { financePosition, salesByType } from './finance.js';
 import { savePdf } from './pdfSave.js';
 import { saveDocx } from './docxSave.js';
 
@@ -823,11 +824,11 @@ export async function buildProjectReport({
   // Materials the client bought and handed to a contractor, by job
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const materialsBlock = materials.length ? `
-    <h3 class="rpt-sub-h">${L('დამკვეთის მიერ შეძენილი მასალები', 'Materials bought by the client')}</h3>
+    <h3 class="rpt-sub-h">${L('დამკვეთის მიერ შეძენილი მასალები და ინვენტარი', 'Materials and purchases by the client')}</h3>
     <table class="rpt-compact">
       <thead>
         <tr>
-          <th>${L('თარიღი', 'Date')}</th><th>${L('მასალა', 'Material')}</th>
+          <th>${L('თარიღი', 'Date')}</th><th>${L('დასახელება', 'Item')}</th>
           <th>${L('სამუშაო / კონტრაქტორი', 'Job / contractor')}</th>
           <th class="num">${L('რაოდენობა', 'Quantity')}</th><th class="num">${L('თანხა', 'Amount')}</th>
         </tr>
@@ -835,8 +836,9 @@ export async function buildProjectReport({
       <tbody>
         ${[...materials].sort((a, b) => a.bought_on.localeCompare(b.bought_on)).map((x) => {
           const t = taskById.get(x.task_id);
-          const job = t
-            ? [esc(taskBi(t)), t.contractor_id ? esc(nameOf(t.contractor_id)) : ''].filter(Boolean).join(' · ')
+          const job = x.kind === 'tool' ? L('ხელსაწყო / ინვენტარი', 'Tool / equipment')
+            : x.kind === 'other' ? L('სხვა', 'Other')
+            : t ? [esc(taskBi(t)), t.contractor_id ? esc(nameOf(t.contractor_id)) : ''].filter(Boolean).join(' · ')
             : L('ზოგადი', 'General');
           return `
             <tr>
@@ -921,6 +923,119 @@ export async function buildProjectReport({
       ${siteCostsBlock}
       ${materialsBlock}
     </section>`;
+
+  // ---------- Finance: what the project earns against what it costs ----------
+  // Shown once the project says where its income comes from (see finance.js).
+  const fin = financePosition({ project, tasks, rooms: units, variations, materials, cost });
+  let financeSection = '';
+  if (fin.source) {
+    const pct = (part, whole) => (whole ? `${(part / whole * 100).toFixed(1)}%` : '-');
+    const tone = (v) => (v < 0 ? 'bad' : v > 0 ? 'ok' : '');
+    const costSub = [
+      `${L('ბიუჯეტი', 'BOQ')} ${m(fin.budget)}`,
+      fin.variations ? `${L('ცვლილებები', 'variations')} ${m(fin.variations)}` : '',
+      fin.siteSoFar ? `${L('ობიექტის ხარჯი დღემდე', 'site costs so far')} ${m(fin.siteSoFar)}` : '',
+      fin.unbudgeted ? `${L('ობიექტისთვის შეძენილი', 'purchases for the site')} ${m(fin.unbudgeted)}` : '',
+    ].filter(Boolean).join(' + ');
+    const sales = fin.sales;
+    const incomeSub = sales
+      ? `${sales.sold.count} ${L('გაყიდული', 'sold')} · ${sales.reserved.count} ${L('დაჯავშნილი', 'reserved')} · ${sales.forSale.count} ${L('იყიდება', 'for sale')}`
+      : `${m(fin.earned)} ${L('გამომუშავებული', 'earned by the work done')}`;
+    const tiles = `
+      <div class="rpt-tiles rpt-tiles-4 rpt-avoid">
+        ${tile('შემოსავალი', 'Income', m(fin.income), incomeSub)}
+        ${tile('ხარჯი', 'Cost', m(fin.cost), costSub)}
+        ${fin.profit < 0
+    ? tile('მოსალოდნელი ზარალი', 'Expected loss', m(fin.profit), L('შემოსავალი − ხარჯი', 'Income − cost'), 'bad')
+    : tile('მოსალოდნელი მოგება', 'Expected profit', m(fin.profit), L('შემოსავალი − ხარჯი', 'Income − cost'), tone(fin.profit))}
+        ${tile('მარჟა', 'Margin', pct(fin.profit, fin.income), L('შემოსავლიდან', 'of income'), tone(fin.profit))}
+      </div>`;
+    const note = `<p class="rpt-muted">${L(
+      'ჯერ არ ითვლება: სესხის პროცენტი, ბიუჯეტს ზემოთ ნაყიდი მასალა და დარჩენილი დღიური მუშების, დარაჯებისა და ტექნიკის ხარჯი.',
+      'Not counted yet: loan interest, materials bought beyond their budgets, and daily workers, guards and rentals still to come.',
+    )}</p>`;
+
+    let detail = '';
+    if (sales) {
+      const perM2 = (amount, area) => (area ? m(amount / area) : '-');
+      const row = (ka, en, b) => `
+        <tr><td>${L(ka, en)}</td><td class="num">${b.count}</td><td class="num">${num.format(b.area)} m²</td>
+          <td class="num">${m(b.amount)}</td><td class="num">${perM2(b.amount, b.area)}</td></tr>`;
+      const all = { count: sales.sold.count + sales.reserved.count + sales.forSale.count, area: sales.sellable, amount: sales.income };
+      const costPerM2 = sales.sellable ? fin.cost / sales.sellable : 0;
+      const pricePerM2 = sales.sellable ? sales.income / sales.sellable : 0;
+      const types = salesByType(units, project.price_per_m2);
+      detail = `
+        <div class="rpt-tiles rpt-avoid">
+          ${tile('ხარჯი 1 მ²-ზე', 'Cost per m²', sales.sellable ? m(costPerM2) : '-',
+    sales.sellable ? `${num.format(sales.sellable)} m² ${L('გასაყიდი', 'for sale')}` : '')}
+          ${tile('ფასი 1 მ²-ზე', 'Price per m²', sales.sellable ? m(pricePerM2) : '-',
+    sales.sold.area ? `${L('გაიყიდა', 'sold at')} ${m(sales.sold.amount / sales.sold.area)}` : L('ჯერ არაფერი გაყიდულა', 'nothing sold yet'))}
+          ${tile('მოგება 1 მ²-ზე', 'Profit per m²', sales.sellable ? m(pricePerM2 - costPerM2) : '-', '', tone(pricePerM2 - costPerM2))}
+        </div>
+        <h3 class="rpt-sub-h">${L('გაყიდვები', 'Sales')}</h3>
+        <table class="rpt-compact rpt-avoid">
+          <thead><tr><th></th><th class="num">${L('ოთახი', 'Rooms')}</th><th class="num">${L('ფართი', 'Area')}</th>
+            <th class="num">${L('შემოსავალი', 'Income')}</th><th class="num">${L('1 მ²', 'Per m²')}</th></tr></thead>
+          <tbody>
+            ${row('გაყიდული', 'Sold', sales.sold)}
+            ${row('დაჯავშნილი', 'Reserved', sales.reserved)}
+            ${row('იყიდება', 'For sale', sales.forSale)}
+          </tbody>
+          <tfoot>${row('სულ', 'Total', all)}</tfoot>
+        </table>
+        ${types.length ? `
+        <h3 class="rpt-sub-h">${L('ტიპების მიხედვით', 'By type')}</h3>
+        <table class="rpt-compact rpt-avoid">
+          <thead><tr><th>${L('ტიპი', 'Type')}</th><th class="num">${L('ოთახი', 'Rooms')}</th><th class="num">${L('გაყიდული', 'Sold')}</th>
+            <th class="num">${L('ფართი', 'Area')}</th><th class="num">${L('შემოსავალი', 'Income')}</th><th class="num">${L('1 მ²', 'Per m²')}</th></tr></thead>
+          <tbody>
+            ${types.map(([type, t]) => `
+              <tr><td>${type ? esc(bi(type)) : L('ტიპის გარეშე', 'No type')}</td><td class="num">${t.count}</td><td class="num">${t.sold}</td>
+                <td class="num">${num.format(t.area)} m²</td><td class="num">${m(t.amount)}</td><td class="num">${perM2(t.amount, t.area)}</td></tr>`).join('')}
+          </tbody>
+        </table>` : ''}`;
+    } else if (fin.items.length) {
+      detail = `
+        <h3 class="rpt-sub-h">${L('მარჟა სამუშაოების მიხედვით', 'Margin by item')}</h3>
+        <table class="rpt-compact">
+          <thead>
+            <tr>
+              <th>${L('სამუშაო', 'Work item')}</th><th class="num">${L('დამკვეთის ფასი', "Employer's price")}</th>
+              <th class="num">${L('ხარჯი', 'Cost')}</th><th class="num">${L('მარჟა', 'Margin')}</th>
+              <th class="num">%</th><th class="num">${L('გამომუშავებული', 'Earned')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${fin.items.map(({ task: t, income, cost: c, margin, earned }) => `
+              <tr>
+                <td>${esc(taskBi(t))}</td>
+                <td class="num">${income ? m(income) : L('ფასი არ აქვს', 'no price')}</td>
+                <td class="num">${c ? m(c) : '-'}</td>
+                <td class="num">${!income && !c ? '-' : `<span class="${margin < 0 ? 'rpt-neg' : ''}">${m(margin)}</span>`}</td>
+                <td class="num">${income ? pct(margin, income) : '-'}</td>
+                <td class="num">${earned ? m(earned) : '-'}</td>
+              </tr>`).join('')}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td>${L('სულ', 'Total')}</td><td class="num">${m(fin.income)}</td>
+              <td class="num">${m(fin.items.reduce((s, i) => s + i.cost, 0))}</td>
+              <td class="num">${m(fin.income - fin.items.reduce((s, i) => s + i.cost, 0))}</td>
+              <td class="num">${pct(fin.income - fin.items.reduce((s, i) => s + i.cost, 0), fin.income)}</td>
+              <td class="num">${m(fin.earned)}</td>
+            </tr>
+          </tfoot>
+        </table>`;
+    }
+    financeSection = `
+      <section class="rpt-section">
+        ${H('ფინანსები: მოგება და ზარალი', 'Finance: profit and loss')}
+        ${tiles}
+        ${note}
+        ${detail}
+      </section>`;
+  }
 
   // ---------- Contractors: one card each ----------
   const rating = (s) => {
@@ -1444,6 +1559,8 @@ export async function buildProjectReport({
     const held = own.reduce((sum, p) => sum + Number(p.retention || 0), 0);
     const mats = materials.filter((x) => x.task_id === t.id);
     const holdUps = delayImpacts.filter((i) => i.task_id === t.id && i.delay);
+    // Work in no room is recorded on its item (a pour, the facade).
+    const onTask = work.filter((w) => w.task_id === t.id).sort((a, b) => a.work_date.localeCompare(b.work_date));
     popups[`task:${t.id}`] = `
       <h3>${esc(taskBi(t))}</h3>
       <p class="rpt-pop-facts">${chip({ ...TASK_STATUS[s.key], tone: TASK_STATUS[s.key].tone })}
@@ -1470,6 +1587,12 @@ export async function buildProjectReport({
       ${holdUps.length ? popH('შეაფერხა', 'Held up by') + popTable(
         [['თარიღი', 'Date'], ['მიზეზი', 'Cause'], ['დღე', 'Days', 'num']],
         holdUps.map((i) => delayRow(i.delay)),
+      ) : ''}
+      ${onTask.length ? popH('შესრულებული სამუშაოები', 'Work recorded') + popTable(
+        [['თარიღი', 'Date'], ['სამუშაო', 'Work'], ['კონტრაქტორი', 'Contractor'], ['რაოდენობა', 'Quantity', 'num']],
+        onTask.map((w) => `<tr><td>${d(w.work_date)}</td><td>${biText(w.work, w.work_en !== w.work ? w.work_en : '')}</td>
+          <td>${w.contractor_id ? esc(nameOf(w.contractor_id)) : '-'}</td>
+          <td class="num">${w.quantity != null ? qtyText(Number(w.quantity), w.unit) : inProgress}</td></tr>`),
       ) : ''}`;
   }
 
@@ -1607,7 +1730,7 @@ export async function buildProjectReport({
   const page = document.createElement('div');
   page.className = 'pdf-page rpt';
   page.innerHTML = header + glance + attention + notMoving + driftSection + timeline + roadAhead
-    + costSection + contractorsSection + unitsSection + workSection + logsSection + delaysSection + safetySection + footer;
+    + costSection + financeSection + contractorsSection + unitsSection + workSection + logsSection + delaysSection + safetySection + footer;
   page.popups = popups; // read by the interactive (.html) export only
   return page;
 }

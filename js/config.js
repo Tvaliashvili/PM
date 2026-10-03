@@ -34,6 +34,13 @@ export const UNIT_STATUSES = {
   handed_over: 'Handed over',
 };
 
+// What a purchase is (materials.kind). Only a material can be for one job.
+export const PURCHASE_KINDS = {
+  material: 'Material',
+  tool:     'Tool / equipment',
+  other:    'Other',
+};
+
 // Where a project's income comes from (projects.income_from; null = not chosen).
 // Money from an employer is income - only a loan or own money is funding.
 export const INCOME_SOURCES = {

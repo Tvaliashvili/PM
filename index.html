@@ -152,13 +152,7 @@
 
         <!-- DASHBOARD -->
         <section id="section-dashboard" data-section="dashboard" class="module">
-          <div class="module-header">
-            <div>
-              <h1 class="text-xl font-semibold text-white">Dashboard</h1>
-              <p id="dashboard-subtitle" class="text-sm text-slate-500">Select a project to view its status.</p>
-            </div>
-          </div>
-
+          <!-- No page header: the top bar already names the project, its location and client. -->
           <!-- KPI cards -->
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <article class="kpi-card">
@@ -409,15 +403,16 @@
             <div class="panel">
               <div class="flex items-start justify-between gap-3 mb-3">
                 <div>
-                  <h2 class="panel-title mb-1">Materials</h2>
+                  <h2 class="panel-title mb-1">Materials &amp; Purchases</h2>
                   <p class="text-xs text-slate-500">
-                    Materials the client buys and hands to a contractor. Each purchase names its job, so it counts
-                    against that job and shows who it was supplied to.
+                    Everything the client buys for the site. A material can name its job, so it counts against that
+                    job's materials budget and shows who it was supplied to. Tools and equipment the site keeps (a laser
+                    level, a measuring tape) and other purchases are for the whole site.
                   </p>
                 </div>
                 <button id="btn-add-material" class="btn btn-primary btn-sm shrink-0">
                   <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
-                  Add Material
+                  Add Purchase
                 </button>
               </div>
               <div id="materials-table" class="overflow-x-auto"></div>
@@ -1385,20 +1380,24 @@
     <form id="form-material">
       <input type="hidden" name="id">
       <div class="modal-header">
-        <h2 id="material-title">Add Material</h2>
+        <h2 id="material-title">Add Purchase</h2>
         <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
       </div>
       <div class="modal-body space-y-4">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label class="block">
-            <span class="form-label">Material - ქართული</span>
-            <input name="item_ka" maxlength="160" class="input-dark w-full" placeholder="მაგ. ცემენტი M400">
-          </label>
-          <label class="block">
-            <span class="form-label">Material - English</span>
-            <input name="item" maxlength="160" class="input-dark w-full" placeholder="e.g. Cement M400">
-          </label>
           <label class="block sm:col-span-2">
+            <span class="form-label">Type</span>
+            <select id="material-kind" name="kind" class="select-dark w-full"></select>
+          </label>
+          <label class="block">
+            <span class="form-label">Item - ქართული</span>
+            <input name="item_ka" maxlength="160" class="input-dark w-full" placeholder="მაგ. ცემენტი M400, ლაზერული თარაზო">
+          </label>
+          <label class="block">
+            <span class="form-label">Item - English</span>
+            <input name="item" maxlength="160" class="input-dark w-full" placeholder="e.g. Cement M400, laser level">
+          </label>
+          <label id="material-task-wrap" class="block sm:col-span-2">
             <span class="form-label">For job</span>
             <select id="material-task" name="task_id" class="select-dark w-full"></select>
           </label>

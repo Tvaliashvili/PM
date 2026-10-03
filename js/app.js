@@ -6,7 +6,7 @@ import {
   UNIT_TYPES, UNIT_STATUSES,
   MANPOWER_TRADES, WEATHER_OPTIONS, DELAY_CAUSES, DAY_WORKER_KEY, GUARD_KEY, EQUIPMENT_SUGGESTIONS,
   SITE_EVENT_KINDS, INCIDENT_SEVERITIES, VARIATION_STATUSES,
-  BOQ_UNITS, CONTRACTOR_TRADES, INCOME_SOURCES, SALE_STATUSES,
+  BOQ_UNITS, CONTRACTOR_TRADES, INCOME_SOURCES, SALE_STATUSES, PURCHASE_KINDS,
 } from './config.js';
 import { generateDailyReport } from './pdfReport.js';
 import { buildProjectReport, downloadProjectReport } from './projectReport.js';
@@ -17,7 +17,7 @@ import {
   delayIsOngoing, delayDaysLost, delayStart, delayEnd, delayCovers, causeOf, withExtensions, dueDate, planVerdict,
 } from './schedule.js';
 import { ka, roomLabel } from './bilingual.js';
-import { itemMargin, roomIncome, salesPosition } from './finance.js';
+import { roomIncome, financePosition, salesByType } from './finance.js';
 import {
   MAX_PHOTOS, uploadPhotos, fetchPhotos, signPhotos, photosBy, deletePhoto, deletePhotosFor, deleteProjectPhotos,
 } from './photos.js';
@@ -318,9 +318,6 @@ function applyProjectHeader(project) {
   $('#topbar-project-name').textContent = project?.name ?? '';
   $('#topbar-project-location').textContent = [locationOf(project), clientOf(project) && `Client: ${clientOf(project)}`]
     .filter(Boolean).join(' · ');
-  $('#dashboard-subtitle').textContent = project
-    ? [project.name, locationOf(project), clientOf(project) && `Client: ${clientOf(project)}`].filter(Boolean).join(' · ')
-    : 'Select a project to view its status.';
 
   $('[data-nav="units"]').classList.toggle('hidden', !hasRooms(project));
   if (project && !hasRooms(project) && location.hash === '#units') goTo('dashboard');
@@ -762,14 +759,15 @@ async function saveUnit(e) {
   if (projectId === state.projectId) loadUnits(projectId);
 }
 
-// ---------- Work done in each room ----------
-// Entered by hand from the room's Work popup: the day, what was done (Georgian
-// and English), who did it and, when measured, how much.
-let roomWorkFlatId = null;
+// ---------- Work done in each room, or on a timetable item ----------
+// Entered by hand from a room's Work popup, or a timetable item's for work in
+// no room (a slab pour, the facade): the day, what was done (Georgian and
+// English), who did it and, when measured, how much.
+let workTarget = {}; // { flatId } or { taskId }: whose Work popup is open
 
 async function loadWork(projectId) {
   const { data, error } = await db.from('work_done')
-    .select('id, flat_id, contractor_id, work_date, work, work_en, quantity, unit, created_at')
+    .select('id, flat_id, task_id, contractor_id, work_date, work, work_en, quantity, unit, created_at')
     .eq('project_id', projectId)
     .order('work_date')
     .order('created_at');
@@ -780,6 +778,7 @@ async function loadWork(projectId) {
   }
   state.work = data;
   renderUnits();
+  if (state.tasks.length) renderSchedule(); // each item's Work count
   // Each log card shows what was done on its day.
   $$('[data-log-work]').forEach((el) => { el.innerHTML = workList(workOn(el.dataset.logWork)); });
   if ($('#modal-room-work').open) renderRoomWork();
@@ -788,13 +787,43 @@ async function loadWork(projectId) {
 function openRoomWork(flatId) {
   const flat = state.flats.find((f) => f.id === flatId);
   if (!flat) return;
-  roomWorkFlatId = flatId;
+  workTarget = { flatId };
   $('#room-work-title').textContent = `Work done - ${roomLabel(flat)}`;
   $('#room-work-sub').textContent = [`Floor ${flat.floor}`, flat.unit_type, UNIT_STATUSES[flat.status]].filter(Boolean).join(' · ');
   resetRoomWorkForm();
   renderRoomWork();
   openModal('modal-room-work');
   $('#room-work-pick').focus();
+}
+
+// Work in no room, on a timetable item: the pour, the facade, the yard.
+function openTaskWork(taskId) {
+  const task = state.tasks.find((t) => t.id === taskId);
+  if (!task) return;
+  workTarget = { taskId };
+  $('#room-work-title').textContent = `Work done - ${task.name}`;
+  resetRoomWorkForm();
+  renderRoomWork();
+  openModal('modal-room-work');
+  $('#room-work-pick').focus();
+}
+
+const workOfTarget = () => state.work.filter((w) => (workTarget.taskId
+  ? w.task_id === workTarget.taskId
+  : w.flat_id === workTarget.flatId));
+
+/**
+ * What an item's recorded work adds up to against its BOQ quantity: the
+ * quantities measured in the item's own unit. null when the item has no
+ * quantity to measure against.
+ */
+function taskMeasured(task) {
+  const total = Number(task.quantity);
+  if (!(total > 0)) return null;
+  const done = state.work
+    .filter((w) => w.task_id === task.id && w.quantity != null && (w.unit ?? '') === (task.unit ?? ''))
+    .reduce((sum, w) => sum + Number(w.quantity), 0);
+  return { done, total, pct: Math.min(100, Math.round((done / total) * 100)) };
 }
 
 /**
@@ -849,6 +878,20 @@ function resetRoomWorkForm(entry = null) {
   $('#room-work-contractor').innerHTML = contractorOptions(entry?.contractor_id ?? '');
   f.quantity.value = entry?.quantity ?? '';
   f.unit.value = entry?.unit ?? '';
+  // A new entry on an item starts from the item: its contractor and BOQ unit,
+  // and its name as the work when the project already has that work.
+  const task = !entry && workTarget.taskId ? state.tasks.find((t) => t.id === workTarget.taskId) : null;
+  if (task) {
+    f.contractor_id.value = task.contractor_id ?? '';
+    f.unit.value = task.unit ?? '';
+    const tag = tags.find((t) => t.key === workTagKey({ work: task.name_ka || task.name }));
+    if (tag) {
+      f.pick.value = tag.key;
+      f.work.value = tag.ka ?? '';
+      f.work_en.value = tag.en ?? '';
+      syncWorkPicker();
+    }
+  }
   $('[type=submit]', form).textContent = entry ? 'Save changes' : 'Add work';
   $('#btn-room-work-cancel').classList.toggle('hidden', !entry);
   showFormError(form, '');
@@ -856,10 +899,11 @@ function resetRoomWorkForm(entry = null) {
 
 function renderRoomWork() {
   const list = $('#room-work-list');
-  const work = state.work.filter((w) => w.flat_id === roomWorkFlatId)
+  if (workTarget.taskId) renderTaskWorkSub();
+  const work = workOfTarget()
     .sort((a, b) => b.work_date.localeCompare(a.work_date) || String(b.created_at).localeCompare(String(a.created_at)));
   if (!work.length) {
-    list.innerHTML = '<div class="empty-state">No work recorded in this room yet.</div>';
+    list.innerHTML = `<div class="empty-state">No work recorded ${workTarget.taskId ? 'on this item' : 'in this room'} yet.</div>`;
     return;
   }
   list.innerHTML = `
@@ -883,6 +927,23 @@ function renderRoomWork() {
 
 // Leaving one language with the other empty fills the other in, to check
 // before saving - the same as an activity's names.
+// An item's popup says what its work adds up to against the BOQ, and offers
+// to set the item's % complete from that.
+function renderTaskWorkSub() {
+  const task = state.tasks.find((t) => t.id === workTarget.taskId);
+  if (!task) return;
+  const m = taskMeasured(task);
+  const now = Math.round(completionOf(task) * 100);
+  const parts = [
+    `${formatDate(task.planned_start)} → ${formatDate(task.planned_finish)}`,
+    task.contractor_id ? contractorName(task.contractor_id) : '',
+    m ? `measured ${qtyFormat.format(m.done)} of ${qtyFormat.format(m.total)} ${task.unit ?? ''} (${m.pct}%)` : '',
+  ].filter(Boolean).map(esc).join(' · ');
+  $('#room-work-sub').innerHTML = parts + (m && m.pct !== now
+    ? ` <button type="button" class="table-action" data-task-work-pct="${m.pct}">Set % done to ${m.pct}% (now ${now}%)</button>`
+    : '');
+}
+
 async function onRoomWorkNameChange(e) {
   const f = e.currentTarget.elements;
   // A work picked from the list brings its names, and its unit and contractor
@@ -938,7 +999,8 @@ async function saveRoomWork(e) {
   const quantity = numOrNull(fd.get('quantity'));
   const id = fd.get('id');
   const row = {
-    flat_id: roomWorkFlatId,
+    flat_id: workTarget.flatId ?? null,
+    task_id: workTarget.taskId ?? null,
     work_date: fd.get('work_date'),
     contractor_id: fd.get('contractor_id') || null,
     quantity: quantity > 0 ? quantity : null,
@@ -1098,7 +1160,7 @@ async function loadSchedule(projectId) {
       .eq('project_id', projectId)
       .order('start_date', { ascending: false }),
     db.from('materials')
-      .select('id, task_id, bought_on, item, item_ka, quantity, unit, unit_price, amount, supplier, supplier_ka, note, paid_on, due_on')
+      .select('id, task_id, kind, bought_on, item, item_ka, quantity, unit, unit_price, amount, supplier, supplier_ka, note, paid_on, due_on')
       .eq('project_id', projectId)
       .order('bought_on', { ascending: false })
       .order('created_at', { ascending: false }),
@@ -1242,6 +1304,8 @@ function renderSchedule() {
         <td class="num">${Number(t.budget) ? money.format(t.budget) : '-'}</td>
         <td class="whitespace-nowrap">${taskStateChip(t, s)}</td>
         <td class="text-right whitespace-nowrap">
+          <button type="button" class="table-action" data-task-work="${esc(t.id)}" title="Work done on this item - for work in no room, like a pour or the facade">Work${
+            taskWorkCount(t.id) ? ` (${taskWorkCount(t.id)})` : ''}</button>
           <button type="button" class="table-action" data-task-edit="${esc(t.id)}">Edit</button>
           <button type="button" class="table-action is-danger" data-task-delete="${esc(t.id)}">Delete</button>
         </td>
@@ -1540,7 +1604,10 @@ function onTaskTableClick(e) {
   if (del) return deleteTask(del.dataset.taskDelete);
 
   const pay = e.target.closest('[data-task-payments]');
-  if (pay) openPaymentsModal(pay.dataset.taskPayments);
+  if (pay) return openPaymentsModal(pay.dataset.taskPayments);
+
+  const work = e.target.closest('[data-task-work]');
+  if (work) openTaskWork(work.dataset.taskWork);
 }
 
 // =============================================================
@@ -2225,14 +2292,16 @@ function renderFinance() {
   if (!project) return;
   const source = incomeFrom(project);
 
-  const c = costPosition(state.tasks, state.payments, todayISO(), state.siteCosts);
-  const variations = sumOf(state.variations.filter((v) => v.status === 'approved'), 'amount');
-  const siteSoFar = c.labour + c.guard + c.rental;
-  const cost = c.budget + variations + siteSoFar;
+  const fin = financePosition({
+    project, tasks: state.tasks, rooms: state.flats, variations: state.variations, materials: state.materials,
+    cost: costPosition(state.tasks, state.payments, todayISO(), state.siteCosts),
+  });
+  const { sales, items, income, cost, profit, variations, siteSoFar, unbudgeted } = fin;
   const costMeta = [
-    `BOQ ${money.format(c.budget)}`,
+    `BOQ ${money.format(fin.budget)}`,
     variations ? `variations ${money.format(variations)}` : '',
     siteSoFar ? `site costs so far ${money.format(siteSoFar)}` : '',
+    unbudgeted ? `purchases for the site ${money.format(unbudgeted)}` : '',
   ].filter(Boolean).join(' + ');
 
   if (!source) {
@@ -2247,14 +2316,10 @@ function renderFinance() {
     return;
   }
 
-  const sales = source === 'sales' ? salesPosition(state.flats, project.price_per_m2) : null;
-  const items = source === 'contract' ? state.tasks.map((t) => ({ task: t, ...itemMargin(t) })) : [];
-  const income = sales ? sales.income : sumOf(items, 'income');
-  const profit = income - cost;
 
   const incomeMeta = sales
     ? `${sales.sold.count} sold · ${sales.reserved.count} reserved · ${sales.forSale.count} for sale`
-    : `Employer's prices · ${money.format(sumOf(items, 'earned'))} earned by the work done`;
+    : `Employer's prices · ${money.format(fin.earned)} earned by the work done`;
   $('#finance-summary').innerHTML = [
     statTile('Income', money.format(income), incomeMeta),
     statTile('Cost', money.format(cost), costMeta),
@@ -2361,20 +2426,9 @@ function salesDetail(sales, cost) {
   };
 
   // Rooms by type: what sells for what.
-  const types = new Map();
-  for (const u of state.flats) {
-    if ((u.sale_status ?? 'for_sale') === 'not_for_sale') continue;
-    const key = u.unit_type || 'No type';
-    const t = types.get(key) ?? { count: 0, sold: 0, area: 0, amount: 0 };
-    t.count += 1;
-    if (u.sale_status === 'sold') t.sold += 1;
-    t.area += Number(u.area_m2 || 0);
-    t.amount += roomIncome(u, currentProject()?.price_per_m2).amount;
-    types.set(key, t);
-  }
-  const typeRows = [...types].sort((a, b) => b[1].amount - a[1].amount).map(([type, t]) => `
+  const typeRows = salesByType(state.flats, currentProject()?.price_per_m2).map(([type, t]) => `
     <tr>
-      <td>${esc(type)}</td>
+      <td>${esc(type || 'No type')}</td>
       <td class="num">${t.count}</td>
       <td class="num">${t.sold}</td>
       <td class="num">${areaFormat.format(t.area)} m²</td>
@@ -2802,14 +2856,17 @@ function materialPayment(m) {
 function renderMaterials() {
   const el = $('#materials-table');
   if (!state.materials.length) {
-    el.innerHTML = '<div class="empty-state">No materials yet - click Add Material.</div>';
+    el.innerHTML = '<div class="empty-state">Nothing bought yet - click Add Purchase.</div>';
     return;
   }
   const rows = state.materials.map((m) => {
     const task = state.tasks.find((t) => t.id === m.task_id);
-    const job = task
-      ? `${esc(task.name)}${task.contractor_id ? `<span class="block text-xs text-slate-500">${esc(contractorName(task.contractor_id))}</span>` : ''}`
-      : '<span class="text-slate-500">General</span>';
+    const kind = m.kind ?? 'material';
+    const job = kind !== 'material'
+      ? `<span class="status-chip status-handed">${esc(PURCHASE_KINDS[kind])}</span>`
+      : task
+        ? `${esc(task.name)}${task.contractor_id ? `<span class="block text-xs text-slate-500">${esc(contractorName(task.contractor_id))}</span>` : ''}`
+        : '<span class="text-slate-500">General</span>';
     const qty = m.quantity != null
       ? `${qtyFormat.format(m.quantity)} ${esc(m.unit || '')}${m.unit_price != null ? ` × ${money2.format(m.unit_price)}` : ''}`
       : '<span class="text-slate-500">-</span>';
@@ -2833,14 +2890,32 @@ function renderMaterials() {
   }).join('');
   el.innerHTML = `
     <table class="data-table">
-      <thead><tr><th>Bought</th><th>Material</th><th>For job</th><th class="num">Qty × price</th><th class="num">Amount</th><th>Payment</th><th></th></tr></thead>
+      <thead><tr><th>Bought</th><th>Item</th><th>For job</th><th class="num">Qty × price</th><th class="num">Amount</th><th>Payment</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
       <tfoot>
-        <tr><td colspan="4">Total</td><td class="num">${money.format(sumOf(state.materials, 'amount'))}</td>
+        <tr><td colspan="4">Total${purchaseSplit()}</td><td class="num">${money.format(sumOf(state.materials, 'amount'))}</td>
           <td>${sumOf(state.materials.filter((m) => !m.paid_on), 'amount')
             ? `<span class="text-amber-400">${money.format(sumOf(state.materials.filter((m) => !m.paid_on), 'amount'))} owed</span>` : ''}</td><td></td></tr>
       </tfoot>
     </table>`;
+}
+
+// "materials $X · tools $Y · other $Z" when the purchases are of more than one type.
+function purchaseSplit() {
+  const parts = Object.entries(PURCHASE_KINDS)
+    .map(([kind, label]) => [label, sumOf(state.materials.filter((m) => (m.kind ?? 'material') === kind), 'amount')])
+    .filter(([, amount]) => amount);
+  return parts.length > 1
+    ? `<span class="block text-xs text-slate-500 font-normal">${esc(parts.map(([label, amount]) => `${label} ${money.format(amount)}`).join(' · '))}</span>`
+    : '';
+}
+
+// Only a material can be for one job; a tool or other purchase is for the site.
+function syncMaterialKind() {
+  const f = $('#form-material').elements;
+  const material = f.kind.value === 'material';
+  $('#material-task-wrap').classList.toggle('hidden', !material);
+  if (!material) f.task_id.value = '';
 }
 
 function openMaterialModal(material = null) {
@@ -2848,7 +2923,9 @@ function openMaterialModal(material = null) {
   const form = $('#form-material');
   const f = form.elements;
   form.reset();
-  $('#material-title').textContent = material ? `Edit Material - ${material.item}` : 'Add Material';
+  $('#material-title').textContent = material ? `Edit Purchase - ${material.item}` : 'Add Purchase';
+  $('#material-kind').innerHTML = Object.entries(PURCHASE_KINDS)
+    .map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join('');
   const taskId = material?.task_id ?? '';
   $('#material-task').innerHTML = '<option value="">General - not for one job</option>'
     + state.tasks.map((t) => `
@@ -2856,6 +2933,8 @@ function openMaterialModal(material = null) {
         ${esc(t.name)}${t.contractor_id ? ` · ${esc(contractorName(t.contractor_id))}` : ''}
       </option>`).join('');
   f.id.value = material?.id ?? '';
+  f.kind.value = material?.kind ?? 'material';
+  syncMaterialKind();
   f.item_ka.value = material?.item_ka ?? '';
   f.item.value = material?.item_ka && material.item === material.item_ka ? '' : (material?.item ?? '');
   f.bought_on.value = material?.bought_on ?? todayISO();
@@ -2884,6 +2963,7 @@ function syncMaterialPayment() {
 // Quantity × unit price → amount.
 function onMaterialInput(e) {
   if (e.target.name === 'payment') syncMaterialPayment();
+  if (e.target.name === 'kind') syncMaterialKind();
   if (!['quantity', 'unit_price'].includes(e.target.name)) return;
   const f = e.currentTarget.elements;
   const qty = parseFloat(f.quantity.value);
@@ -2899,7 +2979,7 @@ async function saveMaterial(e) {
   const itemKa = fd.get('item_ka').trim();
   const itemEn = fd.get('item').trim();
   if (!itemKa && !itemEn) {
-    showFormError(form, 'Enter the material in Georgian or English.');
+    showFormError(form, 'Enter what was bought, in Georgian or English.');
     return;
   }
   const amount = Number(fd.get('amount'));
@@ -2908,8 +2988,10 @@ async function saveMaterial(e) {
     return;
   }
   const id = fd.get('id');
+  const kind = fd.get('kind') || 'material';
   const row = {
-    task_id: fd.get('task_id') || null,
+    kind,
+    task_id: kind === 'material' ? fd.get('task_id') || null : null,
     bought_on: fd.get('bought_on'),
     item: itemEn || itemKa,
     item_ka: itemKa || null,
@@ -2940,7 +3022,7 @@ async function saveMaterial(e) {
     return;
   }
   closeModal('modal-material');
-  toast(id ? 'Material updated.' : 'Material added.', 'success');
+  toast(id ? 'Purchase updated.' : 'Purchase added.', 'success');
   loadSchedule(state.projectId);
 }
 
@@ -3354,6 +3436,7 @@ const quantityText = (w) => (w.quantity != null ? `${qtyFormat.format(w.quantity
 
 const workOn = (date) => state.work.filter((w) => w.work_date === date);
 const workCount = (flatId) => state.work.filter((w) => w.flat_id === flatId).length;
+const taskWorkCount = (taskId) => state.work.filter((w) => w.task_id === taskId).length;
 
 /** The day's work on its log card: "Block A · Room 301 - Gypsum board 200 m² (Giorgi)". */
 function workList(work) {
@@ -3361,7 +3444,7 @@ function workList(work) {
   const items = [...work]
     .sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')))
     .map((w) => {
-      const where = flatName(w.flat_id);
+      const where = flatName(w.flat_id) || (state.tasks.find((t) => t.id === w.task_id)?.name ?? '');
       // Measured that day, or work that went on unmeasured.
       const extra = [quantityText(w) ? `${quantityText(w)} measured` : 'in progress',
         w.contractor_id ? contractorName(w.contractor_id) : ''].filter(Boolean).join(' · ');
@@ -5353,6 +5436,13 @@ $('#form-task').addEventListener('change', onTaskNameChange);
 $('#form-room-work').addEventListener('submit', saveRoomWork);
 $('#form-room-work').addEventListener('change', onRoomWorkNameChange);
 $('#room-work-list').addEventListener('click', onRoomWorkListClick);
+// An item's measured work sets its % complete, when asked.
+$('#room-work-sub').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-task-work-pct]');
+  if (!btn || !workTarget.taskId) return;
+  await setTaskPercent(workTarget.taskId, btn.dataset.taskWorkPct);
+  renderTaskWorkSub();
+});
 $('#btn-room-work-cancel').addEventListener('click', () => resetRoomWorkForm());
 $('#schedule-table').addEventListener('change', onScheduleChange);
 $('#schedule-table').addEventListener('click', onTaskTableClick);

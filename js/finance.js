@@ -39,6 +39,51 @@ export function roomIncome(room, pricePerM2) {
 }
 
 /**
+ * The project's income against its cost, as the app's Finance page and the
+ * client's report both show it. `cost` is costPosition()'s result. Cost, for
+ * now, is the BOQ budget (contracts + materials) plus approved variations, the
+ * daily workers, guards and rentals paid so far, and what was bought for the
+ * site rather than one job (tools, general stock): what is known to be spent,
+ * not yet a forecast of the final cost.
+ *   source   - 'sales', 'contract', or null when not chosen
+ *   sales    - salesPosition() for a project that sells, else null
+ *   items    - each item with itemMargin() for a contract, else []
+ *   earned   - contract income earned by the work done so far
+ *   unbudgeted - purchases for no job, which no budget covers
+ */
+export function financePosition({ project, tasks, rooms, variations, materials = [], cost }) {
+  const sum = (list, key) => list.reduce((s, x) => s + Number(x[key] || 0), 0);
+  const source = project?.income_from ?? null;
+  const variationCost = sum(variations.filter((v) => v.status === 'approved'), 'amount');
+  const siteSoFar = cost.labour + cost.guard + cost.rental;
+  const unbudgeted = sum(materials.filter((m) => !m.task_id), 'amount');
+  const total = cost.budget + variationCost + siteSoFar + unbudgeted;
+  const sales = source === 'sales' ? salesPosition(rooms, project.price_per_m2) : null;
+  const items = source === 'contract' ? tasks.map((task) => ({ task, ...itemMargin(task) })) : [];
+  const income = sales ? sales.income : sum(items, 'income');
+  return {
+    source, sales, items, income, earned: sum(items, 'earned'),
+    budget: cost.budget, variations: variationCost, siteSoFar, unbudgeted, cost: total, profit: income - total,
+  };
+}
+
+/** Rooms for sale by type, most income first: [type, { count, sold, area, amount }]. '' = no type. */
+export function salesByType(rooms, pricePerM2) {
+  const types = new Map();
+  for (const room of rooms) {
+    if ((room.sale_status ?? 'for_sale') === 'not_for_sale') continue;
+    const key = room.unit_type || '';
+    const t = types.get(key) ?? { count: 0, sold: 0, area: 0, amount: 0 };
+    t.count += 1;
+    if (room.sale_status === 'sold') t.sold += 1;
+    t.area += Number(room.area_m2 || 0);
+    t.amount += roomIncome(room, pricePerM2).amount;
+    types.set(key, t);
+  }
+  return [...types].sort((a, b) => b[1].amount - a[1].amount);
+}
+
+/**
  * Sales across the rooms given. Each of sold, reserved and forSale is
  * { count, area, amount }; area counts only rooms with an area.
  *   income   - every room's expected income (sold + reserved + for sale)

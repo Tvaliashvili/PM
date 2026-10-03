@@ -935,3 +935,29 @@ alter table public.flats
   add column if not exists sold_on      date;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 30. Work done outside the rooms
+-- Work that is in no room - a slab pour, the facade, the yard - is recorded
+-- against the timetable item it belongs to, from that item's Work popup. Its
+-- measured quantity adds up against the item's BOQ quantity. Deleting the item
+-- deletes the work recorded on it, as deleting a room does.
+-- -------------------------------------------------------------
+alter table public.work_done
+  add column if not exists task_id uuid references public.schedule_tasks(id) on delete cascade;
+create index if not exists work_done_task_idx on public.work_done (task_id);
+
+notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 31. Everything the client buys, not only materials
+-- A purchase is a material (cement, tiles - it can be for one job and counts
+-- against that job's materials budget), a tool or piece of equipment the site
+-- keeps (a laser level, a measuring tape), or anything else (consumables,
+-- signage). Tools and other purchases are never for one job.
+-- -------------------------------------------------------------
+alter table public.materials
+  add column if not exists kind text not null default 'material'
+  check (kind in ('material', 'tool', 'other'));
+
+notify pgrst, 'reload schema';

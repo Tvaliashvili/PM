@@ -769,6 +769,7 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
 .rpt h2 em { font-size: 0.85em; margin-left: 4px; }
 .rpt-section { margin-top: 22px; }
 .rpt-muted { color: #64748b; }
+.rpt-neg { color: #be123c; font-weight: 600; } /* a loss, in red */
 .rpt-strong { font-weight: 700; }
 .rpt-none { color: #94a3b8; font-style: italic; }
 .rpt-none em { display: inline; margin-left: 4px; }
