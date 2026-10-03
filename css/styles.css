@@ -1521,12 +1521,19 @@ body.auth-pending::after {
 }
 .preview-title { font-weight: 600; color: var(--heading); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preview-actions { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
-#preview-frame { flex: 1; width: 100%; border: 0; background: #eef2f6; }
+/* An iPhone sizes a frame to its content, not to the screen: held at 1px wide
+   with a min-width of 100%, it can only be as wide as its box, and the box
+   scrolls. Elsewhere this changes nothing. */
+.preview-scroll { flex: 1; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; }
+#preview-frame { display: block; width: 1px; min-width: 100%; height: 100%; border: 0; background: #eef2f6; }
+.preview-close { flex-shrink: 0; }
 @media (max-width: 639px) {
-  .preview-bar { padding: 0.5rem 0.75rem; }
-  .preview-title { flex: 1 1 100%; font-size: 0.9rem; }
-  .preview-actions { flex: 1 1 100%; }
-  .preview-actions .btn { flex: 1; justify-content: center; }
+  /* Title and ✕ on the first line, the three actions full width under them. */
+  .preview-bar { display: grid; grid-template-columns: 1fr auto; padding: 0.5rem 0.75rem; row-gap: 0.4rem; }
+  .preview-title { grid-column: 1; grid-row: 1; font-size: 0.9rem; white-space: normal; }
+  .preview-close { grid-column: 2; grid-row: 1; }
+  .preview-actions { grid-column: 1 / -1; grid-row: 2; }
+  .preview-actions .btn { flex: 1; justify-content: center; padding-left: 0.5rem; padding-right: 0.5rem; }
 }
 
 /* ---------- Phone: cards read as cards ---------- */
@@ -1552,3 +1559,12 @@ body.read-only .select-contractor { appearance: none; -webkit-appearance: none; 
 
 /* A project card's figure that is a word ("Today", "3 days ago"), not a number. */
 .project-stats dd.is-text { font-size: 0.85rem; padding-top: 0.15rem; white-space: nowrap; }
+
+/* Date fields: iPhone and Android give them a width of their own, which can
+   run past the edge of the box they sit in. */
+input[type="date"] {
+  -webkit-appearance: none; appearance: none;
+  display: block; min-width: 0; max-width: 100%; width: 100%;
+}
+input[type="date"]::-webkit-date-and-time-value { text-align: left; margin: 0; }
+input[type="date"]::-webkit-calendar-picker-indicator { margin-left: auto; }
