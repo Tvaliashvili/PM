@@ -49,10 +49,13 @@
           <h1 class="text-2xl font-semibold text-white">Projects</h1>
           <p class="text-sm text-slate-500">Select a project to open its dashboard.</p>
         </div>
-        <button id="btn-new-project" class="btn btn-primary">
-          <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
-          New Project
-        </button>
+        <div class="flex items-center gap-2 shrink-0">
+          <button id="btn-access" class="btn btn-secondary" title="Who can see which project">Users &amp; access</button>
+          <button id="btn-new-project" class="btn btn-primary">
+            <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6V5z"/></svg>
+            New Project
+          </button>
+        </div>
       </div>
       <div id="projects-container" class="panel empty-state">Loading projects…</div>
     </main>
@@ -711,6 +714,23 @@
       <p class="form-error hidden" data-error></p>
       <button type="submit" class="btn btn-primary w-full justify-center">Sign in</button>
     </form>
+  </dialog>
+
+  <!-- Users & access: which accounts may see which projects (administrator only) -->
+  <dialog id="modal-access" class="modal modal-wide" aria-labelledby="access-title">
+    <div class="modal-header">
+      <div class="min-w-0">
+        <h2 id="access-title">Users &amp; access</h2>
+        <p class="text-xs text-slate-500">
+          Every account registered in Supabase. Tick the projects each may see - they can look, never change anything.
+          An account with nothing ticked sees no projects. Changes apply at once.
+        </p>
+      </div>
+      <button type="button" class="modal-close" data-close aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="access-list" class="space-y-3"></div>
+    </div>
   </dialog>
 
   <!-- New project -->

@@ -1334,7 +1334,7 @@ body > div[style*="visibility: hidden"] > img { display: inline !important; }
 /* View-only accounts: every control that writes is hidden, and the timetable's
    inline fields can be read but not changed. */
 body.read-only :is(
-  #btn-new-project, #btn-edit-project, .project-card-delete,
+  #btn-new-project, #btn-edit-project, #btn-access, .project-card-delete,
   #btn-new-log-page, #btn-new-delay, #btn-new-event, #btn-new-variation,
   #btn-add-unit, #btn-rooms-import, #btn-add-task, #btn-import-mpp, #btn-baseline,
   #btn-add-contractor, #btn-add-rental, #btn-add-material,

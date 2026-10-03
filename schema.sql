@@ -1049,3 +1049,81 @@ alter table public.work_done
   add column if not exists by_day_workers boolean not null default false;
 
 notify pgrst, 'reload schema';
+
+-- -------------------------------------------------------------
+-- 37. Each account sees only the projects it was given
+-- The administrator sees and changes everything. Every other account reads
+-- only the projects listed for it in project_members, which only the
+-- administrator fills in (from the app's Users & access). An account given
+-- nothing sees no projects at all. Run after section 27: it replaces each
+-- table's "read_all" with a rule that asks can_read().
+-- -------------------------------------------------------------
+create table if not exists public.project_members (
+  project_id  uuid not null references public.projects(id) on delete cascade,
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  primary key (project_id, user_id)
+);
+create index if not exists project_members_user_idx on public.project_members (user_id);
+
+alter table public.project_members enable row level security;
+drop policy if exists "read_own" on public.project_members;
+drop policy if exists "admin_write" on public.project_members;
+create policy "read_own" on public.project_members for select to authenticated
+  using (user_id = auth.uid() or public.is_admin());
+create policy "admin_write" on public.project_members for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+
+-- May the signed-in account read this project? (security definer: it reads
+-- project_members whatever that table's own rules say.)
+create or replace function public.can_read(p uuid) returns boolean
+  language sql stable security definer set search_path = public
+as $$
+  select public.is_admin()
+      or exists (select 1 from public.project_members m where m.project_id = p and m.user_id = auth.uid())
+$$;
+
+do $$
+declare
+  t text;
+begin
+  foreach t in array array[
+    'cash_flow', 'contract_files', 'contractors', 'daily_logs', 'delays', 'equipment_rentals', 'flats',
+    'materials', 'photos', 'schedule_tasks', 'site_events', 'site_payments', 'task_payments', 'variations', 'work_done'
+  ] loop
+    execute format('drop policy if exists "read_all" on public.%I', t);
+    execute format('drop policy if exists "read_member" on public.%I', t);
+    execute format('create policy "read_member" on public.%I for select to authenticated using (public.can_read(project_id))', t);
+  end loop;
+end;
+$$;
+
+drop policy if exists "read_all" on public.projects;
+drop policy if exists "read_member" on public.projects;
+create policy "read_member" on public.projects for select to authenticated using (public.can_read(id));
+
+drop policy if exists "read_all" on public.daily_manpower;
+drop policy if exists "read_member" on public.daily_manpower;
+create policy "read_member" on public.daily_manpower for select to authenticated
+  using (exists (select 1 from public.daily_logs l where l.id = daily_log_id and public.can_read(l.project_id)));
+
+drop policy if exists "read_all" on public.delay_impacts;
+drop policy if exists "read_member" on public.delay_impacts;
+create policy "read_member" on public.delay_impacts for select to authenticated
+  using (exists (select 1 from public.delays d where d.id = delay_id and public.can_read(d.project_id)));
+
+-- The registered accounts, for the administrator's Users & access list.
+-- Nobody else gets a row back.
+create or replace function public.list_users()
+  returns table (id uuid, email text, created_at timestamptz, last_sign_in_at timestamptz)
+  language sql stable security definer set search_path = public, auth
+as $$
+  select u.id, u.email::text, u.created_at, u.last_sign_in_at
+    from auth.users u
+   where public.is_admin()
+   order by u.email
+$$;
+revoke all on function public.list_users() from public, anon;
+grant execute on function public.list_users() to authenticated;
+
+notify pgrst, 'reload schema';

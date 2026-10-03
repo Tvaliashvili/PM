@@ -365,7 +365,12 @@ async function renderProjectList() {
 
   if (!state.projects.length) {
     el.className = 'panel empty-state';
-    el.innerHTML = `
+    // A view-only account sees only the projects it was given.
+    el.innerHTML = document.body.classList.contains('read-only') ? `
+      <div class="space-y-2 py-6">
+        <p class="text-base font-medium text-white">No projects shared with this account yet</p>
+        <p>Ask the administrator to give you access to your project.</p>
+      </div>` : `
       <div class="space-y-2 py-6">
         <p class="text-base font-medium text-white">No projects yet</p>
         <p>Click <span class="text-brand-400">New Project</span> above to create your first one.</p>
@@ -506,6 +511,93 @@ async function deleteProject(projectId) {
   if (state.projectId === projectId) selectProject(null);
   await loadProjects();
   return true;
+}
+
+// ---------- Users & access (administrator only) ----------
+// Every registered account, and the projects each may see. The database
+// enforces it (schema.sql section 37): an account reads only its projects.
+let accessUsers = [];
+let accessRows = []; // project_members: { project_id, user_id }
+
+async function openAccess() {
+  openModal('modal-access');
+  $('#access-list').innerHTML = '<div class="empty-state">Loading accounts…</div>';
+  const [users, members] = await Promise.all([
+    db.rpc('list_users'),
+    db.from('project_members').select('project_id, user_id'),
+  ]);
+  const failed = [users, members].find((r) => r.error);
+  if (failed) {
+    $('#access-list').innerHTML = `<div class="empty-state">Could not load the accounts: ${esc(failed.error.message)}</div>`;
+    return;
+  }
+  accessUsers = users.data;
+  accessRows = members.data;
+  renderAccess();
+}
+
+function renderAccess() {
+  const projects = [...state.projects].sort((a, b) => a.name.localeCompare(b.name));
+  const when = (iso) => (iso ? formatDate(iso.slice(0, 10)) : 'never');
+  $('#access-list').innerHTML = accessUsers.map((u) => {
+    const head = `
+      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <p class="text-white font-medium">${esc(u.email)}</p>
+        <p class="text-xs text-slate-500">last signed in ${esc(when(u.last_sign_in_at))}</p>`;
+    if (u.email?.toLowerCase() === ADMIN_EMAIL) {
+      return `<div class="panel">${head}
+        <span class="status-chip status-done">Administrator - sees and changes every project</span></div></div>`;
+    }
+    const given = new Set(accessRows.filter((r) => r.user_id === u.id).map((r) => r.project_id));
+    return `<div class="panel">${head}
+        <span class="text-xs ${given.size ? 'text-slate-400' : 'text-amber-400'}">${given.size} of ${projects.length} projects</span>
+        <span class="ml-auto flex gap-1">
+          <button type="button" class="table-action" data-access-all="${esc(u.id)}">All</button>
+          <button type="button" class="table-action" data-access-none="${esc(u.id)}">None</button>
+        </span>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-1 mt-2">
+        ${projects.map((p) => `
+          <label class="check-row">
+            <input type="checkbox" data-access-user="${esc(u.id)}" data-access-project="${esc(p.id)}"${given.has(p.id) ? ' checked' : ''}>
+            <span>${esc(p.name)}${p.name_ka ? `<small>${esc(p.name_ka)}</small>` : ''}</span>
+          </label>`).join('')}
+      </div>
+    </div>`;
+  }).join('') || '<div class="empty-state">No accounts registered yet.</div>';
+}
+
+// Gives (or takes back) projects from one account, then redraws.
+async function setAccess(userId, projectIds, give) {
+  if (!projectIds.length) return;
+  const { error } = give
+    ? await db.from('project_members').upsert(projectIds.map((project_id) => ({ project_id, user_id: userId })), { onConflict: 'project_id,user_id' })
+    : await db.from('project_members').delete().eq('user_id', userId).in('project_id', projectIds);
+  if (error) {
+    toast(`Could not change access: ${error.message}`, 'error');
+  } else if (give) {
+    for (const id of projectIds) {
+      if (!accessRows.some((r) => r.user_id === userId && r.project_id === id)) accessRows.push({ project_id: id, user_id: userId });
+    }
+  } else {
+    accessRows = accessRows.filter((r) => r.user_id !== userId || !projectIds.includes(r.project_id));
+  }
+  renderAccess();
+}
+
+function onAccessClick(e) {
+  const all = e.target.closest('[data-access-all]');
+  if (all) return setAccess(all.dataset.accessAll, state.projects.map((p) => p.id), true);
+  const none = e.target.closest('[data-access-none]');
+  if (none) {
+    const userId = none.dataset.accessNone;
+    return setAccess(userId, accessRows.filter((r) => r.user_id === userId).map((r) => r.project_id), false);
+  }
+}
+
+function onAccessChange(e) {
+  const box = e.target.closest('[data-access-user]');
+  if (box) setAccess(box.dataset.accessUser, [box.dataset.accessProject], box.checked);
 }
 
 // ---------- New project ----------
@@ -5928,6 +6020,9 @@ $('#contractors-table').addEventListener('click', onContractorsClick);
 $('#projects-container').addEventListener('click', onProjectsClick);
 $('#btn-new-project').addEventListener('click', openProjectModal);
 $('#form-project').addEventListener('submit', saveProject);
+$('#btn-access').addEventListener('click', openAccess);
+$('#access-list').addEventListener('click', onAccessClick);
+$('#access-list').addEventListener('change', onAccessChange);
 $('#form-project').elements.income_from.addEventListener('change', (e) => syncRoomsTick(e.target.form));
 $('#btn-parse-log').addEventListener('click', processLogText);
 $('#btn-new-log-page').addEventListener('click', () => openDailyLogModal());

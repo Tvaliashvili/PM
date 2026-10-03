@@ -58,6 +58,18 @@ serveJson(async (payload: { paths?: string[]; method?: string }, req: Request) =
   if (!paths.length) return json({ error: "No paths given" }, 400);
   if (paths.length > MAX_PATHS) return json({ error: "Too many photos in one request" }, 413);
 
+  // Reading: only files of projects this account was given (the administrator
+  // has them all). A photo is under <project>/..., a contract under
+  // contracts/<project>/...; the database's can_read() decides.
+  if (method === "GET") {
+    const client = userClient(req);
+    const projects = new Set(paths.map((p) => (p.startsWith("contracts/") ? p.split("/")[1] : p.split("/")[0])));
+    for (const project of projects) {
+      const { data: allowed, error } = await client.rpc("can_read", { p: project });
+      if (error || !allowed) return json({ error: "This account has no access to that project" }, 403);
+    }
+  }
+
   const client = new AwsClient({ accessKeyId, secretAccessKey, service: "s3", region: "auto" });
   const urls = await Promise.all(paths.map(async (path) => {
     const url = new URL(`https://${account.trim()}.r2.cloudflarestorage.com/${bucket.trim()}/${path}`);
